@@ -5,6 +5,17 @@ export default function MainMenu() {
 
   const menuItems = ['НАЧАТЬ', 'АНГАР', 'НАСТРОЙКИ'];
 
+  const playClickSound = () => {
+    const audio = new Audio('/sounds/click.mp3');
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
+  };
+
+  const handleItemClick = (index: number) => {
+    playClickSound();
+    setSelectedIndex(index);
+  };
+
   return (
     <div className="tfu-menu-container">
       <style>{`
@@ -13,7 +24,7 @@ export default function MainMenu() {
           inset: 0;
           background-color: #030408;
           background-image: 
-            radial-gradient(ellipse at 50% 30%, rgba(65, 30, 95, 0.45) 0%, transparent 60%),
+            radial-gradient(ellipse at 50% 32%, rgba(65, 30, 95, 0.45) 0%, transparent 60%),
             radial-gradient(1.5px 1.5px at 15% 20%, #ffffff, transparent),
             radial-gradient(1px 1px at 35% 65%, #ddddff, transparent),
             radial-gradient(2px 2px at 70% 25%, #ffffff, transparent),
@@ -24,34 +35,15 @@ export default function MainMenu() {
           display: flex;
           flex-direction: column;
           align-items: center;
-          justify-content: space-between;
-          padding: 16px 20px;
+          justify-content: center;
+          padding: 20px;
           overflow: hidden;
-        }
-        .tfu-top-triggers {
-          width: 100%;
-          display: flex;
-          justify-content: space-between;
-          pointer-events: none;
-          padding: 0 10px;
-        }
-        .tfu-trigger {
-          background: linear-gradient(180deg, #3d586e 0%, #15202b 100%);
-          border: 1px solid #6e8fa8;
-          color: #8faec4;
-          font-family: Arial, sans-serif;
-          font-weight: bold;
-          font-size: 13px;
-          padding: 2px 18px;
-          clip-path: polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%);
-          letter-spacing: 1px;
         }
         .tfu-center-block {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 14px;
-          margin-top: -10px;
+          gap: 20px;
         }
         .tfu-logo-wrapper {
           position: relative;
@@ -78,12 +70,12 @@ export default function MainMenu() {
         .tfu-menu-list {
           display: flex;
           flex-direction: column;
-          gap: 5px;
+          gap: 6px;
           width: min(640px, 88vw);
         }
         .tfu-bar-button {
           width: 100%;
-          height: 38px;
+          height: 40px;
           border-radius: 3px;
           cursor: pointer;
           display: flex;
@@ -118,37 +110,7 @@ export default function MainMenu() {
           color: #0b141e;
           text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
         }
-        .tfu-bottom-bar {
-          display: flex;
-          gap: 28px;
-          color: #e2ecf5;
-          font-family: Arial, sans-serif;
-          font-size: 11px;
-          font-weight: bold;
-          letter-spacing: 1px;
-          text-shadow: 0 2px 4px #000;
-        }
-        .tfu-btn-prompt {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-        .tfu-icon-circle {
-          width: 14px;
-          height: 14px;
-          border-radius: 50%;
-          border: 1.5px solid #fff;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 9px;
-        }
       `}</style>
-
-      <div className="tfu-top-triggers">
-        <div className="tfu-trigger">L</div>
-        <div className="tfu-trigger">R</div>
-      </div>
 
       <div className="tfu-center-block">
         <div className="tfu-logo-wrapper">
@@ -164,23 +126,12 @@ export default function MainMenu() {
                 key={item}
                 type="button"
                 className={`tfu-bar-button ${isSelected ? 'tfu-bar-selected' : 'tfu-bar-unselected'}`}
-                onClick={() => setSelectedIndex(index)}
+                onClick={() => handleItemClick(index)}
               >
                 <span>{item}</span>
               </button>
             );
           })}
-        </div>
-      </div>
-
-      <div className="tfu-bottom-bar">
-        <div className="tfu-btn-prompt">
-          <span className="tfu-icon-circle">O</span>
-          <span>ОТМЕНА</span>
-        </div>
-        <div className="tfu-btn-prompt">
-          <span className="tfu-icon-circle">X</span>
-          <span>ВЫБОР</span>
         </div>
       </div>
     </div>
