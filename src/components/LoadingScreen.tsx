@@ -70,32 +70,44 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
       let loadedXwing: THREE.Group | null = null;
       let loadedTie: THREE.Group | null = null;
       let loadedDestroyer: THREE.Group | null = null;
+      let loadedDatapad: THREE.Group | null = null;
       const audioBuffers: Record<string, AudioBuffer> = {};
 
       try {
         setStatusText('ЗАГРУЗКА T-65B X-WING...');
         setProgress(10);
         loadedXwing = await loadModel('/models/x-wing.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(10 + p * 20));
+          if (!isDisposed) setProgress(Math.floor(10 + p * 15));
         });
 
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА СИД-ИСТРЕБИТЕЛЕЙ...');
-        setProgress(30);
+        setProgress(25);
         loadedTie = await loadModel('/models/tie.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(30 + p * 20));
+          if (!isDisposed) setProgress(Math.floor(25 + p * 15));
         });
 
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА ЗВЁЗДНОГО РАЗРУШИТЕЛЯ...');
-        setProgress(50);
+        setProgress(40);
         loadedDestroyer = await loadModel('/models/star-destroyer.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(50 + p * 25));
+          if (!isDisposed) setProgress(Math.floor(40 + p * 20));
         });
 
         if (isDisposed) return;
+        setStatusText('ЗАГРУЗКА ДАТАПАДОВ...');
+        setProgress(60);
+        try {
+          loadedDatapad = await loadModel('/models/datapad.glb', () => {});
+        } catch {
+          const g = new THREE.Group();
+          g.add(new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.06, 0.5), new THREE.MeshStandardMaterial({ color: 0x3399ff, emissive: 0x113355 })));
+          loadedDatapad = g;
+        }
+
+        if (isDisposed) return;
         setStatusText('ЗАГРУЗКА АУДИОСИСТЕМ...');
-        setProgress(75);
+        setProgress(70);
 
         for (let i = 0; i < SOUND_LIST.length; i++) {
           const item = SOUND_LIST[i];
@@ -106,7 +118,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
             audioBuffers[item.key] = dummyBuf;
           }
           if (isDisposed) return;
-          setProgress(Math.floor(75 + ((i + 1) / SOUND_LIST.length) * 20));
+          setProgress(Math.floor(70 + ((i + 1) / SOUND_LIST.length) * 25));
         }
 
         if (isDisposed) return;
@@ -121,7 +133,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
         setTimeout(() => {
           if (!isDisposed && loadedXwing && loadedTie && loadedDestroyer) {
             onComplete({
-              models: { xwing: loadedXwing, tie: loadedTie, destroyer: loadedDestroyer },
+              models: { xwing: loadedXwing, tie: loadedTie, destroyer: loadedDestroyer, datapad: loadedDatapad || undefined },
               audioBuffers,
               audioCtx
             });
@@ -137,6 +149,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
         const fbXwing = loadedXwing || createBox(3, 0.8, 4, 0xbdc3c7);
         const fbTie = loadedTie || createBox(2, 2, 1.8, 0x475569);
         const fbDestroyer = loadedDestroyer || createBox(40, 10, 70, 0x7f8c8d);
+        const fbDatapad = loadedDatapad || createBox(0.35, 0.06, 0.5, 0x3399ff);
 
         setProgress(100);
         setStatusText('РЕЗЕРВНЫЙ СТАРТ');
@@ -145,7 +158,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
         setTimeout(() => {
           if (!isDisposed) {
             onComplete({
-              models: { xwing: fbXwing, tie: fbTie, destroyer: fbDestroyer },
+              models: { xwing: fbXwing, tie: fbTie, destroyer: fbDestroyer, datapad: fbDatapad },
               audioBuffers,
               audioCtx
             });
