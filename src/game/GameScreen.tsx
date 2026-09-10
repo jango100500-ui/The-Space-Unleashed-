@@ -27,6 +27,19 @@ interface Laser {
   isEnemy: boolean;
 }
 
+interface Debris {
+  mesh: THREE.Mesh;
+  vel: THREE.Vector3;
+  life: number;
+  maxLife: number;
+}
+
+interface Shockwave {
+  mesh: THREE.Mesh;
+  life: number;
+  maxLife: number;
+}
+
 export default function GameScreen({ models, onExit }: GameScreenProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [curtainVisible, setCurtainVisible] = useState<boolean>(true);
@@ -83,34 +96,45 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     const height = window.innerHeight;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x02060f, 0.0012);
+    scene.fog = new THREE.FogExp2(0x010307, 0.0018);
 
     const camera = new THREE.PerspectiveCamera(54, width / height, 0.1, 3000);
-    const cameraBase = new THREE.Vector3(0, 3.2, 13.0);
+    const cameraBase = new THREE.Vector3(0, 3.4, 13.0);
     camera.position.copy(cameraBase);
 
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.setClearColor(0x02060f);
+    renderer.setClearColor(0x010307);
 
     if (mountRef.current) {
       mountRef.current.appendChild(renderer.domElement);
     }
 
-    const sunLight = new THREE.DirectionalLight(0xfffae8, 4.8);
-    sunLight.position.set(70, 80, 50);
-    scene.add(sunLight);
+    const flatAmbient = new THREE.AmbientLight(0x6a7d94, 2.4);
+    scene.add(flatAmbient);
 
-    const rimLight = new THREE.DirectionalLight(0x0088ff, 3.8);
-    rimLight.position.set(-70, -30, -60);
-    scene.add(rimLight);
+    const flatDir = new THREE.DirectionalLight(0xffffff, 2.8);
+    flatDir.position.set(0, 50, 40);
+    scene.add(flatDir);
 
-    const ambientLight = new THREE.AmbientLight(0x060e18, 0.8);
-    scene.add(ambientLight);
+    const applyFlatRetroLook = (obj: THREE.Object3D) => {
+      obj.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const m = child as THREE.Mesh;
+          if (m.material) {
+            const originalColor = (m.material as THREE.MeshStandardMaterial).color ? (m.material as THREE.MeshStandardMaterial).color.getHex() : 0xcccccc;
+            m.material = new THREE.MeshLambertMaterial({
+              color: originalColor,
+              flatShading: true
+            });
+          }
+        }
+      });
+    };
 
-    const starCount = 2200;
+    const starCount = 2000;
     const starPos = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount * 3; i += 3) {
       starPos[i] = (Math.random() - 0.5) * 1200;
@@ -125,11 +149,16 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
     const defaultShipPos = new THREE.Vector3(0, -1.2, 0);
     const shipPos = defaultShipPos.clone();
+    let shipVx = 0;
+    let shipVy = 0;
+    let shipBank = 0;
+    let shipPitch = 0;
 
     const playerShip = models.xwing.clone();
     playerShip.scale.setScalar(0.48);
     playerShip.position.copy(shipPos);
     playerShip.rotation.set(0, 0, 0);
+    applyFlatRetroLook(playerShip);
     scene.add(playerShip);
 
     const crosshairTex = new THREE.Mesh(
@@ -139,16 +168,58 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     crosshairTex.position.set(0, 0, -50);
     scene.add(crosshairTex);
 
-    const redLaserGeo = new THREE.CylinderGeometry(0.04, 0.04, 2.4, 5);
+    const redLaserGeo = new THREE.CylinderGeometry(0.04, 0.04, 2.4, 4);
     redLaserGeo.rotateX(Math.PI / 2);
     const redLaserMat = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
 
-    const greenLaserGeo = new THREE.CylinderGeometry(0.05, 0.05, 2.6, 5);
+    const greenLaserGeo = new THREE.CylinderGeometry(0.05, 0.05, 2.6, 4);
     greenLaserGeo.rotateX(Math.PI / 2);
     const greenLaserMat = new THREE.MeshBasicMaterial({ color: 0x22ff44 });
 
+    const debrisGeo = new THREE.IcosahedronGeometry(0.4, 0);
+    const debrisMatOrange = new THREE.MeshBasicMaterial({ color: 0xff8833 });
+    const debrisMatYellow = new THREE.MeshBasicMaterial({ color: 0xffd24d });
+    const debrisMatGrey = new THREE.MeshBasicMaterial({ color: 0x8d949c });
+
+    const ringGeo = new THREE.RingGeometry(0.2, 0.6, 12);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xffaa33, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
+
+    const flashGeo = new THREE.IcosahedronGeometry(1.2, 0);
+    const flashMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1.0 });
+
     const lasers: Laser[] = [];
     const enemies: Enemy[] = [];
+    const debrisList: Debris[] = [];
+    const shockwaves: Shockwave[] = [];
+
+    const spawnExplosion = (pos: THREE.Vector3) => {
+      const flashMesh = new THREE.Mesh(flashGeo, flashMat.clone());
+      flashMesh.position.copy(pos);
+      flashMesh.scale.setScalar(1.6);
+      scene.add(flashMesh);
+      shockwaves.push({ mesh: flashMesh, life: 0.09, maxLife: 0.09 });
+
+      const ringMesh = new THREE.Mesh(ringGeo, ringMat.clone());
+      ringMesh.position.copy(pos);
+      ringMesh.rotation.x = Math.PI / 2;
+      scene.add(ringMesh);
+      shockwaves.push({ mesh: ringMesh, life: 0.35, maxLife: 0.35 });
+
+      const count = 15;
+      for (let i = 0; i < count; i++) {
+        const mat = i % 3 === 0 ? debrisMatOrange : i % 3 === 1 ? debrisMatYellow : debrisMatGrey;
+        const dMesh = new THREE.Mesh(debrisGeo, mat);
+        dMesh.position.copy(pos);
+        dMesh.scale.setScalar(0.6 + Math.random() * 0.9);
+        const vel = new THREE.Vector3(
+          (Math.random() - 0.5) * 45,
+          (Math.random() - 0.5) * 45,
+          (Math.random() - 0.5) * 45
+        );
+        scene.add(dMesh);
+        debrisList.push({ mesh: dMesh, vel, life: 0.65, maxLife: 0.65 });
+      }
+    };
 
     const spawnEnemy = (forcedSide?: number) => {
       const side = forcedSide !== undefined ? forcedSide : (Math.random() > 0.5 ? 1 : -1);
@@ -158,6 +229,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
       const mesh = models.tie.clone();
       mesh.scale.setScalar(0.42);
+      applyFlatRetroLook(mesh);
       scene.add(mesh);
 
       enemies.push({
@@ -208,19 +280,35 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       starGeo.attributes.position.needsUpdate = true;
 
       const input = inputRef.current;
-      const targetX = defaultShipPos.x + input.x * 12;
-      const targetY = defaultShipPos.y + input.y * 7;
+      const aspect = window.innerWidth / window.innerHeight;
+      const xRange = Math.max(5.2, Math.min(16.0, 10.0 * aspect * 1.05));
+      const yRange = 8.5;
 
-      const smoothFactor = input.x === 0 && input.y === 0 ? 8.5 : 5.5;
-      shipPos.x = THREE.MathUtils.lerp(shipPos.x, targetX, dt * smoothFactor);
-      shipPos.y = THREE.MathUtils.lerp(shipPos.y, targetY, dt * smoothFactor);
+      const targetX = input.x * xRange;
+      const targetY = defaultShipPos.y + input.y * yRange;
+
+      const followDamp = 1 - Math.exp(-5.2 * dt);
+      const nextX = THREE.MathUtils.lerp(shipPos.x, targetX, followDamp);
+      const nextY = THREE.MathUtils.lerp(shipPos.y, targetY, followDamp);
+
+      shipVx = (nextX - shipPos.x) / Math.max(dt, 0.001);
+      shipVy = (nextY - shipPos.y) / Math.max(dt, 0.001);
+
+      shipPos.x = nextX;
+      shipPos.y = nextY;
 
       playerShip.position.copy(shipPos);
-      playerShip.rotation.z = THREE.MathUtils.lerp(playerShip.rotation.z, -input.x * 0.45, dt * 8);
-      playerShip.rotation.x = THREE.MathUtils.lerp(playerShip.rotation.x, input.y * 0.22, dt * 8);
 
-      camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.35, dt * 5);
-      camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.35, dt * 5);
+      const bankTarget = Math.max(-0.65, Math.min(0.65, -shipVx * 0.038));
+      const pitchTarget = Math.max(-0.4, Math.min(0.4, -shipVy * 0.024));
+
+      shipBank = THREE.MathUtils.lerp(shipBank, bankTarget, 1 - Math.exp(-6.5 * dt));
+      shipPitch = THREE.MathUtils.lerp(shipPitch, pitchTarget, 1 - Math.exp(-6.5 * dt));
+
+      playerShip.rotation.set(shipPitch, 0, shipBank);
+
+      camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.32, 1 - Math.exp(-6.0 * dt));
+      camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.32, 1 - Math.exp(-6.0 * dt));
 
       let closestEnemy: Enemy | null = null;
       let closestDist = 999;
@@ -357,6 +445,8 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
             e.shootCooldown = 1.6;
           }
         }
+
+        e.mesh.position.copy(e.pos);
       }
 
       for (let i = lasers.length - 1; i >= 0; i--) {
@@ -381,7 +471,8 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
             const e = enemies[j];
             if (l.mesh.position.distanceTo(e.pos) < 1.6) {
               l.life = 0;
-              playTone(220, 60, 0.3, 0.25, 'sawtooth');
+              spawnExplosion(e.pos);
+              playTone(180, 40, 0.35, 0.3, 'sawtooth');
               scene.remove(e.mesh);
               enemies.splice(j, 1);
               break;
@@ -392,6 +483,33 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         if (l.life <= 0) {
           scene.remove(l.mesh);
           lasers.splice(i, 1);
+        }
+      }
+
+      for (let i = shockwaves.length - 1; i >= 0; i--) {
+        const s = shockwaves[i];
+        s.life -= dt;
+        const progress = 1 - s.life / s.maxLife;
+        s.mesh.scale.setScalar(1.2 + progress * 5.0);
+        (s.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, s.life / s.maxLife);
+        if (s.life <= 0) {
+          scene.remove(s.mesh);
+          shockwaves.splice(i, 1);
+        }
+      }
+
+      for (let i = debrisList.length - 1; i >= 0; i--) {
+        const d = debrisList[i];
+        d.life -= dt;
+        d.mesh.position.addScaledVector(d.vel, dt);
+        d.vel.multiplyScalar(1 - 1.8 * dt);
+        d.mesh.rotation.x += dt * 5;
+        d.mesh.rotation.y += dt * 4;
+        const scaleProgress = Math.max(0, d.life / d.maxLife);
+        d.mesh.scale.setScalar(scaleProgress);
+        if (d.life <= 0) {
+          scene.remove(d.mesh);
+          debrisList.splice(i, 1);
         }
       }
 
@@ -407,6 +525,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       }
 
       camera.lookAt(shipPos.x * 0.18, shipPos.y * 0.18 + 0.3, -45);
+      camera.rotateZ(-shipBank * 0.1);
 
       renderer.render(scene, camera);
       animId = requestAnimationFrame(gameLoop);
@@ -428,6 +547,8 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       window.removeEventListener('resize', handleResize);
       lasers.forEach((l) => scene.remove(l.mesh));
       enemies.forEach((e) => scene.remove(e.mesh));
+      debrisList.forEach((d) => scene.remove(d.mesh));
+      shockwaves.forEach((s) => scene.remove(s.mesh));
       if (renderer.domElement && renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
@@ -448,12 +569,13 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     if (stickTouchId.current !== e.pointerId) return;
     const dx = e.clientX - stickCenter.current.x;
     const dy = e.clientY - stickCenter.current.y;
-    const maxRadius = 45;
+    const maxRadius = 55;
     const dist = Math.hypot(dx, dy);
     const clampedDist = Math.min(dist, maxRadius);
     const angle = Math.atan2(dy, dx);
-    const nx = (Math.cos(angle) * clampedDist) / maxRadius;
-    const ny = -(Math.sin(angle) * clampedDist) / maxRadius;
+    const normDist = Math.pow(clampedDist / maxRadius, 1.25);
+    const nx = Math.cos(angle) * normDist;
+    const ny = -Math.sin(angle) * normDist;
 
     setJoystickOffset({ x: Math.cos(angle) * clampedDist, y: Math.sin(angle) * clampedDist });
     inputRef.current.x = nx;
