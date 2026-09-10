@@ -9,7 +9,7 @@ interface IntroCutsceneProps {
 
 export default function IntroCutscene({ onComplete, onError }: IntroCutsceneProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const [fadeState, setFadeState] = useState<'fadeIn' | 'visible' | 'fadeOut'>('fadeIn');
+  const [curtainVisible, setCurtainVisible] = useState<boolean>(true);
 
   useEffect(() => {
     let animId: number;
@@ -19,10 +19,13 @@ export default function IntroCutscene({ onComplete, onError }: IntroCutsceneProp
     const height = window.innerHeight;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x020409, 0.0035);
+    scene.fog = new THREE.FogExp2(0x020409, 0.003);
 
-    const camera = new THREE.PerspectiveCamera(55, width / height, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1500);
     camera.position.set(0, 0, 0);
+
+    const initialLookAt = new THREE.Vector3(40, 0, -10);
+    camera.lookAt(initialLookAt);
 
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
@@ -34,29 +37,28 @@ export default function IntroCutscene({ onComplete, onError }: IntroCutsceneProp
       mountRef.current.appendChild(renderer.domElement);
     }
 
-    const sunLight = new THREE.DirectionalLight(0xfffaed, 3.2);
-    sunLight.position.set(40, 30, -20);
+    const sunLight = new THREE.DirectionalLight(0xfffaed, 3.5);
+    sunLight.position.set(40, 30, 20);
     scene.add(sunLight);
 
-    const rimLight = new THREE.DirectionalLight(0x3b82f6, 1.8);
-    rimLight.position.set(-40, -10, 20);
+    const rimLight = new THREE.DirectionalLight(0x3b82f6, 2.0);
+    rimLight.position.set(-40, -15, -30);
     scene.add(rimLight);
 
-    const ambientLight = new THREE.AmbientLight(0x1a2636, 1.2);
+    const ambientLight = new THREE.AmbientLight(0x1a2636, 1.4);
     scene.add(ambientLight);
 
-    const starCount = 1200;
+    const starCount = 1400;
     const starPos = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount * 3; i += 3) {
-      starPos[i] = (Math.random() - 0.5) * 400;
-      starPos[i + 1] = (Math.random() - 0.5) * 300;
-      starPos[i + 2] = (Math.random() - 0.5) * 500;
+      starPos[i] = (Math.random() - 0.5) * 500;
+      starPos[i + 1] = (Math.random() - 0.5) * 400;
+      starPos[i + 2] = (Math.random() - 0.5) * 600;
     }
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
     const starMat = new THREE.PointsMaterial({ color: 0xd6eaff, size: 0.9, transparent: true, opacity: 0.85 });
-    const stars = new THREE.Points(starGeo, starMat);
-    scene.add(stars);
+    scene.add(new THREE.Points(starGeo, starMat));
 
     const loader = new GLTFLoader();
 
@@ -86,11 +88,20 @@ export default function IntroCutscene({ onComplete, onError }: IntroCutsceneProp
       });
     };
 
+    const startPos = new THREE.Vector3(50, 0, 20);
+    const endPos = new THREE.Vector3(-120, 0, -220);
+    const flightDir = new THREE.Vector3().subVectors(endPos, startPos).normalize();
+    const flightDist = startPos.distanceTo(endPos);
+
+    const sideNormal = new THREE.Vector3(-flightDir.z, 0, flightDir.x).normalize();
+
     let xwing: THREE.Group | null = null;
     let tieLeft: THREE.Group | null = null;
     let tieRight: THREE.Group | null = null;
 
     let startTime = 0;
+    let lockedCameraLook = new THREE.Vector3();
+    let hasLockedCamera = false;
 
     Promise.all([
       loadModel('/models/x-wing.glb'),
@@ -100,26 +111,39 @@ export default function IntroCutscene({ onComplete, onError }: IntroCutsceneProp
         if (isDisposed) return;
 
         xwing = xwingScene;
-        xwing.scale.setScalar(0.7);
-        xwing.position.set(12, -2, 10);
-        xwing.rotation.set(0, -Math.PI * 0.72, -0.2);
+        xwing.scale.setScalar(2.2);
+        xwing.position.copy(startPos);
+        xwing.lookAt(new THREE.Vector3().addVectors(startPos, flightDir));
         scene.add(xwing);
 
         tieLeft = tieScene.clone();
-        tieLeft.scale.setScalar(0.65);
-        tieLeft.position.set(22, 0, 35);
-        tieLeft.rotation.set(0, -Math.PI * 0.72, 0.1);
+        tieLeft.scale.setScalar(1.9);
+        const tieLeftStart = startPos.clone().addScaledVector(sideNormal, -5.5);
+        tieLeft.position.copy(tieLeftStart);
+        tieLeft.lookAt(new THREE.Vector3().addVectors(tieLeftStart, flightDir));
+        tieLeft.visible = false;
         scene.add(tieLeft);
 
         tieRight = tieScene.clone();
-        tieRight.scale.setScalar(0.65);
-        tieRight.position.set(30, -3, 45);
-        tieRight.rotation.set(0, -Math.PI * 0.72, -0.15);
+        tieRight.scale.setScalar(1.9);
+        const tieRightStart = startPos.clone().addScaledVector(sideNormal, 5.5);
+        tieRight.position.copy(tieRightStart);
+        tieRight.lookAt(new THREE.Vector3().addVectors(tieRightStart, flightDir));
+        tieRight.visible = false;
         scene.add(tieRight);
 
-        setFadeState('visible');
-        startTime = performance.now();
-        requestAnimationFrame(renderLoop);
+        renderer.render(scene, camera);
+
+        setTimeout(() => {
+          if (isDisposed) return;
+          setCurtainVisible(false);
+
+          setTimeout(() => {
+            if (isDisposed) return;
+            startTime = performance.now();
+            requestAnimationFrame(renderLoop);
+          }, 500);
+        }, 50);
       })
       .catch((err) => {
         if (!isDisposed) {
@@ -131,43 +155,71 @@ export default function IntroCutscene({ onComplete, onError }: IntroCutsceneProp
       if (isDisposed) return;
 
       const elapsed = (timestamp - startTime) / 1000;
+      let currentShake = 0;
 
-      if (xwing) {
-        const xProgress = elapsed * 58;
-        xwing.position.x = 12 - xProgress * 0.35;
-        xwing.position.y = -2 + xProgress * 0.05;
-        xwing.position.z = 10 - xProgress * 0.95;
+      if (elapsed <= 2.5 && xwing) {
+        const xSpeed = flightDist / 2.3;
+        const progressDist = elapsed * xSpeed;
+        xwing.position.copy(startPos).addScaledVector(flightDir, progressDist);
+        xwing.lookAt(new THREE.Vector3().addVectors(xwing.position, flightDir));
 
-        if (elapsed < 1.1) {
-          const lookTarget = new THREE.Vector3().copy(xwing.position);
-          camera.lookAt(lookTarget);
+        const distToCam = xwing.position.distanceTo(camera.position);
+        if (distToCam < 25) {
+          currentShake = (1 - distToCam / 25) * 0.45;
         }
+
+        camera.lookAt(xwing.position);
+      } else if (elapsed > 2.5 && !hasLockedCamera && xwing) {
+        hasLockedCamera = true;
+        lockedCameraLook.copy(xwing.position);
       }
 
-      if (elapsed >= 1.0) {
-        const chaseElapsed = elapsed - 1.0;
-        const tieSpeed = chaseElapsed * 64;
+      if (hasLockedCamera) {
+        camera.lookAt(lockedCameraLook);
+      }
+
+      if (elapsed >= 5.5 && elapsed <= 8.2) {
+        const chaseElapsed = elapsed - 5.5;
+        const tieSpeed = flightDist / 2.3;
+        const tieProgress = chaseElapsed * tieSpeed;
 
         if (tieLeft) {
-          tieLeft.position.x = 10 - tieSpeed * 0.35;
-          tieLeft.position.y = 0 + tieSpeed * 0.05;
-          tieLeft.position.z = 12 - tieSpeed * 0.95;
-          tieLeft.rotation.z = Math.sin(chaseElapsed * 3) * 0.1;
+          tieLeft.visible = true;
+          const leftBase = startPos.clone().addScaledVector(sideNormal, -5.5);
+          tieLeft.position.copy(leftBase).addScaledVector(flightDir, tieProgress);
+          tieLeft.lookAt(new THREE.Vector3().addVectors(tieLeft.position, flightDir));
         }
 
         if (tieRight) {
-          tieRight.position.x = 16 - tieSpeed * 0.35;
-          tieRight.position.y = -3 + tieSpeed * 0.05;
-          tieRight.position.z = 18 - tieSpeed * 0.95;
-          tieRight.rotation.z = -Math.sin(chaseElapsed * 3) * 0.1;
+          tieRight.visible = true;
+          const rightBase = startPos.clone().addScaledVector(sideNormal, 5.5);
+          tieRight.position.copy(rightBase).addScaledVector(flightDir, tieProgress);
+          tieRight.lookAt(new THREE.Vector3().addVectors(tieRight.position, flightDir));
+        }
+
+        if (tieLeft) {
+          const distTie = tieLeft.position.distanceTo(camera.position);
+          if (distTie < 25) {
+            currentShake = (1 - distTie / 25) * 0.45;
+          }
         }
       }
 
-      if (elapsed >= 3.0 && fadeState !== 'fadeOut') {
-        setFadeState('fadeOut');
+      if (currentShake > 0) {
+        camera.position.set(
+          (Math.random() - 0.5) * currentShake,
+          (Math.random() - 0.5) * currentShake,
+          (Math.random() - 0.5) * currentShake
+        );
+      } else {
+        camera.position.set(0, 0, 0);
       }
 
-      if (elapsed >= 3.8) {
+      if (elapsed >= 8.2 && !curtainVisible) {
+        setCurtainVisible(true);
+      }
+
+      if (elapsed >= 8.8) {
         onComplete();
         return;
       }
@@ -215,10 +267,7 @@ export default function IntroCutscene({ onComplete, onError }: IntroCutsceneProp
         }
       `}</style>
 
-      <div
-        className={`cutscene-curtain ${fadeState === 'visible' ? 'curtain-clear' : 'curtain-black'}`}
-      />
-
+      <div className={`cutscene-curtain ${curtainVisible ? 'curtain-black' : 'curtain-clear'}`} />
       <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
     </div>
   );
