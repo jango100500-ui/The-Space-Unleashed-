@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import type { PreloadedModels } from '../App.tsx';
+import type { PreloadedAssets } from '../App.tsx';
 
 interface LoadingScreenProps {
-  onComplete: (models: PreloadedModels) => void;
+  onComplete: (assets: PreloadedAssets) => void;
 }
+
+const SOUND_LIST = [
+  { key: 'xwingEngine', url: '/sounds/xwingengine.mp3' },
+  { key: 'explode', url: '/sounds/explode.mp3' },
+  { key: 'xwingShot', url: '/sounds/xwingshot.mp3' },
+  { key: 'tieShot', url: '/sounds/tieshot.mp3' },
+  { key: 'tieEngine', url: '/sounds/tieengine.mp3' }
+];
 
 export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
   const [progress, setProgress] = useState<number>(0);
@@ -15,6 +23,9 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
   useEffect(() => {
     let isDisposed = false;
     const loader = new GLTFLoader();
+
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const audioCtx = new AudioContextClass();
 
     const optimizeModel = (group: THREE.Group) => {
       group.traverse((child) => {
@@ -31,7 +42,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
       });
     };
 
-    const load = (url: string, onProg: (p: number) => void): Promise<THREE.Group> => {
+    const loadModel = (url: string, onProg: (p: number) => void): Promise<THREE.Group> => {
       return new Promise((resolve, reject) => {
         loader.load(
           url,
@@ -49,53 +60,71 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
       });
     };
 
+    const loadAudio = async (url: string): Promise<AudioBuffer> => {
+      const res = await fetch(url);
+      const buf = await res.arrayBuffer();
+      return await audioCtx.decodeAudioData(buf);
+    };
+
     const runLoading = async () => {
       let loadedXwing: THREE.Group | null = null;
       let loadedTie: THREE.Group | null = null;
       let loadedDestroyer: THREE.Group | null = null;
+      const audioBuffers: Record<string, AudioBuffer> = {};
 
       try {
         setStatusText('ЗАГРУЗКА T-65B X-WING...');
-        setProgress(15);
-
-        loadedXwing = await load('/models/x-wing.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(15 + p * 25));
+        setProgress(10);
+        loadedXwing = await loadModel('/models/x-wing.glb', (p) => {
+          if (!isDisposed) setProgress(Math.floor(10 + p * 20));
         });
 
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА СИД-ИСТРЕБИТЕЛЕЙ...');
-        setProgress(40);
-
-        loadedTie = await load('/models/tie.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(40 + p * 25));
+        setProgress(30);
+        loadedTie = await loadModel('/models/tie.glb', (p) => {
+          if (!isDisposed) setProgress(Math.floor(30 + p * 20));
         });
 
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА ЗВЁЗДНОГО РАЗРУШИТЕЛЯ...');
-        setProgress(65);
-
-        loadedDestroyer = await load('/models/star-destroyer.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(65 + p * 25));
+        setProgress(50);
+        loadedDestroyer = await loadModel('/models/star-destroyer.glb', (p) => {
+          if (!isDisposed) setProgress(Math.floor(50 + p * 25));
         });
 
         if (isDisposed) return;
-        setStatusText('СИНХРОНИЗАЦИЯ НАВИГАЦИИ...');
-        setProgress(95);
+        setStatusText('ЗАГРУЗКА АУДИОСИСТЕМ...');
+        setProgress(75);
 
-        await new Promise((r) => setTimeout(r, 400));
+        for (let i = 0; i < SOUND_LIST.length; i++) {
+          const item = SOUND_LIST[i];
+          try {
+            audioBuffers[item.key] = await loadAudio(item.url);
+          } catch {
+            const dummyBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.1, audioCtx.sampleRate);
+            audioBuffers[item.key] = dummyBuf;
+          }
+          if (isDisposed) return;
+          setProgress(Math.floor(75 + ((i + 1) / SOUND_LIST.length) * 20));
+        }
+
         if (isDisposed) return;
-
         setProgress(100);
         setStatusText('СИСТЕМЫ ГОТОВЫ');
 
-        await new Promise((r) => setTimeout(r, 300));
+        await new Promise((r) => setTimeout(r, 250));
         if (isDisposed) return;
 
         setFadeOut(true);
 
         setTimeout(() => {
           if (!isDisposed && loadedXwing && loadedTie && loadedDestroyer) {
-            onComplete({ xwing: loadedXwing, tie: loadedTie, destroyer: loadedDestroyer });
+            onComplete({
+              models: { xwing: loadedXwing, tie: loadedTie, destroyer: loadedDestroyer },
+              audioBuffers,
+              audioCtx
+            });
           }
         }, 550);
       } catch {
@@ -115,7 +144,11 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
 
         setTimeout(() => {
           if (!isDisposed) {
-            onComplete({ xwing: fbXwing, tie: fbTie, destroyer: fbDestroyer });
+            onComplete({
+              models: { xwing: fbXwing, tie: fbTie, destroyer: fbDestroyer },
+              audioBuffers,
+              audioCtx
+            });
           }
         }, 550);
       }
