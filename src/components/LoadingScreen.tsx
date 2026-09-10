@@ -10,11 +10,11 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
 
   useEffect(() => {
     const checkpoints = [
-      { value: 14, time: 700 },
-      { value: 31, time: 1600 },
-      { value: 58, time: 2700 },
-      { value: 79, time: 3500 },
-      { value: 92, time: 4200 },
+      { value: 16, time: 700 },
+      { value: 38, time: 1600 },
+      { value: 61, time: 2700 },
+      { value: 82, time: 3500 },
+      { value: 94, time: 4200 },
       { value: 100, time: 4600 },
     ];
 
@@ -62,11 +62,32 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
           justify-content: center;
           align-items: center;
         }
-        .ls-logo {
+        .ls-logo-wrapper {
+          position: relative;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+        }
+        .ls-logo-base {
           max-width: 440px;
           max-height: 180px;
           width: 50vw;
           object-fit: contain;
+          opacity: 0.25;
+          filter: brightness(0.6);
+          display: block;
+        }
+        .ls-logo-fill {
+          position: absolute;
+          inset: 0;
+          max-width: 440px;
+          max-height: 180px;
+          width: 50vw;
+          height: 100%;
+          object-fit: contain;
+          opacity: 1;
+          filter: drop-shadow(0 0 14px rgba(100, 180, 255, 0.7));
+          transition: clip-path 0.25s cubic-bezier(0.2, 0.8, 0.3, 1);
         }
         .ls-bar-frame {
           width: min(420px, 50vw);
@@ -84,7 +105,15 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
       `}</style>
 
       <div className="ls-logo-box">
-        <img src="/mocs/tsu.png" alt="TSU" className="ls-logo" />
+        <div className="ls-logo-wrapper">
+          <img src="/mocs/tsu.png" alt="TSU Background" className="ls-logo-base" />
+          <img
+            src="/mocs/tsu.png"
+            alt="TSU Fill"
+            className="ls-logo-fill"
+            style={{ clipPath: `inset(${100 - progress}% 0 0 0)` }}
+          />
+        </div>
       </div>
 
       <div className="ls-bar-frame">
