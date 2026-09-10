@@ -9,6 +9,7 @@ export interface PreloadedModels {
   xwing: THREE.Group;
   tie: THREE.Group;
   destroyer: THREE.Group;
+  datapad?: THREE.Group;
 }
 
 export interface PreloadedAssets {
