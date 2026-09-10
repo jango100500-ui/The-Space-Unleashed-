@@ -20,7 +20,7 @@ export default function IntroCutscene({ models, onComplete }: IntroCutsceneProps
     const height = window.innerHeight;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x020409, 0.001);
+    scene.fog = new THREE.FogExp2(0x000205, 0.001);
 
     const camera = new THREE.PerspectiveCamera(56, width / height, 0.1, 5000);
     const cameraBasePos = new THREE.Vector3(0, 0, 0);
@@ -30,22 +30,22 @@ export default function IntroCutscene({ models, onComplete }: IntroCutsceneProps
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.setClearColor(0x020409);
+    renderer.setClearColor(0x000205);
 
     if (mountRef.current) {
       mountRef.current.appendChild(renderer.domElement);
     }
 
-    const sunLight = new THREE.DirectionalLight(0xfffaed, 4.5);
-    sunLight.position.set(120, 80, 40);
-    scene.add(sunLight);
+    const flatAmbient = new THREE.AmbientLight(0x444444, 2.2);
+    scene.add(flatAmbient);
 
-    const rimLight = new THREE.DirectionalLight(0x4080ff, 2.8);
-    rimLight.position.set(-120, -40, -80);
-    scene.add(rimLight);
+    const mainSun = new THREE.DirectionalLight(0xffffff, 3.8);
+    mainSun.position.set(60, 90, 45);
+    scene.add(mainSun);
 
-    const ambientLight = new THREE.AmbientLight(0x1a2636, 1.8);
-    scene.add(ambientLight);
+    const fillLight = new THREE.DirectionalLight(0x888888, 1.4);
+    fillLight.position.set(-60, -30, -50);
+    scene.add(fillLight);
 
     const starCount = 2500;
     const starPos = new Float32Array(starCount * 3);
@@ -80,20 +80,37 @@ export default function IntroCutscene({ models, onComplete }: IntroCutsceneProps
       ship.rotateX(Math.cos(time * 2.6) * 0.03);
     };
 
+    const tuneTextures = (obj: THREE.Object3D) => {
+      obj.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const m = child as THREE.Mesh;
+          if (m.material) {
+            const mat = m.material as THREE.MeshStandardMaterial;
+            mat.roughness = 0.6;
+            mat.metalness = 0.1;
+            mat.needsUpdate = true;
+          }
+        }
+      });
+    };
+
     const xwing = models.xwing.clone();
     xwing.scale.setScalar(4.6);
+    tuneTextures(xwing);
     alignAndSway(xwing, startPos, 0, 0);
     scene.add(xwing);
 
     const tieLeftStart = startPos.clone().addScaledVector(sideNormal, -24);
     const tieLeft = models.tie.clone();
     tieLeft.scale.setScalar(3.8);
+    tuneTextures(tieLeft);
     alignAndSway(tieLeft, tieLeftStart.clone().addScaledVector(flightDir, -300), 0, 1.2);
     scene.add(tieLeft);
 
     const tieRightStart = startPos.clone().addScaledVector(sideNormal, 24);
     const tieRight = models.tie.clone();
     tieRight.scale.setScalar(3.8);
+    tuneTextures(tieRight);
     alignAndSway(tieRight, tieRightStart.clone().addScaledVector(flightDir, -300), 0, -1.5);
     scene.add(tieRight);
 
@@ -268,7 +285,25 @@ export default function IntroCutscene({ models, onComplete }: IntroCutsceneProps
         .curtain-clear {
           opacity: 0;
         }
+        .cutscene-letterbox-bar {
+          position: absolute;
+          left: 0;
+          right: 0;
+          height: 16%;
+          background-color: #000000;
+          z-index: 40;
+          pointer-events: none;
+        }
+        .cutscene-letterbox-top {
+          top: 0;
+        }
+        .cutscene-letterbox-bottom {
+          bottom: 0;
+        }
       `}</style>
+
+      <div className="cutscene-letterbox-bar cutscene-letterbox-top" />
+      <div className="cutscene-letterbox-bar cutscene-letterbox-bottom" />
 
       <div className={`cutscene-curtain ${curtainVisible ? 'cutscene-black' : 'curtain-clear'}`} />
       <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
