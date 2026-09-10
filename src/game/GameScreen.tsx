@@ -73,6 +73,15 @@ interface ShieldGenerator {
   destroyed: boolean;
 }
 
+interface BossZoneAttack {
+  active: boolean;
+  timer: number;
+  duration: number;
+  xMin: number;
+  xMax: number;
+  fired: boolean;
+}
+
 interface BossState {
   group: THREE.Group;
   generators: ShieldGenerator[];
@@ -80,6 +89,7 @@ interface BossState {
   shootCooldown: number;
   squadCooldown: number;
   bombardCooldown: number;
+  zoneCooldown: number;
   destroyed: boolean;
 }
 
@@ -235,10 +245,19 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
   const [currentStage, setCurrentStage] = useState<number>(0);
   const [stageProgressPercent, setStageProgressPercent] = useState<number>(0);
+  const [bossActive, setBossActive] = useState<boolean>(false);
+  const [bossHpPercent, setBossHpPercent] = useState<number>(100);
   const [bossCutsceneActive, setBossCutsceneActive] = useState<boolean>(false);
   const [bossVictoryActive, setBossVictoryActive] = useState<boolean>(false);
   const [showVictoryText, setShowVictoryText] = useState<boolean>(false);
   const [playerStunned, setPlayerStunned] = useState<boolean>(false);
+
+  const [zoneAttackUi, setZoneAttackUi] = useState<{ visible: boolean; leftPct: number; widthPct: number; firing: boolean }>({
+    visible: false,
+    leftPct: 40,
+    widthPct: 20,
+    firing: false
+  });
 
   const isPausedRef = useRef<boolean>(false);
   const inBiomeTransitionRef = useRef<boolean>(false);
@@ -516,6 +535,15 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     const shieldImpacts: ShieldImpactEffect[] = [];
     const datapads: DatapadItem[] = [];
 
+    const zoneAttack: BossZoneAttack = {
+      active: false,
+      timer: 0,
+      duration: 1.6,
+      xMin: -4,
+      xMax: 4,
+      fired: false
+    };
+
     const spawnShieldImpact = (worldPos: THREE.Vector3) => {
       const sMesh = new THREE.Mesh(shieldSphereGeo, shieldMat.clone());
       sMesh.position.copy(worldPos);
@@ -550,7 +578,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         const mat = debrisMats[i % debrisMats.length];
         const dMesh = new THREE.Mesh(debrisPieceGeo, mat);
         dMesh.position.copy(pos);
-        dMesh.scale.setScalar((0.6 + Math.random() * 0.8) * scale);
+        dMesh.scale.setScalar((0.7 + Math.random() * 0.8) * scale);
 
         const vel = new THREE.Vector3(
           (Math.random() - 0.5) * 60 * scale,
@@ -639,20 +667,20 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     const initBoss = () => {
       const grp = models.destroyer.clone();
       grp.scale.setScalar(0.0001);
-      grp.position.set(0, 24, -420);
+      grp.position.set(0, 3.5, -340);
       grp.rotation.set(0, Math.PI, 0);
       tuneTextures(grp);
       scene.add(grp);
 
-      const genGeo = new THREE.SphereGeometry(3.6, 16, 12);
+      const genGeo = new THREE.SphereGeometry(2.4, 16, 12);
       const genMat1 = new THREE.MeshBasicMaterial({ color: 0x33ccff, wireframe: true });
       const genMat2 = new THREE.MeshBasicMaterial({ color: 0x33ccff, wireframe: true });
 
       const gen1Mesh = new THREE.Mesh(genGeo, genMat1);
       const gen2Mesh = new THREE.Mesh(genGeo, genMat2);
 
-      const gen1Pos = new THREE.Vector3(-11, 24, -10);
-      const gen2Pos = new THREE.Vector3(11, 24, -10);
+      const gen1Pos = new THREE.Vector3(-3.2, 2.2, 5.0);
+      const gen2Pos = new THREE.Vector3(3.2, 2.2, 5.0);
 
       gen1Mesh.position.copy(gen1Pos);
       gen2Mesh.position.copy(gen2Pos);
@@ -666,10 +694,11 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           { mesh: gen1Mesh, localPos: gen1Pos, hp: 16, maxHp: 16, destroyed: false },
           { mesh: gen2Mesh, localPos: gen2Pos, hp: 16, maxHp: 16, destroyed: false }
         ],
-        pos: new THREE.Vector3(0, 24, -420),
+        pos: new THREE.Vector3(0, 3.5, -340),
         shootCooldown: 1.2,
         squadCooldown: 16.0,
         bombardCooldown: 5.5,
+        zoneCooldown: 10.0,
         destroyed: false
       };
     };
@@ -702,6 +731,14 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         playerStunDuration = 3.5;
         setPlayerStunned(true);
         shakeIntensity = 1.2;
+        if (!godModeRef.current) {
+          currentHp = Math.max(0, currentHp - 8);
+          setHp(currentHp);
+          if (currentHp <= 0) {
+            setCurtainVisible(true);
+            setTimeout(() => onExit(), 500);
+          }
+        }
       } else {
         const roll = Math.random();
         if (roll < 0.15 && enemies.length > 0) {
@@ -718,6 +755,14 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           playerStunDuration = 3.5;
           setPlayerStunned(true);
           shakeIntensity = 1.2;
+          if (!godModeRef.current) {
+            currentHp = Math.max(0, currentHp - 8);
+            setHp(currentHp);
+            if (currentHp <= 0) {
+              setCurtainVisible(true);
+              setTimeout(() => onExit(), 500);
+            }
+          }
         }
       }
 
@@ -913,6 +958,8 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           shipPos.set(0, -1.2, 0);
           playerShip.position.copy(shipPos);
           camera.position.copy(cameraBase);
+
+          setBossActive(true);
         }
 
         renderer.render(scene, camera);
@@ -1135,6 +1182,62 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         bossData.pos.z = THREE.MathUtils.lerp(bossData.pos.z, shipPos.z - 360, dt * 5.0);
         bossData.group.position.copy(bossData.pos);
 
+        const activeGenHp = bossData.generators.reduce((acc, g) => acc + (g.destroyed ? 0 : g.hp), 0);
+        const totalGenHp = bossData.generators.reduce((acc, g) => acc + g.maxHp, 0);
+        setBossHpPercent(Math.floor((activeGenHp / totalGenHp) * 100));
+
+        bossData.zoneCooldown -= dt;
+        if (bossData.zoneCooldown <= 0 && !zoneAttack.active) {
+          bossData.zoneCooldown = 12.0 + Math.random() * 3.0;
+          const centerLane = (Math.random() - 0.5) * 12;
+          const widthZone = 8.5;
+          zoneAttack.active = true;
+          zoneAttack.timer = 0;
+          zoneAttack.duration = 1.6;
+          zoneAttack.xMin = centerLane - widthZone / 2;
+          zoneAttack.xMax = centerLane + widthZone / 2;
+          zoneAttack.fired = false;
+
+          const screenAspect = window.innerWidth / window.innerHeight;
+          const currentXRange = Math.max(5.2, Math.min(16.0, 10.0 * screenAspect * 1.05));
+          const leftNorm = (zoneAttack.xMin + currentXRange) / (currentXRange * 2);
+          const widthNorm = widthZone / (currentXRange * 2);
+
+          setZoneAttackUi({
+            visible: true,
+            leftPct: Math.max(0, Math.min(100, leftNorm * 100)),
+            widthPct: Math.max(5, Math.min(100, widthNorm * 100)),
+            firing: false
+          });
+        }
+
+        if (zoneAttack.active) {
+          zoneAttack.timer += dt;
+          if (zoneAttack.timer >= zoneAttack.duration && !zoneAttack.fired) {
+            zoneAttack.fired = true;
+            setZoneAttackUi((prev) => ({ ...prev, firing: true }));
+            shakeIntensity = Math.max(shakeIntensity, 0.85);
+
+            if (shipPos.x >= zoneAttack.xMin && shipPos.x <= zoneAttack.xMax) {
+              if (godModeRef.current) {
+                spawnShieldImpact(shipPos);
+              } else {
+                currentHp = Math.max(0, currentHp - 18);
+                setHp(currentHp);
+                if (currentHp <= 0) {
+                  setCurtainVisible(true);
+                  setTimeout(() => onExit(), 500);
+                }
+              }
+            }
+
+            setTimeout(() => {
+              zoneAttack.active = false;
+              setZoneAttackUi((prev) => ({ ...prev, visible: false, firing: false }));
+            }, 300);
+          }
+        }
+
         bossData.shootCooldown -= dt;
         if (bossData.shootCooldown <= 0) {
           bossData.shootCooldown = 1.4;
@@ -1155,7 +1258,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
         bossData.squadCooldown -= dt;
         if (bossData.squadCooldown <= 0) {
-          bossData.squadCooldown = 15.0 + Math.random() * 5.0;
+          bossData.squadCooldown = 16.0 + Math.random() * 4.0;
           const squadCount = Math.min(6, 4 + Math.floor(Math.random() * 3));
           for (let k = 0; k < squadCount; k++) {
             setTimeout(() => {
@@ -1758,6 +1861,42 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           border-color: #ff3838;
           background: #ff3838;
         }
+        .tfu-boss-hp-container {
+          position: absolute;
+          top: 14px;
+          left: 50%;
+          transform: translateX(-50%);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 3px;
+        }
+        .tfu-boss-hp-label {
+          font-family: Arial, sans-serif;
+          font-size: 10px;
+          font-weight: 900;
+          letter-spacing: 2px;
+          color: #f1c40f;
+          text-shadow: 0 1px 3px #000;
+        }
+        .tfu-boss-hp-frame {
+          width: min(260px, 40vw);
+          height: 13px;
+          background-color: rgba(60, 50, 5, 0.75);
+          border: 1px solid #f1c40f;
+          box-shadow: 0 0 0 1px #000;
+          padding: 1px;
+          clip-path: polygon(8px 0%, calc(100% - 8px) 0%, 100% 100%, 0% 100%);
+          position: relative;
+        }
+        .tfu-boss-hp-fill {
+          height: 100%;
+          background: 
+            repeating-linear-gradient(0deg, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.3) 1px, transparent 1px, transparent 2px),
+            linear-gradient(180deg, #f39c12 0%, #f1c40f 45%, #d68910 55%, #7d6608 100%);
+          clip-path: polygon(6px 0%, calc(100% - 6px) 0%, 100% 100%, 0% 100%);
+          transition: width 0.15s ease-out;
+        }
         .tfu-pause-btn {
           position: absolute;
           top: 12px;
@@ -1837,6 +1976,26 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           width: 32px;
           height: 32px;
           fill: #ffffff;
+        }
+        .zone-attack-indicator {
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          background: rgba(255, 30, 30, 0.22);
+          border-left: 2px dashed rgba(255, 80, 80, 0.6);
+          border-right: 2px dashed rgba(255, 80, 80, 0.6);
+          pointer-events: none;
+          z-index: 8;
+          animation: zoneBlink 0.22s infinite alternate;
+        }
+        .zone-attack-indicator.firing {
+          background: rgba(255, 50, 50, 0.75);
+          border: none;
+          animation: none;
+        }
+        @keyframes zoneBlink {
+          from { opacity: 0.15; }
+          to { opacity: 0.55; }
         }
         .letterbox-bar {
           position: absolute;
@@ -2021,6 +2180,16 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
       <div className={`game-curtain ${curtainVisible ? 'curtain-black' : 'curtain-clear'}`} />
 
+      {zoneAttackUi.visible && (
+        <div
+          className={`zone-attack-indicator ${zoneAttackUi.firing ? 'firing' : ''}`}
+          style={{
+            left: `${zoneAttackUi.leftPct}%`,
+            width: `${zoneAttackUi.widthPct}%`
+          }}
+        />
+      )}
+
       <div
         className={`letterbox-bar letterbox-top ${
           inBiomeTransition || isPaused || isConsoleOpen || bossCutsceneActive || bossVictoryActive ? 'letterbox-active' : ''
@@ -2110,49 +2279,58 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           </div>
         </div>
 
-        <div className="tfu-progress-tracker">
-          <div className={`tracker-node ${currentStage >= 0 ? 'active' : ''}`} />
-          <div className="tracker-line">
-            <div
-              className="tracker-line-fill"
-              style={{
-                width: `${currentStage > 0 ? 100 : currentStage === 0 ? stageProgressPercent : 0}%`
-              }}
-            />
+        {bossActive && !bossVictoryActive ? (
+          <div className="tfu-boss-hp-container">
+            <div className="tfu-boss-hp-label">ЗВЕЗДНЫЙ РАЗРУШИТЕЛЬ</div>
+            <div className="tfu-boss-hp-frame">
+              <div className="tfu-boss-hp-fill" style={{ width: `${bossHpPercent}%` }} />
+            </div>
           </div>
+        ) : (
+          <div className="tfu-progress-tracker">
+            <div className={`tracker-node ${currentStage >= 0 ? 'active' : ''}`} />
+            <div className="tracker-line">
+              <div
+                className="tracker-line-fill"
+                style={{
+                  width: `${currentStage > 0 ? 100 : currentStage === 0 ? stageProgressPercent : 0}%`
+                }}
+              />
+            </div>
 
-          <div className={`tracker-node ${currentStage >= 1 ? 'active' : ''}`} />
-          <div className="tracker-line">
-            <div
-              className="tracker-line-fill"
-              style={{
-                width: `${currentStage > 1 ? 100 : currentStage === 1 ? stageProgressPercent : 0}%`
-              }}
-            />
+            <div className={`tracker-node ${currentStage >= 1 ? 'active' : ''}`} />
+            <div className="tracker-line">
+              <div
+                className="tracker-line-fill"
+                style={{
+                  width: `${currentStage > 1 ? 100 : currentStage === 1 ? stageProgressPercent : 0}%`
+                }}
+              />
+            </div>
+
+            <div className={`tracker-node ${currentStage >= 2 ? 'active' : ''}`} />
+            <div className="tracker-line">
+              <div
+                className="tracker-line-fill"
+                style={{
+                  width: `${currentStage > 2 ? 100 : currentStage === 2 ? stageProgressPercent : 0}%`
+                }}
+              />
+            </div>
+
+            <div className={`tracker-node ${currentStage >= 3 ? 'active' : ''}`} />
+            <div className="tracker-line">
+              <div
+                className="tracker-line-fill"
+                style={{
+                  width: `${currentStage > 3 ? 100 : currentStage === 3 ? stageProgressPercent : 0}%`
+                }}
+              />
+            </div>
+
+            <div className={`tracker-boss ${currentStage >= 4 ? 'active' : ''}`} />
           </div>
-
-          <div className={`tracker-node ${currentStage >= 2 ? 'active' : ''}`} />
-          <div className="tracker-line">
-            <div
-              className="tracker-line-fill"
-              style={{
-                width: `${currentStage > 2 ? 100 : currentStage === 2 ? stageProgressPercent : 0}%`
-              }}
-            />
-          </div>
-
-          <div className={`tracker-node ${currentStage >= 3 ? 'active' : ''}`} />
-          <div className="tracker-line">
-            <div
-              className="tracker-line-fill"
-              style={{
-                width: `${currentStage > 3 ? 100 : currentStage === 3 ? stageProgressPercent : 0}%`
-              }}
-            />
-          </div>
-
-          <div className={`tracker-boss ${currentStage >= 4 ? 'active' : ''}`} />
-        </div>
+        )}
 
         <button type="button" className="tfu-pause-btn" onClick={handleTogglePause}>
           <svg viewBox="0 0 24 24">
