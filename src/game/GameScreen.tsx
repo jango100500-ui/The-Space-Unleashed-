@@ -28,12 +28,26 @@ interface Laser {
   isEnemy: boolean;
 }
 
-interface GifExplosion {
-  id: number;
-  x: number;
-  y: number;
-  size: number;
-  rotation: number;
+interface ExplosionPart {
+  mesh: THREE.Mesh;
+  vel: THREE.Vector3;
+  life: number;
+  maxLife: number;
+  spin: THREE.Vector3;
+}
+
+interface ShockwaveRing {
+  mesh: THREE.Mesh;
+  life: number;
+  maxLife: number;
+  scaleSpeed: number;
+}
+
+interface FlashCore {
+  mesh: THREE.Mesh;
+  light: THREE.PointLight;
+  life: number;
+  maxLife: number;
 }
 
 interface PlanetItem {
@@ -109,13 +123,18 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
   const [inBiomeTransition, setInBiomeTransition] = useState<boolean>(false);
   const [biomeTitle, setBiomeTitle] = useState<string>('');
-  const [gifExplosions, setGifExplosions] = useState<GifExplosion[]>([]);
+  const [isPaused, setIsPaused] = useState<boolean>(false);
 
+  const isPausedRef = useRef<boolean>(false);
   const inputRef = useRef<{ x: number; y: number; fire: boolean }>({ x: 0, y: 0, fire: false });
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   const stickTouchId = useRef<number | null>(null);
   const stickCenter = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
 
   useEffect(() => {
     try {
@@ -127,7 +146,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
   }, []);
 
   const playTone = (freq: number, endFreq: number, dur: number, vol = 0.15, type: OscillatorType = 'sawtooth') => {
-    if (!audioCtxRef.current) return;
+    if (!audioCtxRef.current || isPausedRef.current) return;
     try {
       if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
       const t = audioCtxRef.current.currentTime;
@@ -256,9 +275,6 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       planetMeshes.push(planet);
     };
 
-    const firstPlanet = availablePlanets[Math.floor(Math.random() * availablePlanets.length)];
-    spawnPlanet(firstPlanet);
-
     const defaultShipPos = new THREE.Vector3(0, -1.2, 0);
     const shipPos = defaultShipPos.clone();
     let shipVx = 0;
@@ -280,7 +296,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     crosshairTex.position.set(0, 0, -50);
     scene.add(crosshairTex);
 
-    const redLaserGeo = new THREE.CylinderGeometry(0.045, 0.045, 2.6, 4);
+    const redLaserGeo = new THREE.CylinderGeometry(0.045, 0.045, 3.2, 4);
     redLaserGeo.rotateX(Math.PI / 2);
     const redLaserMat = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
 
@@ -288,8 +304,67 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     greenLaserGeo.rotateX(Math.PI / 2);
     const greenLaserMat = new THREE.MeshBasicMaterial({ color: 0x22ff44 });
 
+    const flashCoreGeo = new THREE.IcosahedronGeometry(1.8, 1);
+    const flashCoreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+    const shockRingGeo = new THREE.RingGeometry(0.5, 1.4, 18);
+    const shockRingMat = new THREE.MeshBasicMaterial({ color: 0xff8822, side: THREE.DoubleSide, transparent: true, opacity: 0.95 });
+
+    const debrisPieceGeo = new THREE.DodecahedronGeometry(0.65, 0);
+    const debrisMats = [
+      new THREE.MeshBasicMaterial({ color: 0xffdd44 }),
+      new THREE.MeshBasicMaterial({ color: 0xff5522 }),
+      new THREE.MeshBasicMaterial({ color: 0xd32f2f }),
+      new THREE.MeshBasicMaterial({ color: 0x8a9ba8 })
+    ];
+
     const lasers: Laser[] = [];
     const enemies: Enemy[] = [];
+    const debrisList: ExplosionPart[] = [];
+    const shockwaves: ShockwaveRing[] = [];
+    const flashCores: FlashCore[] = [];
+
+    const spawnRetroExplosion = (pos: THREE.Vector3) => {
+      const flashMesh = new THREE.Mesh(flashCoreGeo, flashCoreMat);
+      flashMesh.position.copy(pos);
+      flashMesh.scale.setScalar(2.2);
+      scene.add(flashMesh);
+
+      const expLight = new THREE.PointLight(0xff6622, 6.0, 65);
+      expLight.position.copy(pos);
+      scene.add(expLight);
+
+      flashCores.push({ mesh: flashMesh, light: expLight, life: 0.14, maxLife: 0.14 });
+
+      const ringMesh = new THREE.Mesh(shockRingGeo, shockRingMat.clone());
+      ringMesh.position.copy(pos);
+      ringMesh.rotation.set((Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8, Math.random() * Math.PI);
+      scene.add(ringMesh);
+      shockwaves.push({ mesh: ringMesh, life: 0.42, maxLife: 0.42, scaleSpeed: 32.0 });
+
+      const debrisCount = 22;
+      for (let i = 0; i < debrisCount; i++) {
+        const mat = debrisMats[i % debrisMats.length];
+        const dMesh = new THREE.Mesh(debrisPieceGeo, mat);
+        dMesh.position.copy(pos);
+        dMesh.scale.setScalar(0.7 + Math.random() * 1.1);
+
+        const vel = new THREE.Vector3(
+          (Math.random() - 0.5) * 75,
+          (Math.random() - 0.5) * 75,
+          (Math.random() - 0.5) * 75
+        );
+
+        const spin = new THREE.Vector3(
+          (Math.random() - 0.5) * 12,
+          (Math.random() - 0.5) * 12,
+          (Math.random() - 0.5) * 12
+        );
+
+        scene.add(dMesh);
+        debrisList.push({ mesh: dMesh, vel, life: 0.75, maxLife: 0.75, spin });
+      }
+    };
 
     const spawnEnemy = (forcedSide?: number) => {
       const side = forcedSide !== undefined ? forcedSide : (Math.random() > 0.5 ? 1 : -1);
@@ -332,6 +407,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     let biomeInterval = 65 + Math.random() * 10;
     let isTransitionActive = false;
     let transitionDuration = 0;
+    let biomeCycleCount = 0;
 
     setTimeout(() => {
       if (!isDisposed) setCurtainVisible(false);
@@ -339,38 +415,35 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
     let lastTime = performance.now();
 
-    const triggerGifExplosion = (worldPos: THREE.Vector3) => {
-      const p = worldPos.clone().project(camera);
-      const screenX = (p.x * 0.5 + 0.5) * window.innerWidth;
-      const screenY = (-p.y * 0.5 + 0.5) * window.innerHeight;
-      const dist = Math.max(10, worldPos.distanceTo(camera.position));
-      const size = Math.max(90, Math.min(280, (900 / dist) * 12));
-      const rotation = Math.floor(Math.random() * 360);
-      const id = Date.now() + Math.random();
-
-      setGifExplosions((prev) => [...prev, { id, x: screenX, y: screenY, size, rotation }]);
-
-      setTimeout(() => {
-        setGifExplosions((prev) => prev.filter((exp) => exp.id !== id));
-      }, 750);
-    };
-
     const gameLoop = (timestamp: number) => {
       if (isDisposed) return;
 
-      const dt = Math.min((timestamp - lastTime) / 1000, 0.045);
+      const realDt = Math.min((timestamp - lastTime) / 1000, 0.045);
       lastTime = timestamp;
+
+      if (isPausedRef.current) {
+        renderer.render(scene, camera);
+        animId = requestAnimationFrame(gameLoop);
+        return;
+      }
+
+      const dt = realDt;
 
       biomeTimer += dt;
       if (!isTransitionActive && biomeTimer >= biomeInterval) {
         isTransitionActive = true;
         transitionDuration = 0;
+        biomeCycleCount++;
 
-        const nextPlanet = availablePlanets[Math.floor(Math.random() * availablePlanets.length)];
-        setBiomeTitle(`СИСТЕМА ${nextPlanet.name.toUpperCase()}`);
+        if (biomeCycleCount % 2 === 1) {
+          setBiomeTitle('ГЛУБОКИЙ КОСМОС');
+        } else {
+          const nextPlanet = availablePlanets[Math.floor(Math.random() * availablePlanets.length)];
+          setBiomeTitle(`СИСТЕМА ${nextPlanet.name.toUpperCase()}`);
+          spawnPlanet(nextPlanet);
+        }
+
         setInBiomeTransition(true);
-
-        spawnPlanet(nextPlanet);
       }
 
       if (isTransitionActive) {
@@ -494,13 +567,13 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         lMesh1.position.copy(leftPos);
         lMesh1.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), leftDir);
         scene.add(lMesh1);
-        lasers.push({ mesh: lMesh1, vel: leftDir.multiplyScalar(320), life: 1.2, isEnemy: false });
+        lasers.push({ mesh: lMesh1, vel: leftDir.multiplyScalar(640), life: 1.0, isEnemy: false });
 
         const lMesh2 = new THREE.Mesh(redLaserGeo, redLaserMat);
         lMesh2.position.copy(rightPos);
         lMesh2.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), rightDir);
         scene.add(lMesh2);
-        lasers.push({ mesh: lMesh2, vel: rightDir.multiplyScalar(320), life: 1.2, isEnemy: false });
+        lasers.push({ mesh: lMesh2, vel: rightDir.multiplyScalar(640), life: 1.0, isEnemy: false });
 
         playTone(920, 260, 0.075, 0.12, 'sawtooth');
       }
@@ -620,8 +693,9 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
               playTone(300, 150, 0.08, 0.15, 'sawtooth');
 
               if (e.hp <= 0) {
-                triggerGifExplosion(e.pos);
-                playTone(180, 40, 0.3, 0.25, 'sawtooth');
+                spawnRetroExplosion(e.pos);
+                shakeIntensity = Math.max(shakeIntensity, 0.8);
+                playTone(140, 30, 0.45, 0.35, 'sawtooth');
                 scene.remove(e.mesh);
                 enemies.splice(j, 1);
               }
@@ -633,6 +707,47 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         if (l.life <= 0) {
           scene.remove(l.mesh);
           lasers.splice(i, 1);
+        }
+      }
+
+      for (let i = flashCores.length - 1; i >= 0; i--) {
+        const f = flashCores[i];
+        f.life -= dt;
+        const progress = 1 - f.life / f.maxLife;
+        f.mesh.scale.setScalar(2.2 + progress * 3.5);
+        f.light.intensity = (f.life / f.maxLife) * 6.0;
+        if (f.life <= 0) {
+          scene.remove(f.mesh);
+          scene.remove(f.light);
+          flashCores.splice(i, 1);
+        }
+      }
+
+      for (let i = shockwaves.length - 1; i >= 0; i--) {
+        const s = shockwaves[i];
+        s.life -= dt;
+        const progress = 1 - s.life / s.maxLife;
+        s.mesh.scale.setScalar(1.0 + progress * s.scaleSpeed);
+        (s.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, (s.life / s.maxLife) * 0.95);
+        if (s.life <= 0) {
+          scene.remove(s.mesh);
+          shockwaves.splice(i, 1);
+        }
+      }
+
+      for (let i = debrisList.length - 1; i >= 0; i--) {
+        const d = debrisList[i];
+        d.life -= dt;
+        d.mesh.position.addScaledVector(d.vel, dt);
+        d.vel.multiplyScalar(1 - 2.2 * dt);
+        d.mesh.rotation.x += d.spin.x * dt;
+        d.mesh.rotation.y += d.spin.y * dt;
+        d.mesh.rotation.z += d.spin.z * dt;
+        const scaleProgress = Math.max(0, d.life / d.maxLife);
+        d.mesh.scale.setScalar(scaleProgress);
+        if (d.life <= 0) {
+          scene.remove(d.mesh);
+          debrisList.splice(i, 1);
         }
       }
 
@@ -671,6 +786,12 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       lasers.forEach((l) => scene.remove(l.mesh));
       enemies.forEach((e) => scene.remove(e.mesh));
       planetMeshes.forEach((pl) => scene.remove(pl));
+      debrisList.forEach((d) => scene.remove(d.mesh));
+      shockwaves.forEach((s) => scene.remove(s.mesh));
+      flashCores.forEach((f) => {
+        scene.remove(f.mesh);
+        scene.remove(f.light);
+      });
       if (renderer.domElement && renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
@@ -679,7 +800,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
   }, [models, onExit]);
 
   const handleStickPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (inBiomeTransition) return;
+    if (inBiomeTransition || isPaused) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     stickTouchId.current = e.pointerId;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -689,7 +810,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
   };
 
   const handleStickMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (inBiomeTransition || stickTouchId.current !== e.pointerId) return;
+    if (inBiomeTransition || isPaused || stickTouchId.current !== e.pointerId) return;
     const dx = e.clientX - stickCenter.current.x;
     const dy = e.clientY - stickCenter.current.y;
     const maxRadius = 55;
@@ -712,6 +833,22 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     setJoystickOffset({ x: 0, y: 0 });
     inputRef.current.x = 0;
     inputRef.current.y = 0;
+  };
+
+  const handleTogglePause = () => {
+    setIsFiring(false);
+    setIsPaused((prev) => !prev);
+  };
+
+  const handleResume = () => {
+    setIsPaused(false);
+  };
+
+  const handleQuit = () => {
+    setCurtainVisible(true);
+    setTimeout(() => {
+      onExit();
+    }, 450);
   };
 
   return (
@@ -773,6 +910,30 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
             linear-gradient(180deg, #d31820 0%, #ff3b30 45%, #b50e17 55%, #66050b 100%);
           clip-path: polygon(6px 0%, calc(100% - 6px) 0%, 100% 100%, 0% 100%);
           transition: width 0.15s ease-out;
+        }
+        .tfu-pause-btn {
+          position: absolute;
+          top: 12px;
+          right: 18px;
+          background: linear-gradient(180deg, #3d586e 0%, #15202b 100%);
+          border: 1px solid #6e8fa8;
+          color: #8faec4;
+          padding: 4px 22px;
+          clip-path: polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          height: 28px;
+          pointer-events: auto;
+        }
+        .tfu-pause-btn:active {
+          filter: brightness(1.2);
+        }
+        .tfu-pause-btn svg {
+          width: 14px;
+          height: 14px;
+          fill: currentColor;
         }
         .tfu-joystick-zone {
           position: absolute;
@@ -853,7 +1014,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         }
         .letterbox-active.letterbox-top,
         .letterbox-active.letterbox-bottom {
-          height: 16%;
+          height: 18%;
         }
         .biome-banner {
           position: absolute;
@@ -877,46 +1038,99 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           color: #ffffff;
           text-transform: uppercase;
         }
-        .gif-explosion {
+        .pause-overlay {
           position: absolute;
-          pointer-events: none;
-          z-index: 25;
-          object-fit: contain;
+          inset: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 18px;
+          z-index: 46;
+          pointer-events: auto;
+        }
+        .pause-title {
+          font-family: Arial, sans-serif;
+          font-size: clamp(22px, 4.5vw, 32px);
+          font-weight: 900;
+          letter-spacing: 5px;
+          color: #ffffff;
+          text-transform: uppercase;
+        }
+        .pause-menu-list {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          width: min(340px, 75vw);
+        }
+        .pause-button {
+          width: 100%;
+          height: 38px;
+          border-radius: 3px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+          font-weight: 900;
+          letter-spacing: 2px;
+          text-transform: uppercase;
+        }
+        .pause-btn-primary {
+          border: 2px solid #e2e8f0;
+          box-shadow: 0 0 0 1px #200000, 0 4px 10px rgba(0, 0, 0, 0.9);
+          background: 
+            repeating-linear-gradient(0deg, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.3) 1px, transparent 1px, transparent 2px),
+            linear-gradient(180deg, #d31820 0%, #ff3b30 45%, #b50e17 55%, #66050b 100%);
+          color: #ffffff;
+        }
+        .pause-btn-secondary {
+          border: 2px solid #b2c2d4;
+          box-shadow: 0 0 0 1px #111a24, 0 3px 8px rgba(0, 0, 0, 0.75);
+          background: 
+            repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 2px),
+            linear-gradient(180deg, #e4edf7 0%, #bdcfdf 45%, #768a9f 50%, #44566b 52%, #8ba0b7 100%);
+          color: #0b141e;
         }
       `}</style>
 
       <div className={`game-curtain ${curtainVisible ? 'curtain-black' : 'curtain-clear'}`} />
 
-      {gifExplosions.map((exp) => (
-        <img
-          key={exp.id}
-          src={`/mocs/explode.gif?t=${exp.id}`}
-          alt="Explosion"
-          className="gif-explosion"
-          style={{
-            left: `${exp.x}px`,
-            top: `${exp.y}px`,
-            width: `${exp.size}px`,
-            height: `${exp.size}px`,
-            transform: `translate(-50%, -50%) rotate(${exp.rotation}deg)`
-          }}
-        />
-      ))}
+      <div className={`letterbox-bar letterbox-top ${inBiomeTransition || isPaused ? 'letterbox-active' : ''}`} />
+      <div className={`letterbox-bar letterbox-bottom ${inBiomeTransition || isPaused ? 'letterbox-active' : ''}`} />
 
-      <div className={`letterbox-bar letterbox-top ${inBiomeTransition ? 'letterbox-active' : ''}`} />
-      <div className={`letterbox-bar letterbox-bottom ${inBiomeTransition ? 'letterbox-active' : ''}`} />
-
-      <div className={`biome-banner ${inBiomeTransition ? 'show-banner' : ''}`}>
+      <div className={`biome-banner ${inBiomeTransition && !isPaused ? 'show-banner' : ''}`}>
         <div className="biome-text">{biomeTitle}</div>
       </div>
 
-      <div className={`tfu-hud ${inBiomeTransition ? 'hidden-hud' : ''}`}>
+      {isPaused && (
+        <div className="pause-overlay">
+          <div className="pause-title">ИГРА НА ПАУЗЕ</div>
+          <div className="pause-menu-list">
+            <button type="button" className="pause-button pause-btn-primary" onClick={handleResume}>
+              ПРОДОЛЖИТЬ
+            </button>
+            <button type="button" className="pause-button pause-btn-secondary" onClick={handleQuit}>
+              ВЫЙТИ
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className={`tfu-hud ${inBiomeTransition || isPaused ? 'hidden-hud' : ''}`}>
         <div className="tfu-hp-container">
           <div className="tfu-hp-label">HULL INTEGRITY</div>
           <div className="tfu-hp-frame">
             <div className="tfu-hp-fill" style={{ width: `${hp}%` }} />
           </div>
         </div>
+
+        <button type="button" className="tfu-pause-btn" onClick={handleTogglePause}>
+          <svg viewBox="0 0 24 24">
+            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+          </svg>
+        </button>
 
         <div
           className={`tfu-joystick-zone ${joystickActive ? 'active' : ''}`}
@@ -937,7 +1151,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           type="button"
           className="tfu-fire-btn"
           onPointerDown={() => {
-            if (!inBiomeTransition) setIsFiring(true);
+            if (!inBiomeTransition && !isPaused) setIsFiring(true);
           }}
           onPointerUp={() => setIsFiring(false)}
           onPointerCancel={() => setIsFiring(false)}
