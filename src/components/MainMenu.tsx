@@ -85,7 +85,7 @@ export default function MainMenu() {
       <div className="mm-vignette" />
 
       <div className="mm-content">
-        <img src="/tsu.png" alt="TSU" className="mm-logo" />
+        <img src="/mocs/tsu.png" alt="TSU" className="mm-logo" />
 
         <div className="mm-buttons">
           <button className="mm-btn" type="button">
