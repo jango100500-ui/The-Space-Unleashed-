@@ -45,17 +45,18 @@ interface PlanetItem {
   url: string;
 }
 
-interface ViteImportMeta {
-  glob?: (pattern: string, options?: { eager?: boolean }) => Record<string, unknown>;
-}
+const globPlanetFiles = import.meta.glob<string>(
+  ['/public/planets/*.{png,PNG,jpg,jpeg,webp}', '../../public/planets/*.{png,PNG,jpg,jpeg,webp}'],
+  { eager: true, query: '?url', import: 'default' }
+);
 
-const globFn = (import.meta as unknown as ViteImportMeta).glob;
-const planetModules = globFn ? globFn('/public/planets/*.{png,PNG}', { eager: true }) : {};
-
-const discoveredPlanets: PlanetItem[] = Object.keys(planetModules).map((fullPath) => {
-  const file = fullPath.split('/').pop() || '';
-  const name = file.replace(/\.png$/i, '');
-  return { name, url: `/planets/${file}` };
+const discoveredPlanets: PlanetItem[] = Object.entries(globPlanetFiles).map(([filePath, assetUrl]) => {
+  const file = filePath.split('/').pop() || '';
+  const name = file.replace(/\.[^/.]+$/, '');
+  return {
+    name,
+    url: typeof assetUrl === 'string' ? assetUrl : `/planets/${file}`
+  };
 });
 
 const defaultPlanets: PlanetItem[] = [
@@ -67,6 +68,40 @@ const defaultPlanets: PlanetItem[] = [
 ];
 
 const availablePlanets: PlanetItem[] = discoveredPlanets.length > 0 ? discoveredPlanets : defaultPlanets;
+
+function createProceduralPlanetTexture(name: string): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash << 5) - hash + name.charCodeAt(i);
+    hash |= 0;
+  }
+  const baseHue = Math.abs(hash % 360);
+
+  const grad = ctx.createLinearGradient(0, 0, 0, 512);
+  grad.addColorStop(0, `hsl(${baseHue}, 50%, 40%)`);
+  grad.addColorStop(0.5, `hsl(${(baseHue + 40) % 360}, 65%, 55%)`);
+  grad.addColorStop(1, `hsl(${(baseHue + 80) % 360}, 45%, 30%)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1024, 512);
+
+  for (let i = 0; i < 18; i++) {
+    const y = Math.random() * 512;
+    const h = 10 + Math.random() * 40;
+    ctx.fillStyle = `hsla(${(baseHue + i * 15) % 360}, 60%, ${30 + (i % 4) * 15}%, 0.4)`;
+    ctx.fillRect(0, y, 1024, h);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
+}
 
 export default function GameScreen({ models, onExit }: GameScreenProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -127,9 +162,9 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     const height = window.innerHeight;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x000103, 0.0007);
+    scene.fog = new THREE.FogExp2(0x000103, 0.0004);
 
-    const camera = new THREE.PerspectiveCamera(54, width / height, 0.1, 4500);
+    const camera = new THREE.PerspectiveCamera(54, width / height, 0.1, 5500);
     const cameraBase = new THREE.Vector3(0, 3.2, 13.0);
     camera.position.copy(cameraBase);
 
@@ -143,15 +178,15 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       mountRef.current.appendChild(renderer.domElement);
     }
 
-    const flatAmbient = new THREE.AmbientLight(0x404040, 2.0);
+    const flatAmbient = new THREE.AmbientLight(0x555555, 1.6);
     scene.add(flatAmbient);
 
-    const mainSun = new THREE.DirectionalLight(0xffffff, 3.5);
-    mainSun.position.set(0, 100, 45);
+    const mainSun = new THREE.DirectionalLight(0xffffff, 4.0);
+    mainSun.position.set(40, 180, 80);
     scene.add(mainSun);
 
-    const fillLight = new THREE.DirectionalLight(0x666666, 0.8);
-    fillLight.position.set(0, -50, -40);
+    const fillLight = new THREE.DirectionalLight(0x222222, 0.4);
+    fillLight.position.set(-40, -120, -50);
     scene.add(fillLight);
 
     const tuneTextures = (obj: THREE.Object3D) => {
@@ -168,12 +203,12 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       });
     };
 
-    const starCount = 2200;
+    const starCount = 2400;
     const starPos = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount * 3; i += 3) {
-      starPos[i] = (Math.random() - 0.5) * 1400;
-      starPos[i + 1] = (Math.random() - 0.5) * 900;
-      starPos[i + 2] = -Math.random() * 1800 + 20;
+      starPos[i] = (Math.random() - 0.5) * 1600;
+      starPos[i + 1] = (Math.random() - 0.5) * 1000;
+      starPos[i + 2] = -Math.random() * 2200 + 20;
     }
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
@@ -185,13 +220,16 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     const planetMeshes: THREE.Mesh[] = [];
 
     const spawnPlanet = (planetItem: PlanetItem) => {
-      const radius = 180 + Math.random() * 200;
+      const radius = 260 + Math.random() * 160;
       const geo = new THREE.SphereGeometry(radius, 64, 48);
 
       const mat = new THREE.MeshLambertMaterial({
         color: 0xffffff,
         flatShading: false
       });
+
+      const fallbackTex = createProceduralPlanetTexture(planetItem.name);
+      mat.map = fallbackTex;
 
       textureLoader.load(
         planetItem.url,
@@ -204,17 +242,19 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         },
         undefined,
         () => {
-          mat.color.setHex(0x5a6a7a);
+          mat.map = fallbackTex;
+          mat.needsUpdate = true;
         }
       );
 
       const planet = new THREE.Mesh(geo, mat);
       const side = Math.random() > 0.5 ? 1 : -1;
       planet.position.set(
-        side * (240 + Math.random() * 180),
-        -90 - Math.random() * 90,
-        -1000 - Math.random() * 400
+        side * (320 + Math.random() * 220),
+        -120 - Math.random() * 80,
+        -1300
       );
+      planet.userData = { radius, speed: 56 };
       scene.add(planet);
       planetMeshes.push(planet);
     };
@@ -333,7 +373,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     let currentHp = 100;
 
     let biomeTimer = 0;
-    let nextBiomeDelay = 35;
+    const biomeInterval = 38;
     let isTransitionActive = false;
     let transitionDuration = 0;
 
@@ -350,7 +390,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       lastTime = timestamp;
 
       biomeTimer += dt;
-      if (!isTransitionActive && biomeTimer >= nextBiomeDelay) {
+      if (!isTransitionActive && biomeTimer >= biomeInterval) {
         isTransitionActive = true;
         transitionDuration = 0;
 
@@ -366,7 +406,6 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         if (transitionDuration >= 3.0) {
           isTransitionActive = false;
           biomeTimer = 0;
-          nextBiomeDelay = 30 + Math.random() * 15;
           setInBiomeTransition(false);
         }
       }
@@ -376,18 +415,19 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         const idx = k * 3 + 2;
         starPos[idx] += activeSpeed * dt;
         if (starPos[idx] > camera.position.z + 10) {
-          starPos[idx] = -1400;
-          starPos[k * 3] = (Math.random() - 0.5) * 1200;
-          starPos[k * 3 + 1] = (Math.random() - 0.5) * 800;
+          starPos[idx] = -1600;
+          starPos[k * 3] = (Math.random() - 0.5) * 1400;
+          starPos[k * 3 + 1] = (Math.random() - 0.5) * 900;
         }
       }
       starGeo.attributes.position.needsUpdate = true;
 
       for (let i = planetMeshes.length - 1; i >= 0; i--) {
         const pl = planetMeshes[i];
-        pl.position.z += 10 * dt;
+        const pSpeed = pl.userData.speed || 56;
+        pl.position.z += pSpeed * dt;
         pl.rotation.y += 0.001 * dt;
-        if (pl.position.z > camera.position.z + 300) {
+        if (pl.position.z > camera.position.z + pl.userData.radius + 60) {
           scene.remove(pl);
           pl.geometry.dispose();
           planetMeshes.splice(i, 1);
@@ -425,17 +465,44 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.32, 1 - Math.exp(-6.0 * dt));
       camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.32, 1 - Math.exp(-6.0 * dt));
 
+      const lockRadius = 85;
+      let lockedEnemy: Enemy | null = null;
+      let minLockDist = lockRadius;
+
+      for (const e of enemies) {
+        if (e.state === 'attacking' && e.pos.z < shipPos.z - 6) {
+          const d = e.pos.distanceTo(shipPos);
+          if (d < minLockDist) {
+            minLockDist = d;
+            lockedEnemy = e;
+          }
+        }
+      }
+
       const shipForward = new THREE.Vector3(0, 0, -1).applyEuler(playerShip.rotation).normalize();
-      const aimDistance = 140;
-      const bulletAimTarget = shipPos.clone().addScaledVector(shipForward, aimDistance);
+      const defaultAimDistance = 140;
+      let bulletAimTarget = shipPos.clone().addScaledVector(shipForward, defaultAimDistance);
 
-      const crossZ = -50;
-      const crossT = (crossZ - shipPos.z) / (bulletAimTarget.z - shipPos.z);
-      const crossX = shipPos.x + (bulletAimTarget.x - shipPos.x) * crossT;
-      const crossY = shipPos.y + (bulletAimTarget.y - shipPos.y) * crossT;
+      if (lockedEnemy) {
+        bulletAimTarget.copy(lockedEnemy.pos);
+        const crossZ = -50;
+        const crossT = (crossZ - camera.position.z) / (lockedEnemy.pos.z - camera.position.z);
+        const lockX = camera.position.x + (lockedEnemy.pos.x - camera.position.x) * crossT;
+        const lockY = camera.position.y + (lockedEnemy.pos.y - camera.position.y) * crossT;
 
-      crosshairTex.position.set(crossX, crossY, crossZ);
-      (crosshairTex.material as THREE.MeshBasicMaterial).color.setHex(0x64b5f6);
+        crosshairTex.position.set(lockX, lockY, crossZ);
+        (crosshairTex.material as THREE.MeshBasicMaterial).color.setHex(0xff3838);
+        crosshairTex.scale.setScalar(0.72);
+      } else {
+        const crossZ = -50;
+        const crossT = (crossZ - shipPos.z) / (bulletAimTarget.z - shipPos.z);
+        const crossX = shipPos.x + (bulletAimTarget.x - shipPos.x) * crossT;
+        const crossY = shipPos.y + (bulletAimTarget.y - shipPos.y) * crossT;
+
+        crosshairTex.position.set(crossX, crossY, crossZ);
+        (crosshairTex.material as THREE.MeshBasicMaterial).color.setHex(0x64b5f6);
+        crosshairTex.scale.setScalar(1.0);
+      }
 
       fireCooldown -= dt;
 
@@ -856,7 +923,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         }
         .biome-text {
           font-family: Arial, sans-serif;
-          font-size: clamp(20px, 4vw, 32px);
+          font-size: clamp(20px, 4vw, 30px);
           font-weight: 800;
           letter-spacing: 6px;
           color: #ffffff;
