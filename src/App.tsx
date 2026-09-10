@@ -8,6 +8,7 @@ import GameScreen from './game/GameScreen.tsx';
 export interface PreloadedModels {
   xwing: THREE.Group;
   tie: THREE.Group;
+  destroyer: THREE.Group;
 }
 
 export default function App() {
