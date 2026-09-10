@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>STAR WARS: ROGUE RUNNER // TFU EDITION</title>
+<style>
+:root{
+  --hud-bg:#0e1319d6;
+  --hud-border:#425261;
+  --hud-bevel:#788f9f;
+  --text-main:#e3ecf5;
+  --text-dim:#7e93a6;
+  --hull-green:#2ecc71;
+  --shield-blue:#00a8ff;
+  --laser-red:#ff3838;
+  --imp-red:#e84118;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{
+  margin:0;width:100%;height:100%;overflow:hidden;background:#03060a;
+  color:var(--text-main);font-family:"Trebuchet MS",Impact,Arial,sans-serif;
+  touch-action:none;overscroll-behavior:none;
+}
+#app{position:relative;width:100%;height:100%;overflow:hidden}
+#world{width:100%;height:100%;display:block}
+
+/* РЕТРО-ФИЛЬТР В СТИЛЕ 2000-Х */
+#vignette{
+  position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse at center,transparent 45%,rgba(2,5,10,0.85) 100%);
+}
+#scanlines{
+  position:absolute;inset:0;pointer-events:none;opacity:0.18;
+  background:repeating-linear-gradient(0deg,transparent 0px,transparent 2px,#000 3px);
+}
+#hitFlash{
+  position:absolute;inset:0;pointer-events:none;opacity:0;
+  background:radial-gradient(ellipse,rgba(255,40,40,0.4) 0%,rgba(0,0,0,0.8) 100%);
+  transition:opacity 0.08s ease-out;
+}
+
+/* ГЛАВНОЕ МЕНЮ */
+#menuOverlay{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  justify-content:space-between;padding:30px;pointer-events:none;
+}
+.menu-interactive{pointer-events:auto}
+.game-title{
+  text-shadow:0 4px 15px rgba(0,0,0,0.9);
+  border-left:5px solid var(--laser-red);
+  padding-left:15px;
+}
+.game-title h1{
+  margin:0;font-size:clamp(28px,6vw,44px);letter-spacing:4px;
+  text-transform:uppercase;color:#fff;
+}
+.game-title p{
+  margin:5px 0 0;font-size:12px;letter-spacing:2px;color:var(--text-dim);
+}
+.menu-actions{
+  display:flex;flex-direction:column;gap:12px;max-width:320px;
+}
+.btn-tfu{
+  background:linear-gradient(180deg,#243444,#141e28);
+  border:2px solid var(--hud-bevel);
+  border-bottom-color:#0b1117;
+  color:#fff;font-size:16px;font-weight:900;letter-spacing:2px;
+  padding:16px 24px;cursor:pointer;text-transform:uppercase;
+  clip-path:polygon(12px 0%, 100% 0%, calc(100% - 12px) 100%, 0% 100%);
+  box-shadow:0 8px 20px rgba(0,0,0,0.6);
+  transition:all 0.15s;
+}
+.btn-tfu:hover{filter:brightness(1.2);transform:translateX(5px)}
+.btn-tfu:active{transform:translateY(2px)}
+.btn-primary{
+  background:linear-gradient(180deg,#c0392b,#8e1b10);
+  border-color:#e74c3c;
+}
+
+/* СТРОГИЙ TFU HUD БЕЗ НЕОНА */
+#hud{position:absolute;inset:0;pointer-events:none;display:none}
+.hud-plate{
+  background:var(--hud-bg);
+  border:1px solid var(--hud-border);
+  border-top:2px solid var(--hud-bevel);
+  box-shadow:0 4px 15px rgba(0,0,0,0.7);
+}
+#playerStats{
+  position:absolute;left:20px;top:20px;width:240px;padding:12px;
+  clip-path:polygon(0 0, 100% 0, 88% 100%, 0 100%);
+}
+.stat-row{margin-bottom:8px}
+.stat-row:last-child{margin-bottom:0}
+.stat-label{
+  display:flex;justify-content:space-between;font-size:10px;
+  font-weight:bold;letter-spacing:1.5px;margin-bottom:3px;
+}
+.bar-frame{
+  height:9px;background:#080c10;border:1px solid #232c35;
+  padding:1px;position:relative;
+}
+.bar-fill{height:100%;transition:width 0.1s ease-out}
+#hullFill{background:linear-gradient(90deg,#1b7e42,var(--hull-green));width:100%}
+#shieldFill{background:linear-gradient(90deg,#005b8a,var(--shield-blue));width:100%}
+
+#flightTelemetry{
+  position:absolute;right:20px;top:20px;padding:10px 16px;text-align:right;
+  font-family:monospace;font-size:14px;
+}
+#biomeBadge{font-size:10px;color:var(--text-dim);letter-spacing:2px;display:block;margin-top:4px}
+
+/* БОСС: ЗВЕЗДНЫЙ РАЗРУШИТЕЛЬ */
+#bossPlate{
+  position:absolute;top:25px;left:50%;transform:translateX(-50%);
+  width:min(90%,420px);padding:10px;display:none;text-align:center;
+}
+#bossPlate span{font-size:11px;letter-spacing:2px;color:#ff7979;font-weight:bold}
+#bossBarFrame{height:8px;background:#130b0b;border:1px solid #4a1f1f;margin-top:6px;padding:1px}
+#bossFill{height:100%;background:linear-gradient(90deg,#991f1f,var(--imp-red));width:100%}
+#bossSubtext{font-size:10px;color:#bbb;margin-top:4px;letter-spacing:1px}
+
+/* ПРИЦЕЛ */
+#crosshair{
+  position:absolute;left:50%;top:48%;transform:translate(-50%,-50%);
+  width:26px;height:26px;border:1px dashed rgba(255,255,255,0.3);
+  border-radius:50%;pointer-events:none;
+}
+#crosshair::before{content:'';position:absolute;left:12px;top:4px;bottom:4px;width:2px;background:rgba(255,255,255,0.4)}
+#crosshair::after{content:'';position:absolute;top:12px;left:4px;right:4px;height:2px;background:rgba(255,255,255,0.4)}
+
+/* СООБЩЕНИЯ */
+#banner{
+  position:absolute;top:35%;width:100%;text-align:center;pointer-events:none;
+  opacity:0;transition:opacity 0.3s;
+}
+#banner.show{opacity:1}
+#banner h2{margin:0;font-size:32px;letter-spacing:4px;color:#fff;text-shadow:0 3px 15px #000}
+#banner p{margin:6px 0 0;font-size:13px;letter-spacing:2px;color:var(--text-dim)}
+
+/* ЭКРАН ЗАВЕРШЕНИЯ */
+#gameOverScreen{
+  position:absolute;inset:0;background:rgba(4,7,12,0.88);
+  display:none;align-items:center;justify-content:center;
+}
+.debrief-card{
+  width:min(90%,380px);padding:24px;border:2px solid var(--hud-border);
+  background:#0e1620;text-align:center;
+}
+
+/* МОБИЛЬНЫЙ ДЖОЙСТИК */
+#mobileControls{
+  position:absolute;bottom:20px;left:0;right:0;height:140px;pointer-events:none;
+}
+#stickZone{
+  position:absolute;left:25px;bottom:10px;width:110px;height:110px;
+  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.15);
+  border-radius:50%;pointer-events:auto;
+}
+#stickKnob{
+  position:absolute;left:35px;top:35px;width:40px;height:40px;
+  background:rgba(255,255,255,0.2);border-radius:50%;
+}
+#boostBtn{
+  position:absolute;right:25px;bottom:20px;width:70px;height:70px;
+  border-radius:50%;background:rgba(230,50,50,0.3);border:2px solid var(--laser-red);
+  color:#fff;font-weight:bold;pointer-events:auto;cursor:pointer;
+}
+
+#loaderScreen{
+  position:absolute;inset:0;background:#05080f;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;z-index:9999;
+}
+.loader-spinner{
+  width:40px;height:40px;border:3px solid #233140;border-top-color:#e74c3c;
+  border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:15px;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="world"></canvas>
+  <div id="vignette"></div>
+  <div id="scanlines"></div>
+  <div id="hitFlash"></div>
+
+  <!-- Экран начальной загрузки -->
+  <div id="loaderScreen">
+    <div class="loader-spinner"></div>
+    <div style="letter-spacing:3px;font-size:12px;color:var(--text-dim)">ПОДГОТОВКА СИСТЕМ TFU...</div>
+  </div>
+
+  <!-- Главное Меню -->
+  <div id="menuOverlay">
+    <div class="game-title">
+      <h1>Outer Rim: TFU</h1>
+      <p>ПРОТОКОЛ "ПОЛЁТ СИЛЫ" // 2008 EDITION</p>
+    </div>
+    <div class="menu-actions menu-interactive">
+      <button id="startBtn" class="btn-tfu btn-primary">Начать вылет</button>
+      <button id="hangarInfoBtn" class="btn-tfu" style="font-size:12px">Корабль: T-65B X-Wing</button>
+    </div>
+  </div>
+
+  <!-- Игровой HUD -->
+  <div id="hud">
+    <div id="playerStats" class="hud-plate">
+      <div class="stat-row">
+        <div class="stat-label"><span>ЩИТ (DEFLECTOR)</span><span id="shieldVal">100</span></div>
+        <div class="bar-frame"><div id="shieldFill" class="bar-fill"></div></div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-label"><span>КОРПУС (HULL)</span><span id="hullVal">100</span></div>
+        <div class="bar-frame"><div id="hullFill" class="bar-fill"></div></div>
+      </div>
+    </div>
+
+    <div id="flightTelemetry" class="hud-plate">
+      <div>ДИСТАНЦИЯ: <span id="distVal" style="color:#ffce54">0.0</span> КМ</div>
+      <div>СБИТО: <span id="killsVal" style="color:var(--hull-green)">0</span></div>
+      <span id="biomeBadge">ГЛУБОКИЙ СЕКТОР</span>
+    </div>
+
+    <div id="bossPlate" class="hud-plate">
+      <span id="bossName">ЗВЕЗДНЫЙ РАЗРУШИТЕЛЬ (ИМПЕРСКИЙ I)</span>
+      <div id="bossBarFrame"><div id="bossFill" class="bar-fill"></div></div>
+      <div id="bossSubtext">СБЕЙ ГЕНЕРАТОРЫ ДЕФЛЕКТОРА НА МОСТИКЕ</div>
+    </div>
+
+    <div id="crosshair"></div>
+    <div id="banner"><h2 id="bannerTitle"></h2><p id="bannerSub"></p></div>
+
+    <div id="mobileControls">
+      <div id="stickZone"><div id="stickKnob"></div></div>
+      <button id="boostBtn">ФОРСАЖ</button>
+    </div>
+  </div>
+
+  <!-- Game Over -->
+  <div id="gameOverScreen">
+    <div class="debrief-card">
+      <h2 style="margin:0 0 10px;letter-spacing:2px">СИГНАЛ ПОТЕРЯН</h2>
+      <p style="color:var(--text-dim);font-size:13px;line-height:1.6">Корабль уничтожен в секторе боевых действий.</p>
+      <div style="margin:20px 0;font-size:14px">
+        Дистанция: <b id="finalDist" style="color:#ffce54"></b> км<br>
+        Сбито СИДов: <b id="finalKills" style="color:var(--hull-green)"></b>
+      </div>
+      <button id="restartBtn" class="btn-tfu btn-primary" style="width:100%">В бой снова</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.1/examples/js/loaders/GLTFLoader.js"></script>
+
+<script>
+'use strict';
+(() => {
+const $ = id => document.getElementById(id);
+const rand = (min, max) => min + Math.random() * (max - min);
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/* НАСТРОЙКА БИОМОВ */
+const BIOMES = [
+  { name: "ГЛУБОКИЙ СЕКТОР", fog: 0x050a14, rocks: 0.2, starSpeed: 30 },
+  { name: "ПОЯС АСТЕРОИДОВ", fog: 0x120e0e, rocks: 1.2, starSpeed: 24 },
+  { name: "ИОННАЯ ТУМАННОСТЬ", fog: 0x0c071d, rocks: 0.4, starSpeed: 35 }
+];
+let currentBiome = 0;
+
+/* РЕНДЕРЕР И СЦЕНА В СТИЛЕ РЕТРО 2000-х */
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(BIOMES[0].fog, 0.0035);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ canvas: $('world'), antialias: false, powerPreference: 'high-performance' });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25)); // Легкая ретро-пикселизация
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.setClearColor(BIOMES[0].fog);
+
+// Контрастное освещение эпохи PS3/X360 (TFU)
+const sunLight = new THREE.DirectionalLight(0xfffaed, 3.2);
+sunLight.position.set(-30, 45, 20);
+scene.add(sunLight);
+
+const rimLight = new THREE.DirectionalLight(0x4080ff, 1.8);
+rimLight.position.set(30, -10, -30);
+scene.add(rimLight);
+
+const ambient = new THREE.AmbientLight(0x1a2636, 1.2);
+scene.add(ambient);
+
+/* ЗАГРУЗЧИК GLB МОДЕЛЕЙ */
+const gltfLoader = new THREE.GLTFLoader();
+const MODELS = { player: null, tie: null, destroyer: null };
+
+// Процедурные заглушки на случай, если файлы ещё не доехали
+function createBoxFallback(w, h, d, color) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.8 }));
+  const group = new THREE.Group(); group.add(mesh); return group;
+}
+
+function loadModel(url, key, fallback) {
+  return new Promise(resolve => {
+    gltfLoader.load(url, gltf => {
+      const model = gltf.scene;
+      // Оптимизация материалов под ретро-стиль
+      model.traverse(child => {
+        if (child.isMesh) {
+          child.castShadow = false;
+          child.receiveShadow = false;
+          if (child.material) {
+            child.material.roughness = 0.45; // Спекулярный блеск нулевых
+            child.material.metalness = 0.6;
+          }
+        }
+      });
+      MODELS[key] = model;
+      resolve();
+    }, undefined, () => {
+      console.warn(`Файл ${url} не найден, применен временный макет.`);
+      MODELS[key] = fallback();
+      resolve();
+    });
+  });
+}
+
+// Загрузка 3 моделей пользователя
+Promise.all([
+  loadModel('./models/x-wing.glb', 'player', () => createBoxFallback(2.5, 0.6, 3.5, 0xbdc3c7)),
+  loadModel('./models/tie.glb', 'tie', () => createBoxFallback(1.8, 1.8, 1.5, 0x475569)),
+  loadModel('./models/star-destroyer.glb', 'destroyer', () => createBoxFallback(35, 6, 60, 0x7f8c8d))
+]).then(() => {
+  $('loaderScreen').style.display = 'none';
+  initGameWorld();
+});
+
+/* ЗВЁЗДЫ И ЧАСТИЦЫ СКОРОСТИ */
+const starCount = 900, starPos = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount * 3; i += 3) {
+  starPos[i] = rand(-140, 140);
+  starPos[i+1] = rand(-90, 90);
+  starPos[i+2] = rand(-600, 30);
+}
+const starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+const starMat = new THREE.PointsMaterial({ color: 0xd6eaff, size: 0.8, transparent: true, opacity: 0.85 });
+const starPoints = new THREE.Points(starGeo, starMat);
+scene.add(starPoints);
+
+/* СОСТОЯНИЕ ИГРЫ */
+let gameState = 'MENU';
+let playerShip, playerStats = { hp: 100, maxHp: 100, shield: 100, maxShield: 100 };
+let flight = { distance: 0, kills: 0, speed: 30, boost: 1, wingTurn: 0 };
+let enemies = [], lasers = [], asteroids = [], explosions = [];
+let starDestroyerBoss = null;
+let input = { x: 0, y: 0, boost: false };
+let wingGunIndex = 0; // 0..3 для чередования огня 4 крыльев
+let timeScale = 1;
+
+function showBanner(title, sub) {
+  $('bannerTitle').textContent = title;
+  $('bannerSub').textContent = sub;
+  $('banner').classList.add('show');
+  setTimeout(() => $('banner').classList.remove('show'), 3000);
+}
+
+function initGameWorld() {
+  // Игрок
+  playerShip = MODELS.player.clone();
+  playerShip.scale.setScalar(0.7);
+  playerShip.position.set(0, -1, 0);
+  scene.add(playerShip);
+
+  // Камера в меню
+  camera.position.set(0, 3, 9);
+  camera.lookAt(0, 0, -5);
+}
+
+/* ЗАПУСК РЕЙДА */
+$('startBtn').onclick = () => {
+  gameState = 'PLAYING';
+  $('menuOverlay').style.display = 'none';
+  $('hud').style.display = 'block';
+  playerStats.hp = playerStats.maxHp;
+  playerStats.shield = playerStats.maxShield;
+  flight.distance = 0; flight.kills = 0;
+  showBanner("ВЫХОД В БОЕВОЙ СЕКТОР", "ПЕРЕХВАТ СИД-ИСТРЕБИТЕЛЕЙ");
+};
+
+$('restartBtn').onclick = () => {
+  $('gameOverScreen').style.display = 'none';
+  enemies.forEach(e => scene.remove(e.mesh)); enemies = [];
+  asteroids.forEach(a => scene.remove(a.mesh)); asteroids = [];
+  lasers.forEach(l => scene.remove(l.mesh)); lasers = [];
+  if(starDestroyerBoss) { scene.remove(starDestroyerBoss.mesh); starDestroyerBoss = null; }
+  $('startBtn').click();
+};
+
+/* СИСТЕМА СТРЕЛЬБЫ X-WING (4 ОРУДИЯ С ЧЕРЕДОВАНИЕМ) */
+const LASER_GEO = new THREE.CylinderGeometry(0.04, 0.04, 2.2, 4);
+LASER_GEO.rotateX(Math.PI / 2);
+const RED_LASER_MAT = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
+const GREEN_LASER_MAT = new THREE.MeshBasicMaterial({ color: 0x33ff44 });
+
+function firePlayerLaser() {
+  if (gameState !== 'PLAYING') return;
+  // 4 позиции пушек X-wing (крылья)
+  const wingOffsets = [
+    new THREE.Vector3(-1.4, 0.45, -0.6),
+    new THREE.Vector3(1.4, 0.45, -0.6),
+    new THREE.Vector3(-1.4, -0.35, -0.6),
+    new THREE.Vector3(1.4, -0.35, -0.6)
+  ];
+  const offset = wingOffsets[wingGunIndex % 4].clone().applyQuaternion(playerShip.quaternion);
+  wingGunIndex++;
+
+  const laser = new THREE.Mesh(LASER_GEO, RED_LASER_MAT);
+  laser.position.copy(playerShip.position).add(offset);
+  laser.quaternion.copy(playerShip.quaternion);
+  scene.add(laser);
+
+  lasers.push({ mesh: laser, isEnemy: false, speed: 180, life: 1.5 });
+}
+
+function fireEnemyLaser(pos, dir) {
+  const laser = new THREE.Mesh(LASER_GEO, GREEN_LASER_MAT);
+  laser.position.copy(pos);
+  laser.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,-1), dir);
+  scene.add(laser);
+  lasers.push({ mesh: laser, isEnemy: true, speed: 100, life: 2.2, dir });
+}
+
+/* ВЗРЫВЫ В СТИЛЕ TFU */
+function createExplosion(pos, scale = 1) {
+  const count = 16;
+  const pGeo = new THREE.BoxGeometry(0.18 * scale, 0.18 * scale, 0.18 * scale);
+  const pMat = new THREE.MeshBasicMaterial({ color: 0xffaa33 });
+  
+  for (let i = 0; i < count; i++) {
+    const mesh = new THREE.Mesh(pGeo, pMat);
+    mesh.position.copy(pos);
+    const vel = new THREE.Vector3(rand(-1,1), rand(-1,1), rand(-1,1)).normalize().multiplyScalar(rand(4, 15) * scale);
+    scene.add(mesh);
+    explosions.push({ mesh, vel, life: 0.6 });
+  }
+
+  // Ударная волна
+  const ringGeo = new THREE.RingGeometry(0.2, 0.45 * scale, 16);
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0xff8833, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.position.copy(pos);
+  ring.rotation.x = Math.PI / 2;
+  scene.add(ring);
+  explosions.push({ mesh: ring, vel: new THREE.Vector3(), life: 0.45, isRing: true, maxLife: 0.45 });
+}
+
+/* ВРАГИ: СИД-ИСТРЕБИТЕЛИ */
+function spawnTieFighter() {
+  if (starDestroyerBoss && enemies.length > 2) return;
+  const tie = MODELS.tie.clone();
+  tie.scale.setScalar(0.7);
+  tie.position.set(rand(-15, 15), rand(-6, 8), -160);
+  scene.add(tie);
+
+  enemies.push({
+    mesh: tie,
+    hp: 28,
+    speed: rand(25, 40),
+    turnBias: rand(-1, 1),
+    shootTimer: rand(1, 2.5)
+  });
+}
+
+/* АСТЕРОИДЫ */
+function spawnAsteroid() {
+  const geo = new THREE.DodecahedronGeometry(rand(1, 3.2), 0);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x5a5450, roughness: 0.9, flatShading: true });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(rand(-20, 20), rand(-10, 10), -180);
+  scene.add(mesh);
+  asteroids.push({
+    mesh,
+    rotSpeed: new THREE.Vector3(rand(-0.02, 0.02), rand(-0.02, 0.02), 0),
+    speed: flight.speed * 0.9
+  });
+}
+
+/* БОСС: ЗВЕЗДНЫЙ РАЗРУШИТЕЛЬ ВЫХОДИТ ИЗ ГИПЕРПРОСТРАНСТВА */
+function summonStarDestroyer() {
+  if (starDestroyerBoss) return;
+  showBanner("ТРЕВОГА СВЕРХДАЛЬНЕГО ОБНАРУЖЕНИЯ", "ЗВЁЗДНЫЙ РАЗРУШИТЕЛЬ ВЫХОДИТ ИЗ ГИПЕРА");
+
+  const mesh = MODELS.destroyer.clone();
+  mesh.scale.setScalar(0.85);
+  mesh.position.set(0, -6, -240); // Появляется далеко впереди
+  scene.add(mesh);
+
+  starDestroyerBoss = {
+    mesh,
+    hp: 450,
+    maxHp: 450,
+    shieldGens: 2, // 2 шара-генератора на мостике
+    state: 'ENTERING',
+    fireCooldown: 2
+  };
+  $('bossPlate').style.display = 'block';
+}
+
+/* УПРАВЛЕНИЕ */
+window.addEventListener('keydown', e => {
+  if (e.code === 'KeyA' || e.code === 'ArrowLeft') input.x = -1;
+  if (e.code === 'KeyD' || e.code === 'ArrowRight') input.x = 1;
+  if (e.code === 'KeyW' || e.code === 'ArrowUp') input.y = 1;
+  if (e.code === 'KeyS' || e.code === 'ArrowDown') input.y = -1;
+  if (e.code === 'Space') firePlayerLaser();
+  if (e.code === 'ShiftLeft') input.boost = true;
+});
+window.addEventListener('keyup', e => {
+  if (['KeyA','KeyD','ArrowLeft','ArrowRight'].includes(e.code)) input.x = 0;
+  if (['KeyW','KeyS','ArrowUp','ArrowDown'].includes(e.code)) input.y = 0;
+  if (e.code === 'ShiftLeft') input.boost = false;
+});
+
+// Сенсорный джойстик
+const knob = $('stickKnob'), zone = $('stickZone');
+let touchId = null;
+zone.addEventListener('pointerdown', e => {
+  touchId = e.pointerId;
+  zone.setPointerCapture(e.pointerId);
+});
+zone.addEventListener('pointermove', e => {
+  if (e.pointerId !== touchId) return;
+  const rect = zone.getBoundingClientRect();
+  let dx = (e.clientX - rect.left - rect.width / 2) / (rect.width / 2);
+  let dy = (e.clientY - rect.top - rect.height / 2) / (rect.height / 2);
+  input.x = clamp(dx, -1, 1);
+  input.y = -clamp(dy, -1, 1);
+  knob.style.transform = `translate(${input.x * 25}px, ${-input.y * 25}px)`;
+});
+const resetTouch = () => { touchId = null; input.x = 0; input.y = 0; knob.style.transform = 'translate(0,0)'; };
+zone.addEventListener('pointerup', resetTouch);
+zone.addEventListener('pointercancel', resetTouch);
+
+$('boostBtn').addEventListener('pointerdown', () => input.boost = true);
+$('boostBtn').addEventListener('pointerup', () => input.boost = false);
+
+// Автоматическая стрельба при зажатом клике мыши
+let autoFireTimer = 0;
+window.addEventListener('pointerdown', e => { if (e.clientY < window.innerHeight - 150) firePlayerLaser(); });
+
+/* ГЕЙМЛУП */
+let lastFrame = performance.now();
+function gameLoop(now) {
+  requestAnimationFrame(gameLoop);
+  const dt = Math.min((now - lastFrame) / 1000, 0.05);
+  lastFrame = now;
+
+  // Меню: анимация парения
+  if (gameState === 'MENU') {
+    if (playerShip) {
+      playerShip.rotation.y = Math.sin(now * 0.001) * 0.3;
+      playerShip.rotation.z = Math.cos(now * 0.0012) * 0.15;
+      playerShip.position.y = -1 + Math.sin(now * 0.002) * 0.2;
+    }
+  }
+
+  // Игра
+  if (gameState === 'PLAYING') {
+    flight.boost = input.boost ? 1.8 : 1;
+    flight.distance += (flight.speed * flight.boost * dt) * 0.02;
+    $('distVal').textContent = flight.distance.toFixed(1);
+
+    // Смена биомов каждые 4 км
+    const bIndex = Math.floor(flight.distance / 4) % BIOMES.length;
+    if (bIndex !== currentBiome) {
+      currentBiome = bIndex;
+      scene.fog.color.setHex(BIOMES[currentBiome].fog);
+      renderer.setClearColor(BIOMES[currentBiome].fog);
+      $('biomeBadge').textContent = BIOMES[currentBiome].name;
+      showBanner("СЕКТОР: " + BIOMES[currentBiome].name, "СМЕНА ЗОНЫ ОПЕРАЦИИ");
+    }
+
+    // Появление босса на 6 км дистанции
+    if (flight.distance > 6 && !starDestroyerBoss) {
+      summonStarDestroyer();
+    }
+
+    // Движение корабля игрока (TFU стиль: четкий отклик и крен)
+    const moveX = input.x * 16 * flight.boost;
+    const moveY = input.y * 12 * flight.boost;
+    playerShip.position.x = clamp(playerShip.position.x + moveX * dt, -12, 12);
+    playerShip.position.y = clamp(playerShip.position.y + moveY * dt, -5.5, 6.5);
+
+    // Крен (Roll/Pitch)
+    flight.wingTurn = lerp(flight.wingTurn, -input.x * 0.65, 0.12);
+    playerShip.rotation.z = flight.wingTurn;
+    playerShip.rotation.x = -input.y * 0.25;
+
+    // Автострельба
+    autoFireTimer += dt;
+    if (autoFireTimer > 0.16) {
+      firePlayerLaser();
+      autoFireTimer = 0;
+    }
+
+    // Камера от третьего лица с инерцией
+    camera.position.x = lerp(camera.position.x, playerShip.position.x * 0.45, 0.08);
+    camera.position.y = lerp(camera.position.y, playerShip.position.y * 0.35 + 3.2, 0.08);
+    camera.position.z = input.boost ? 8.5 : 7.5;
+    camera.lookAt(playerShip.position.x * 0.2, playerShip.position.y * 0.2, -35);
+
+    // Спавн врагов и метеоритов
+    if (Math.random() < 0.025) spawnTieFighter();
+    if (Math.random() < 0.04 * BIOMES[currentBiome].rocks) spawnAsteroid();
+
+    // Регенерация щита
+    playerStats.shield = Math.min(playerStats.maxShield, playerStats.shield + 4 * dt);
+    $('shieldFill').style.width = (playerStats.shield / playerStats.maxShield * 100) + '%';
+    $('hullFill').style.width = (playerStats.hp / playerStats.maxHp * 100) + '%';
+    $('shieldVal').textContent = Math.round(playerStats.shield);
+    $('hullVal').textContent = Math.round(playerStats.hp);
+
+    // Апдейт Босса
+    if (starDestroyerBoss) {
+      const b = starDestroyerBoss;
+      if (b.state === 'ENTERING') {
+        b.mesh.position.z = lerp(b.mesh.position.z, -95, 0.02);
+        if (b.mesh.position.z > -98) b.state = 'FIGHT';
+      } else {
+        b.fireCooldown -= dt;
+        if (b.fireCooldown <= 0) {
+          b.fireCooldown = 1.6;
+          // Залп турболазеров Разрушителя
+          for (const sx of [-6, 6]) {
+            const origin = b.mesh.position.clone().add(new THREE.Vector3(sx, 2, 20));
+            const dir = playerShip.position.clone().sub(origin).normalize();
+            fireEnemyLaser(origin, dir);
+          }
+        }
+      }
+      $('bossFill').style.width = (b.hp / b.maxHp * 100) + '%';
+    }
+
+    // Апдейт СИД-истребителей
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      e.mesh.position.z += (e.speed + flight.speed * flight.boost) * dt;
+      e.mesh.position.x += Math.sin(now * 0.003 + e.turnBias) * 6 * dt;
+      e.mesh.rotation.z = Math.sin(now * 0.003) * 0.5;
+
+      e.shootTimer -= dt;
+      if (e.shootTimer <= 0 && e.mesh.position.z < -10) {
+        e.shootTimer = 1.8;
+        const dir = playerShip.position.clone().sub(e.mesh.position).normalize();
+        fireEnemyLaser(e.mesh.position, dir);
+      }
+
+      // Таран игрока
+      if (e.mesh.position.distanceTo(playerShip.position) < 2.2) {
+        takeDamage(35);
+        createExplosion(e.mesh.position, 1.3);
+        scene.remove(e.mesh);
+        enemies.splice(i, 1);
+        continue;
+      }
+
+      // Улетел за спину
+      if (e.mesh.position.z > 20) {
+        scene.remove(e.mesh);
+        enemies.splice(i, 1);
+      }
+    }
+
+    // Апдейт астероидов
+    for (let i = asteroids.length - 1; i >= 0; i--) {
+      const a = asteroids[i];
+      a.mesh.position.z += (a.speed + flight.speed * flight.boost) * dt;
+      a.mesh.rotation.x += a.rotSpeed.x;
+      a.mesh.rotation.y += a.rotSpeed.y;
+
+      if (a.mesh.position.distanceTo(playerShip.position) < 2.5) {
+        takeDamage(40);
+        createExplosion(a.mesh.position, 1.8);
+        scene.remove(a.mesh);
+        asteroids.splice(i, 1);
+        continue;
+      }
+      if (a.mesh.position.z > 20) {
+        scene.remove(a.mesh);
+        asteroids.splice(i, 1);
+      }
+    }
+
+    // Апдейт лазеров и коллизии
+    for (let i = lasers.length - 1; i >= 0; i--) {
+      const l = lasers[i];
+      l.life -= dt;
+      if (l.isEnemy) {
+        l.mesh.position.addScaledVector(l.dir, l.speed * dt);
+        // Попадание в игрока
+        if (l.mesh.position.distanceTo(playerShip.position) < 1.3) {
+          takeDamage(12);
+          l.life = 0;
+        }
+      } else {
+        l.mesh.position.z -= l.speed * dt;
+        // Попадание во врагов
+        for (let j = enemies.length - 1; j >= 0; j--) {
+          const e = enemies[j];
+          if (l.mesh.position.distanceTo(e.mesh.position) < 2.0) {
+            e.hp -= 20;
+            l.life = 0;
+            if (e.hp <= 0) {
+              createExplosion(e.mesh.position, 1.2);
+              scene.remove(e.mesh);
+              enemies.splice(j, 1);
+              flight.kills++;
+              $('killsVal').textContent = flight.kills;
+            }
+            break;
+          }
+        }
+        // Попадание в Босса
+        if (starDestroyerBoss && l.mesh.position.distanceTo(starDestroyerBoss.mesh.position) < 18) {
+          starDestroyerBoss.hp -= 4;
+          createExplosion(l.mesh.position, 0.6);
+          l.life = 0;
+          if (starDestroyerBoss.hp <= 0) {
+            createExplosion(starDestroyerBoss.mesh.position, 6.0);
+            scene.remove(starDestroyerBoss.mesh);
+            starDestroyerBoss = null;
+            $('bossPlate').style.display = 'none';
+            showBanner("ЗВЕЗДНЫЙ РАЗРУШИТЕЛЬ УНИЧТОЖЕН!", "ПУТЬ СВОБОДЕН");
+          }
+        }
+      }
+
+      if (l.life <= 0) {
+        scene.remove(l.mesh);
+        lasers.splice(i, 1);
+      }
+    }
+  }
+
+  // Общий апдейт звезд
+  const curSpeed = (gameState === 'PLAYING' ? flight.speed * flight.boost : 6);
+  for (let i = 2; i < starCount * 3; i += 3) {
+    starPos[i] += curSpeed * dt;
+    if (starPos[i] > 30) starPos[i] = -600;
+  }
+  starGeo.attributes.position.needsUpdate = true;
+
+  // Взрывы
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    const exp = explosions[i];
+    exp.life -= dt;
+    if (exp.isRing) {
+      const prog = 1 - exp.life / exp.maxLife;
+      exp.mesh.scale.setScalar(1 + prog * 9);
+      exp.mesh.material.opacity = exp.life / exp.maxLife;
+    } else {
+      exp.mesh.position.addScaledVector(exp.vel, dt);
+    }
+    if (exp.life <= 0) {
+      scene.remove(exp.mesh);
+      explosions.splice(i, 1);
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+function takeDamage(dmg) {
+  let absorb = Math.min(playerStats.shield, dmg);
+  playerStats.shield -= absorb;
+  playerStats.hp -= (dmg - absorb);
+
+  // Вспышка экрана при уроне
+  $('hitFlash').style.opacity = '0.7';
+  setTimeout(() => $('hitFlash').style.opacity = '0', 90);
+
+  if (playerStats.hp <= 0) {
+    gameState = 'GAMEOVER';
+    createExplosion(playerShip.position, 2.5);
+    $('hud').style.display = 'none';
+    $('finalDist').textContent = flight.distance.toFixed(1);
+    $('finalKills').textContent = flight.kills;
+    $('gameOverScreen').style.display = 'flex';
+  }
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+requestAnimationFrame(gameLoop);
+})();
+</script>
+</body>
+</html>
