@@ -96,45 +96,66 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     const height = window.innerHeight;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x010307, 0.0018);
+    scene.fog = new THREE.FogExp2(0x000103, 0.001);
 
     const camera = new THREE.PerspectiveCamera(54, width / height, 0.1, 3000);
-    const cameraBase = new THREE.Vector3(0, 3.4, 13.0);
+    const cameraBase = new THREE.Vector3(0, 3.2, 13.0);
     camera.position.copy(cameraBase);
 
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.setClearColor(0x010307);
+    renderer.setClearColor(0x000103);
 
     if (mountRef.current) {
       mountRef.current.appendChild(renderer.domElement);
     }
 
-    const flatAmbient = new THREE.AmbientLight(0x6a7d94, 2.4);
+    const flatAmbient = new THREE.AmbientLight(0x283848, 2.0);
     scene.add(flatAmbient);
 
-    const flatDir = new THREE.DirectionalLight(0xffffff, 2.8);
-    flatDir.position.set(0, 50, 40);
+    const flatDir = new THREE.DirectionalLight(0xfffae8, 3.8);
+    flatDir.position.set(40, 70, 40);
     scene.add(flatDir);
 
-    const applyFlatRetroLook = (obj: THREE.Object3D) => {
+    const rimDir = new THREE.DirectionalLight(0x0077ff, 2.6);
+    rimDir.position.set(-50, -20, -50);
+    scene.add(rimDir);
+
+    const outlineMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      side: THREE.BackSide
+    });
+
+    const addWhiteOutline = (obj: THREE.Object3D) => {
+      const targets: { parent: THREE.Mesh; outline: THREE.Mesh }[] = [];
+      obj.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const m = child as THREE.Mesh;
+          const outline = new THREE.Mesh(m.geometry, outlineMat);
+          outline.scale.setScalar(1.055);
+          targets.push({ parent: m, outline });
+        }
+      });
+      targets.forEach(({ parent, outline }) => parent.add(outline));
+    };
+
+    const tuneTextures = (obj: THREE.Object3D) => {
       obj.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
           const m = child as THREE.Mesh;
           if (m.material) {
-            const originalColor = (m.material as THREE.MeshStandardMaterial).color ? (m.material as THREE.MeshStandardMaterial).color.getHex() : 0xcccccc;
-            m.material = new THREE.MeshLambertMaterial({
-              color: originalColor,
-              flatShading: true
-            });
+            const mat = m.material as THREE.MeshStandardMaterial;
+            mat.roughness = 0.5;
+            mat.metalness = 0.2;
+            mat.needsUpdate = true;
           }
         }
       });
     };
 
-    const starCount = 2000;
+    const starCount = 2200;
     const starPos = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount * 3; i += 3) {
       starPos[i] = (Math.random() - 0.5) * 1200;
@@ -143,7 +164,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     }
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-    const starMat = new THREE.PointsMaterial({ color: 0xd6eaff, size: 1.2, transparent: true, opacity: 0.85 });
+    const starMat = new THREE.PointsMaterial({ color: 0xd6eaff, size: 1.15, transparent: true, opacity: 0.85 });
     const stars = new THREE.Points(starGeo, starMat);
     scene.add(stars);
 
@@ -158,21 +179,21 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     playerShip.scale.setScalar(0.48);
     playerShip.position.copy(shipPos);
     playerShip.rotation.set(0, 0, 0);
-    applyFlatRetroLook(playerShip);
+    tuneTextures(playerShip);
     scene.add(playerShip);
 
     const crosshairTex = new THREE.Mesh(
       new THREE.RingGeometry(0.24, 0.32, 16),
-      new THREE.MeshBasicMaterial({ color: 0x64b5f6, wireframe: true, transparent: true, opacity: 0.45 })
+      new THREE.MeshBasicMaterial({ color: 0x64b5f6, wireframe: true, transparent: true, opacity: 0.55 })
     );
     crosshairTex.position.set(0, 0, -50);
     scene.add(crosshairTex);
 
-    const redLaserGeo = new THREE.CylinderGeometry(0.04, 0.04, 2.4, 4);
+    const redLaserGeo = new THREE.CylinderGeometry(0.045, 0.045, 2.6, 4);
     redLaserGeo.rotateX(Math.PI / 2);
     const redLaserMat = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
 
-    const greenLaserGeo = new THREE.CylinderGeometry(0.05, 0.05, 2.6, 4);
+    const greenLaserGeo = new THREE.CylinderGeometry(0.05, 0.05, 2.8, 4);
     greenLaserGeo.rotateX(Math.PI / 2);
     const greenLaserMat = new THREE.MeshBasicMaterial({ color: 0x22ff44 });
 
@@ -229,7 +250,8 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
       const mesh = models.tie.clone();
       mesh.scale.setScalar(0.42);
-      applyFlatRetroLook(mesh);
+      tuneTextures(mesh);
+      addWhiteOutline(mesh);
       scene.add(mesh);
 
       enemies.push({
@@ -251,7 +273,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
     let spawnTimer = 0;
     let fireCooldown = 0;
-    let wingAlt = 0;
+    let holdFireTimer = 0;
     let shakeIntensity = 0;
     let currentHp = 100;
 
@@ -323,43 +345,58 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         }
       }
 
+      const shipForward = new THREE.Vector3(0, 0, -1).applyEuler(playerShip.rotation).normalize();
+      const naturalTarget = shipPos.clone().addScaledVector(shipForward, 120);
+
+      let aimPoint = naturalTarget.clone();
+
       if (closestEnemy && closestDist < 75) {
-        crosshairTex.position.set(closestEnemy.pos.x * 0.85, closestEnemy.pos.y * 0.85, -50);
+        aimPoint.copy(closestEnemy.pos);
+        crosshairTex.position.set(aimPoint.x * 0.85, aimPoint.y * 0.85, -50);
         (crosshairTex.material as THREE.MeshBasicMaterial).color.setHex(0xff3333);
-        crosshairTex.scale.setScalar(0.7);
+        crosshairTex.scale.setScalar(0.75);
       } else {
-        crosshairTex.position.set(shipPos.x * 0.3, shipPos.y * 0.3 + 1.0, -50);
+        const projectedAimX = shipPos.x + shipForward.x * 45;
+        const projectedAimY = shipPos.y + shipForward.y * 45;
+        crosshairTex.position.set(projectedAimX, projectedAimY, -50);
         (crosshairTex.material as THREE.MeshBasicMaterial).color.setHex(0x64b5f6);
         crosshairTex.scale.setScalar(1.0);
       }
 
+      if (input.fire) {
+        holdFireTimer += dt;
+      } else {
+        holdFireTimer = 0;
+      }
+
       fireCooldown -= dt;
+      const currentCadence = holdFireTimer > 0.45 ? 0.08 : 0.14;
+
       if (input.fire && fireCooldown <= 0) {
-        fireCooldown = 0.13;
-        wingAlt = (wingAlt + 1) % 4;
+        fireCooldown = currentCadence;
 
-        const wingOffsets = [
-          new THREE.Vector3(-0.45, 0.12, -0.2),
-          new THREE.Vector3(0.45, 0.12, -0.2),
-          new THREE.Vector3(-0.45, -0.1, -0.2),
-          new THREE.Vector3(0.45, -0.1, -0.2)
-        ];
-        const offset = wingOffsets[wingAlt].clone().applyQuaternion(playerShip.quaternion);
+        const leftOffset = new THREE.Vector3(-0.46, 0, -0.3).applyQuaternion(playerShip.quaternion);
+        const rightOffset = new THREE.Vector3(0.46, 0, -0.3).applyQuaternion(playerShip.quaternion);
 
-        const lMesh = new THREE.Mesh(redLaserGeo, redLaserMat);
-        lMesh.position.copy(shipPos).add(offset);
+        const leftPos = shipPos.clone().add(leftOffset);
+        const rightPos = shipPos.clone().add(rightOffset);
 
-        let aimTarget = new THREE.Vector3(shipPos.x, shipPos.y + 0.2, -150);
-        if (closestEnemy && closestDist < 75) {
-          aimTarget.copy(closestEnemy.pos);
-        }
+        const leftDir = new THREE.Vector3().subVectors(aimPoint, leftPos).normalize();
+        const rightDir = new THREE.Vector3().subVectors(aimPoint, rightPos).normalize();
 
-        const lDir = new THREE.Vector3().subVectors(aimTarget, lMesh.position).normalize();
-        lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), lDir);
-        scene.add(lMesh);
+        const lMesh1 = new THREE.Mesh(redLaserGeo, redLaserMat);
+        lMesh1.position.copy(leftPos);
+        lMesh1.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), leftDir);
+        scene.add(lMesh1);
+        lasers.push({ mesh: lMesh1, vel: leftDir.multiplyScalar(320), life: 1.2, isEnemy: false });
 
-        lasers.push({ mesh: lMesh, vel: lDir.multiplyScalar(290), life: 1.2, isEnemy: false });
-        playTone(900, 280, 0.08, 0.1, 'sawtooth');
+        const lMesh2 = new THREE.Mesh(redLaserGeo, redLaserMat);
+        lMesh2.position.copy(rightPos);
+        lMesh2.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), rightDir);
+        scene.add(lMesh2);
+        lasers.push({ mesh: lMesh2, vel: rightDir.multiplyScalar(320), life: 1.2, isEnemy: false });
+
+        playTone(920, 260, 0.075, 0.12, 'sawtooth');
       }
 
       spawnTimer += dt;
@@ -395,19 +432,20 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           e.shootCooldown -= dt;
           if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 18 && e.pos.z > -160) {
             e.shootCooldown = 1.8 + Math.random() * 1.0;
-            const spreadX = (Math.random() - 0.5) * 5;
-            const spreadY = (Math.random() - 0.5) * 3.5;
+            const spreadX = (Math.random() - 0.5) * 4.5;
+            const spreadY = (Math.random() - 0.5) * 3.0;
             const targetWithSpread = shipPos.clone().add(new THREE.Vector3(spreadX, spreadY, 0));
 
-            for (const s of [-0.25, 0.25]) {
+            const baseLaserDir = new THREE.Vector3().subVectors(targetWithSpread, e.pos).normalize();
+
+            for (const s of [-0.32, 0.32]) {
               const lMesh = new THREE.Mesh(greenLaserGeo, greenLaserMat);
               lMesh.position.set(e.pos.x + s, e.pos.y - 0.05, e.pos.z + 0.8);
-              const laserDir = new THREE.Vector3().subVectors(targetWithSpread, lMesh.position).normalize();
-              lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), laserDir);
+              lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), baseLaserDir);
               scene.add(lMesh);
-              lasers.push({ mesh: lMesh, vel: laserDir.multiplyScalar(150), life: 2.2, isEnemy: true });
+              lasers.push({ mesh: lMesh, vel: baseLaserDir.clone().multiplyScalar(155), life: 2.2, isEnemy: true });
             }
-            playTone(450, 140, 0.11, 0.06, 'square');
+            playTone(460, 130, 0.1, 0.07, 'square');
           }
 
           if (e.pos.z > camera.position.z + 16) {
@@ -445,8 +483,6 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
             e.shootCooldown = 1.6;
           }
         }
-
-        e.mesh.position.copy(e.pos);
       }
 
       for (let i = lasers.length - 1; i >= 0; i--) {
@@ -472,7 +508,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
             if (l.mesh.position.distanceTo(e.pos) < 1.6) {
               l.life = 0;
               spawnExplosion(e.pos);
-              playTone(180, 40, 0.35, 0.3, 'sawtooth');
+              playTone(220, 60, 0.3, 0.25, 'sawtooth');
               scene.remove(e.mesh);
               enemies.splice(j, 1);
               break;
