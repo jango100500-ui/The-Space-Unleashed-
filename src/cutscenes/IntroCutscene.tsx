@@ -1,20 +1,70 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import type { PreloadedModels } from '../App.tsx';
+import type { PreloadedAssets } from '../App.tsx';
 
 interface IntroCutsceneProps {
-  models: PreloadedModels;
+  assets: PreloadedAssets;
   onComplete: () => void;
   onError: (error: string) => void;
 }
 
-export default function IntroCutscene({ models, onComplete }: IntroCutsceneProps) {
+export default function IntroCutscene({ assets, onComplete }: IntroCutsceneProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [curtainVisible, setCurtainVisible] = useState<boolean>(true);
 
   useEffect(() => {
     let animId: number;
     let isDisposed = false;
+
+    const { models, audioBuffers, audioCtx } = assets;
+
+    const muffle = audioCtx.createBiquadFilter();
+    muffle.type = 'lowpass';
+    muffle.frequency.value = 520;
+    muffle.connect(audioCtx.destination);
+
+    const xwingEngineGain = audioCtx.createGain();
+    xwingEngineGain.gain.value = 0;
+    xwingEngineGain.connect(muffle);
+
+    const tieEngineGain = audioCtx.createGain();
+    tieEngineGain.gain.value = 0;
+    tieEngineGain.connect(muffle);
+
+    let xwingSource: AudioBufferSourceNode | null = null;
+    let tieSource: AudioBufferSourceNode | null = null;
+
+    if (audioBuffers.xwingEngine) {
+      xwingSource = audioCtx.createBufferSource();
+      xwingSource.buffer = audioBuffers.xwingEngine;
+      xwingSource.loop = true;
+      xwingSource.connect(xwingEngineGain);
+      xwingSource.start(0);
+    }
+
+    if (audioBuffers.tieEngine) {
+      tieSource = audioCtx.createBufferSource();
+      tieSource.buffer = audioBuffers.tieEngine;
+      tieSource.loop = true;
+      tieSource.connect(tieEngineGain);
+      tieSource.start(0);
+    }
+
+    const playCutsceneSound = (buf: AudioBuffer | undefined, vol: number) => {
+      if (!buf || isDisposed) return;
+      try {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const g = audioCtx.createGain();
+        g.gain.value = vol;
+        src.connect(g);
+        g.connect(muffle);
+        src.start(0);
+      } catch {
+        return;
+      }
+    };
 
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -170,6 +220,13 @@ export default function IntroCutscene({ models, onComplete }: IntroCutsceneProps
         currentShake = Math.max(currentShake, factor * 0.95);
       }
 
+      if (xCamDist < 120) {
+        const factor = Math.max(0, 1 - xCamDist / 120);
+        xwingEngineGain.gain.value = factor * 0.28;
+      } else {
+        xwingEngineGain.gain.value = 0;
+      }
+
       if (elapsed < 1.05) {
         camera.lookAt(xwing.position.x * 0.9, xwing.position.y, xwing.position.z);
       } else if (!hasLockedCamera) {
@@ -201,16 +258,25 @@ export default function IntroCutscene({ models, onComplete }: IntroCutsceneProps
           currentShake = Math.max(currentShake, factor * 0.9);
         }
 
+        if (tieCamDist < 130) {
+          const factor = Math.max(0, 1 - tieCamDist / 130);
+          tieEngineGain.gain.value = factor * 0.32;
+        } else {
+          tieEngineGain.gain.value = 0;
+        }
+
         if (tieElapsed > 0.35 && !firedBurst1) {
           firedBurst1 = true;
           spawnLaser(tieLeft.position.clone().add(new THREE.Vector3(0, -0.6, 0)));
           spawnLaser(tieRight.position.clone().add(new THREE.Vector3(0, -0.6, 0)));
+          playCutsceneSound(audioBuffers.tieShot, 0.24);
         }
 
         if (tieElapsed > 0.8 && !firedBurst2) {
           firedBurst2 = true;
           spawnLaser(tieLeft.position.clone().add(new THREE.Vector3(0, 0.6, 0)));
           spawnLaser(tieRight.position.clone().add(new THREE.Vector3(0, 0.6, 0)));
+          playCutsceneSound(audioBuffers.tieShot, 0.24);
         }
       }
 
@@ -261,12 +327,14 @@ export default function IntroCutscene({ models, onComplete }: IntroCutsceneProps
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
       lasers.forEach((l) => scene.remove(l.mesh));
+      if (xwingSource) xwingSource.stop();
+      if (tieSource) tieSource.stop();
       if (renderer.domElement && renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
       renderer.dispose();
     };
-  }, [models, onComplete]);
+  }, [assets, onComplete]);
 
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', backgroundColor: '#000000' }}>
