@@ -24,8 +24,8 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
           mesh.receiveShadow = false;
           if (mesh.material && (mesh.material as THREE.MeshStandardMaterial).isMeshStandardMaterial) {
             const m = mesh.material as THREE.MeshStandardMaterial;
-            m.roughness = 0.38;
-            m.metalness = 0.75;
+            m.roughness = 0.55;
+            m.metalness = 0.15;
           }
         }
       });
@@ -52,41 +52,50 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
     const runLoading = async () => {
       let loadedXwing: THREE.Group | null = null;
       let loadedTie: THREE.Group | null = null;
+      let loadedDestroyer: THREE.Group | null = null;
 
       try {
         setStatusText('ЗАГРУЗКА T-65B X-WING...');
         setProgress(15);
 
         loadedXwing = await load('/models/x-wing.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(15 + p * 35));
+          if (!isDisposed) setProgress(Math.floor(15 + p * 25));
         });
 
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА СИД-ИСТРЕБИТЕЛЕЙ...');
-        setProgress(55);
+        setProgress(40);
 
         loadedTie = await load('/models/tie.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(55 + p * 35));
+          if (!isDisposed) setProgress(Math.floor(40 + p * 25));
+        });
+
+        if (isDisposed) return;
+        setStatusText('ЗАГРУЗКА ЗВЁЗДНОГО РАЗРУШИТЕЛЯ...');
+        setProgress(65);
+
+        loadedDestroyer = await load('/models/star-destroyer.glb', (p) => {
+          if (!isDisposed) setProgress(Math.floor(65 + p * 25));
         });
 
         if (isDisposed) return;
         setStatusText('СИНХРОНИЗАЦИЯ НАВИГАЦИИ...');
         setProgress(95);
 
-        await new Promise((r) => setTimeout(r, 600));
+        await new Promise((r) => setTimeout(r, 400));
         if (isDisposed) return;
 
         setProgress(100);
         setStatusText('СИСТЕМЫ ГОТОВЫ');
 
-        await new Promise((r) => setTimeout(r, 400));
+        await new Promise((r) => setTimeout(r, 300));
         if (isDisposed) return;
 
         setFadeOut(true);
 
         setTimeout(() => {
-          if (!isDisposed && loadedXwing && loadedTie) {
-            onComplete({ xwing: loadedXwing, tie: loadedTie });
+          if (!isDisposed && loadedXwing && loadedTie && loadedDestroyer) {
+            onComplete({ xwing: loadedXwing, tie: loadedTie, destroyer: loadedDestroyer });
           }
         }, 550);
       } catch {
@@ -98,6 +107,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
 
         const fbXwing = loadedXwing || createBox(3, 0.8, 4, 0xbdc3c7);
         const fbTie = loadedTie || createBox(2, 2, 1.8, 0x475569);
+        const fbDestroyer = loadedDestroyer || createBox(40, 10, 70, 0x7f8c8d);
 
         setProgress(100);
         setStatusText('РЕЗЕРВНЫЙ СТАРТ');
@@ -105,7 +115,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
 
         setTimeout(() => {
           if (!isDisposed) {
-            onComplete({ xwing: fbXwing, tie: fbTie });
+            onComplete({ xwing: fbXwing, tie: fbTie, destroyer: fbDestroyer });
           }
         }, 550);
       }
