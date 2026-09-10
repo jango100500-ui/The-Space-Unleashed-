@@ -40,6 +40,28 @@ interface Shockwave {
   maxLife: number;
 }
 
+interface BiomeDef {
+  name: string;
+  fog: number;
+  speed: number;
+}
+
+const BIOME_LIST: BiomeDef[] = [
+  { name: 'ГЛУБОКИЙ КОСМОС', fog: 0x000205, speed: 160 },
+  { name: 'ПОЯС АСТЕРОИДОВ', fog: 0x080604, speed: 140 },
+  { name: 'ТУМАННОСТЬ СИЛЫ', fog: 0x120418, speed: 170 },
+  { name: 'ОРБИТА КУАТА', fog: 0x020710, speed: 155 },
+  { name: 'ВНЕШНЕЕ КОЛЬЦО', fog: 0x0a0905, speed: 150 }
+];
+
+const PLANET_TEXTURES = [
+  '/planets/planet1.png',
+  '/planets/planet2.png',
+  '/planets/planet3.png',
+  '/planets/planet4.png',
+  '/planets/planet5.png'
+];
+
 export default function GameScreen({ models, onExit }: GameScreenProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [curtainVisible, setCurtainVisible] = useState<boolean>(true);
@@ -47,6 +69,9 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
   const [isFiring, setIsFiring] = useState<boolean>(false);
   const [joystickActive, setJoystickActive] = useState<boolean>(false);
   const [joystickOffset, setJoystickOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const [inBiomeTransition, setInBiomeTransition] = useState<boolean>(false);
+  const [biomeTitle, setBiomeTitle] = useState<string>('');
 
   const inputRef = useRef<{ x: number; y: number; fire: boolean }>({ x: 0, y: 0, fire: false });
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -95,10 +120,11 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     const width = window.innerWidth;
     const height = window.innerHeight;
 
+    let currentBiomeIdx = 0;
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x000103, 0.001);
+    scene.fog = new THREE.FogExp2(BIOME_LIST[0].fog, 0.0012);
 
-    const camera = new THREE.PerspectiveCamera(54, width / height, 0.1, 3000);
+    const camera = new THREE.PerspectiveCamera(54, width / height, 0.1, 3500);
     const cameraBase = new THREE.Vector3(0, 3.2, 13.0);
     camera.position.copy(cameraBase);
 
@@ -106,22 +132,22 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.setClearColor(0x000103);
+    renderer.setClearColor(BIOME_LIST[0].fog);
 
     if (mountRef.current) {
       mountRef.current.appendChild(renderer.domElement);
     }
 
-    const flatAmbient = new THREE.AmbientLight(0x283848, 2.0);
+    const flatAmbient = new THREE.AmbientLight(0x444444, 2.2);
     scene.add(flatAmbient);
 
-    const flatDir = new THREE.DirectionalLight(0xfffae8, 3.8);
-    flatDir.position.set(40, 70, 40);
-    scene.add(flatDir);
+    const mainSun = new THREE.DirectionalLight(0xffffff, 3.5);
+    mainSun.position.set(0, 80, 45);
+    scene.add(mainSun);
 
-    const rimDir = new THREE.DirectionalLight(0x0077ff, 2.6);
-    rimDir.position.set(-50, -20, -50);
-    scene.add(rimDir);
+    const fillLight = new THREE.DirectionalLight(0x888888, 1.2);
+    fillLight.position.set(0, -40, -50);
+    scene.add(fillLight);
 
     const tuneTextures = (obj: THREE.Object3D) => {
       obj.traverse((child) => {
@@ -129,8 +155,8 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           const m = child as THREE.Mesh;
           if (m.material) {
             const mat = m.material as THREE.MeshStandardMaterial;
-            mat.roughness = 0.5;
-            mat.metalness = 0.2;
+            mat.roughness = 0.6;
+            mat.metalness = 0.1;
             mat.needsUpdate = true;
           }
         }
@@ -149,6 +175,45 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     const starMat = new THREE.PointsMaterial({ color: 0xd6eaff, size: 1.15, transparent: true, opacity: 0.85 });
     const stars = new THREE.Points(starGeo, starMat);
     scene.add(stars);
+
+    const textureLoader = new THREE.TextureLoader();
+    const planetMeshes: THREE.Mesh[] = [];
+
+    const spawnPlanet = () => {
+      const radius = 35 + Math.random() * 55;
+      const geo = new THREE.SphereGeometry(radius, 32, 24);
+      const chosenUrl = PLANET_TEXTURES[Math.floor(Math.random() * PLANET_TEXTURES.length)];
+
+      const mat = new THREE.MeshLambertMaterial({
+        color: 0xffffff,
+        flatShading: false
+      });
+
+      textureLoader.load(
+        chosenUrl,
+        (tex) => {
+          tex.colorSpace = THREE.SRGBColorSpace;
+          mat.map = tex;
+          mat.needsUpdate = true;
+        },
+        undefined,
+        () => {
+          mat.color.setHex(0x5a6a7a);
+        }
+      );
+
+      const planet = new THREE.Mesh(geo, mat);
+      const side = Math.random() > 0.5 ? 1 : -1;
+      planet.position.set(
+        side * (120 + Math.random() * 180),
+        -20 - Math.random() * 60,
+        -450 - Math.random() * 300
+      );
+      scene.add(planet);
+      planetMeshes.push(planet);
+    };
+
+    spawnPlanet();
 
     const defaultShipPos = new THREE.Vector3(0, -1.2, 0);
     const shipPos = defaultShipPos.clone();
@@ -260,6 +325,11 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     let shakeIntensity = 0;
     let currentHp = 100;
 
+    let biomeTimer = 0;
+    let nextBiomeDelay = 35;
+    let isTransitionActive = false;
+    let transitionDuration = 0;
+
     setTimeout(() => {
       if (!isDisposed) setCurtainVisible(false);
     }, 50);
@@ -272,10 +342,36 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       const dt = Math.min((timestamp - lastTime) / 1000, 0.045);
       lastTime = timestamp;
 
-      const warpSpeed = 160;
+      biomeTimer += dt;
+      if (!isTransitionActive && biomeTimer >= nextBiomeDelay) {
+        isTransitionActive = true;
+        transitionDuration = 0;
+        currentBiomeIdx = (currentBiomeIdx + 1) % BIOME_LIST.length;
+        const nextBiome = BIOME_LIST[currentBiomeIdx];
+        setBiomeTitle(nextBiome.name);
+        setInBiomeTransition(true);
+
+        spawnPlanet();
+      }
+
+      if (isTransitionActive) {
+        transitionDuration += dt;
+        const targetColor = new THREE.Color(BIOME_LIST[currentBiomeIdx].fog);
+        (scene.fog as THREE.FogExp2).color.lerp(targetColor, dt * 1.5);
+        renderer.setClearColor((scene.fog as THREE.FogExp2).color);
+
+        if (transitionDuration >= 3.0) {
+          isTransitionActive = false;
+          biomeTimer = 0;
+          nextBiomeDelay = 30 + Math.random() * 15;
+          setInBiomeTransition(false);
+        }
+      }
+
+      const activeSpeed = BIOME_LIST[currentBiomeIdx].speed;
       for (let k = 0; k < starCount; k++) {
         const idx = k * 3 + 2;
-        starPos[idx] += warpSpeed * dt;
+        starPos[idx] += activeSpeed * dt;
         if (starPos[idx] > camera.position.z + 10) {
           starPos[idx] = -1400;
           starPos[k * 3] = (Math.random() - 0.5) * 1200;
@@ -284,7 +380,18 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       }
       starGeo.attributes.position.needsUpdate = true;
 
-      const input = inputRef.current;
+      for (let i = planetMeshes.length - 1; i >= 0; i--) {
+        const pl = planetMeshes[i];
+        pl.position.z += activeSpeed * 0.25 * dt;
+        pl.rotation.y += 0.002 * dt;
+        if (pl.position.z > camera.position.z + 120) {
+          scene.remove(pl);
+          pl.geometry.dispose();
+          planetMeshes.splice(i, 1);
+        }
+      }
+
+      const input = isTransitionActive ? { x: 0, y: 0, fire: false } : inputRef.current;
       const aspect = window.innerWidth / window.innerHeight;
       const xRange = Math.max(5.2, Math.min(16.0, 10.0 * aspect * 1.05));
       const yRange = 8.5;
@@ -315,38 +422,28 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.32, 1 - Math.exp(-6.0 * dt));
       camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.32, 1 - Math.exp(-6.0 * dt));
 
-      const shipForward = new THREE.Vector3(0, 0, -1).applyEuler(playerShip.rotation).normalize();
-      const naturalAimX = shipPos.x + shipForward.x * 45;
-      const naturalAimY = shipPos.y + shipForward.y * 45;
-
-      let bestEnemy: Enemy | null = null;
-      let bestDist = 999;
+      let closestEnemy: Enemy | null = null;
+      let closestDist = 999;
 
       for (const e of enemies) {
         if (e.state === 'attacking' && e.pos.z < shipPos.z - 8) {
           const d = e.pos.distanceTo(shipPos);
-          if (d < 110 && d < bestDist) {
-            const screenDist = Math.hypot(e.pos.x - naturalAimX, e.pos.y - naturalAimY);
-            if (screenDist < 16) {
-              bestDist = d;
-              bestEnemy = e;
-            }
+          if (d < 120 && d < closestDist) {
+            closestDist = d;
+            closestEnemy = e;
           }
         }
       }
 
-      let finalAimX = naturalAimX;
-      let finalAimY = naturalAimY;
+      let aimPoint = new THREE.Vector3(shipPos.x, shipPos.y + 0.2, -140);
 
-      if (bestEnemy) {
-        const pullStrength = 0.28;
-        finalAimX = THREE.MathUtils.lerp(naturalAimX, bestEnemy.pos.x, pullStrength);
-        finalAimY = THREE.MathUtils.lerp(naturalAimY, bestEnemy.pos.y, pullStrength);
-        crosshairTex.position.set(finalAimX, finalAimY, -50);
-        (crosshairTex.material as THREE.MeshBasicMaterial).color.setHex(0x7ed6df);
-        crosshairTex.scale.setScalar(0.85);
+      if (closestEnemy && closestDist < 75) {
+        aimPoint.copy(closestEnemy.pos);
+        crosshairTex.position.set(aimPoint.x * 0.85, aimPoint.y * 0.85, -50);
+        (crosshairTex.material as THREE.MeshBasicMaterial).color.setHex(0xff3333);
+        crosshairTex.scale.setScalar(0.7);
       } else {
-        crosshairTex.position.set(finalAimX, finalAimY, -50);
+        crosshairTex.position.set(shipPos.x * 0.3, shipPos.y * 0.3 + 1.0, -50);
         (crosshairTex.material as THREE.MeshBasicMaterial).color.setHex(0x64b5f6);
         crosshairTex.scale.setScalar(1.0);
       }
@@ -354,7 +451,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       fireCooldown -= dt;
 
       if (input.fire && fireCooldown <= 0) {
-        fireCooldown = 0.45;
+        fireCooldown = 0.3;
 
         const leftOffset = new THREE.Vector3(-0.46, 0, -0.3).applyQuaternion(playerShip.quaternion);
         const rightOffset = new THREE.Vector3(0.46, 0, -0.3).applyQuaternion(playerShip.quaternion);
@@ -362,10 +459,8 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         const leftPos = shipPos.clone().add(leftOffset);
         const rightPos = shipPos.clone().add(rightOffset);
 
-        const aimTargetPoint = new THREE.Vector3(finalAimX, finalAimY, -140);
-
-        const leftDir = new THREE.Vector3().subVectors(aimTargetPoint, leftPos).normalize();
-        const rightDir = new THREE.Vector3().subVectors(aimTargetPoint, rightPos).normalize();
+        const leftDir = new THREE.Vector3().subVectors(aimPoint, leftPos).normalize();
+        const rightDir = new THREE.Vector3().subVectors(aimPoint, rightPos).normalize();
 
         const lMesh1 = new THREE.Mesh(redLaserGeo, redLaserMat);
         lMesh1.position.copy(leftPos);
@@ -382,11 +477,13 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         playTone(920, 260, 0.075, 0.12, 'sawtooth');
       }
 
-      spawnTimer += dt;
-      if (spawnTimer > 4.5) {
-        spawnTimer = 0;
-        if (enemies.length < 2) {
-          spawnEnemy();
+      if (!isTransitionActive) {
+        spawnTimer += dt;
+        if (spawnTimer > 4.5) {
+          spawnTimer = 0;
+          if (enemies.length < 2) {
+            spawnEnemy();
+          }
         }
       }
 
@@ -569,6 +666,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       enemies.forEach((e) => scene.remove(e.mesh));
       debrisList.forEach((d) => scene.remove(d.mesh));
       shockwaves.forEach((s) => scene.remove(s.mesh));
+      planetMeshes.forEach((pl) => scene.remove(pl));
       if (renderer.domElement && renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
@@ -577,6 +675,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
   }, [models, onExit]);
 
   const handleStickPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (inBiomeTransition) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     stickTouchId.current = e.pointerId;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -586,7 +685,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
   };
 
   const handleStickMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (stickTouchId.current !== e.pointerId) return;
+    if (inBiomeTransition || stickTouchId.current !== e.pointerId) return;
     const dx = e.clientX - stickCenter.current.x;
     const dy = e.clientY - stickCenter.current.y;
     const maxRadius = 55;
@@ -633,6 +732,10 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           inset: 0;
           pointer-events: none;
           z-index: 10;
+          transition: opacity 0.4s ease;
+        }
+        .tfu-hud.hidden-hud {
+          opacity: 0;
         }
         .tfu-hp-container {
           position: absolute;
@@ -727,11 +830,62 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           fill: #ffffff;
           filter: drop-shadow(0 2px 4px #000);
         }
+        .letterbox-bar {
+          position: absolute;
+          left: 0;
+          right: 0;
+          background-color: #000000;
+          z-index: 40;
+          transition: height 0.45s ease-out;
+          pointer-events: none;
+        }
+        .letterbox-top {
+          top: 0;
+          height: 0;
+        }
+        .letterbox-bottom {
+          bottom: 0;
+          height: 0;
+        }
+        .letterbox-active.letterbox-top,
+        .letterbox-active.letterbox-bottom {
+          height: 16%;
+        }
+        .biome-banner {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          pointer-events: none;
+          z-index: 45;
+          opacity: 0;
+          transition: opacity 0.5s ease-in-out;
+        }
+        .biome-banner.show-banner {
+          opacity: 1;
+        }
+        .biome-text {
+          font-family: Arial, sans-serif;
+          font-size: clamp(20px, 4vw, 34px);
+          font-weight: 900;
+          letter-spacing: 8px;
+          color: #e6f2ff;
+          text-shadow: 0 0 20px rgba(100, 180, 255, 0.8), 0 0 40px rgba(40, 100, 255, 0.5);
+          text-transform: uppercase;
+        }
       `}</style>
 
       <div className={`game-curtain ${curtainVisible ? 'curtain-black' : 'curtain-clear'}`} />
 
-      <div className="tfu-hud">
+      <div className={`letterbox-bar letterbox-top ${inBiomeTransition ? 'letterbox-active' : ''}`} />
+      <div className={`letterbox-bar letterbox-bottom ${inBiomeTransition ? 'letterbox-active' : ''}`} />
+
+      <div className={`biome-banner ${inBiomeTransition ? 'show-banner' : ''}`}>
+        <div className="biome-text">{biomeTitle}</div>
+      </div>
+
+      <div className={`tfu-hud ${inBiomeTransition ? 'hidden-hud' : ''}`}>
         <div className="tfu-hp-container">
           <div className="tfu-hp-label">HULL INTEGRITY</div>
           <div className="tfu-hp-frame">
@@ -757,7 +911,9 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         <button
           type="button"
           className="tfu-fire-btn"
-          onPointerDown={() => setIsFiring(true)}
+          onPointerDown={() => {
+            if (!inBiomeTransition) setIsFiring(true);
+          }}
           onPointerUp={() => setIsFiring(false)}
           onPointerCancel={() => setIsFiring(false)}
         >
