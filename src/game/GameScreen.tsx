@@ -244,9 +244,13 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   const [playerStunned, setPlayerStunned] = useState<boolean>(false);
 
   const isPausedRef = useRef<boolean>(false);
+  const inBiomeTransitionRef = useRef<boolean>(false);
+  const bossCutsceneActiveRef = useRef<boolean>(false);
+  const bossVictoryActiveRef = useRef<boolean>(false);
+
   const inputRef = useRef<{ x: number; y: number; fire: boolean }>({ x: 0, y: 0, fire: false });
   const godModeRef = useRef<boolean>(false);
-  const skipToBossRef = useRef<boolean>(false);
+  const skipToStage4Ref = useRef<boolean>(false);
 
   const xwingGainRef = useRef<GainNode | null>(null);
   const tieEngineGainRef = useRef<GainNode | null>(null);
@@ -623,11 +627,12 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     let bossSpawned = false;
     let bossCutsceneTimer = 0;
     let bossVictoryTimer = 0;
+    let bossCutsceneCamPos = new THREE.Vector3();
 
     const initBoss = () => {
       const grp = models.destroyer.clone();
-      grp.scale.setScalar(0.001);
-      grp.position.set(0, 16, -260);
+      grp.scale.setScalar(0.0001);
+      grp.position.set(0, 16, -320);
       grp.rotation.set(0, Math.PI, 0);
       tuneTextures(grp);
       scene.add(grp);
@@ -654,7 +659,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           { mesh: gen1Mesh, localPos: gen1Pos, hp: 12, maxHp: 12, destroyed: false },
           { mesh: gen2Mesh, localPos: gen2Pos, hp: 12, maxHp: 12, destroyed: false }
         ],
-        pos: new THREE.Vector3(0, 16, -260),
+        pos: new THREE.Vector3(0, 16, -320),
         speed: 12,
         shootCooldown: 1.2,
         squadCooldown: 6.0,
@@ -673,7 +678,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     let shakeIntensity = 0;
     let currentHp = 100;
 
-    let isTransitionActive = false;
     let transitionDuration = 0;
 
     let lightningTimer = 0;
@@ -748,12 +752,12 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
       const dt = realDt;
 
-      if (skipToBossRef.current) {
-        skipToBossRef.current = false;
-        stageIdx = 4;
-        stageRef.current = 4;
-        setCurrentStage(4);
-        stageTimer = STAGE_DURATION;
+      if (skipToStage4Ref.current) {
+        skipToStage4Ref.current = false;
+        stageIdx = 3;
+        stageRef.current = 3;
+        setCurrentStage(3);
+        stageTimer = STAGE_DURATION * 0.95;
       }
 
       if (activeLightningLife > 0) {
@@ -767,7 +771,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
       const currentStep = biomeRunRef.current[stageIdx] || biomeRunRef.current[0];
 
-      if (currentStep.type === 'nebula_storm' && !bossCutsceneActive && !bossVictoryActive) {
+      if (currentStep.type === 'nebula_storm' && !bossCutsceneActiveRef.current && !bossVictoryActiveRef.current) {
         lightningTimer += dt;
         if (lightningTimer > 3.8) {
           lightningTimer = 0;
@@ -818,7 +822,8 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           setCurrentStage(stageIdx);
           setStageProgressPercent(0);
 
-          isTransitionActive = true;
+          inBiomeTransitionRef.current = true;
+          setInBiomeTransition(true);
           transitionDuration = 0;
 
           const step = biomeRunRef.current[stageIdx];
@@ -831,36 +836,47 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           if (step.type === 'planet' && step.planet) {
             spawnPlanet(step.planet);
           }
-
-          setInBiomeTransition(true);
         }
-      } else if (!bossSpawned && stageIdx >= 4 && !bossCutsceneActive) {
+      } else if (!bossSpawned && stageIdx >= 4 && !bossCutsceneActiveRef.current) {
         bossSpawned = true;
+        bossCutsceneActiveRef.current = true;
         setBossCutsceneActive(true);
+        bossCutsceneCamPos.copy(camera.position);
         initBoss();
         bossCutsceneTimer = 0;
       }
 
-      if (bossCutsceneActive) {
+      if (bossCutsceneActiveRef.current) {
         bossCutsceneTimer += dt;
 
         shipPos.z -= 45 * dt;
         playerShip.position.copy(shipPos);
 
+        camera.position.copy(bossCutsceneCamPos);
         camera.lookAt(playerShip.position.x, playerShip.position.y, playerShip.position.z - 20);
 
         if (bossData) {
-          const growProgress = THREE.MathUtils.clamp((bossCutsceneTimer - 1.2) / 1.8, 0, 1);
-          const easeScale = 1 - Math.pow(1 - growProgress, 3);
-          bossData.group.scale.setScalar(0.001 + easeScale * 2.8);
-          bossData.group.position.z += 6 * dt;
+          if (bossCutsceneTimer >= 1.2) {
+            const growProgress = THREE.MathUtils.clamp((bossCutsceneTimer - 1.2) / 1.8, 0, 1);
+            const easeScale = 1 - Math.pow(1 - growProgress, 3);
+            bossData.group.scale.setScalar(0.001 + easeScale * 3.2);
+            bossData.pos.z += 8 * dt;
+            bossData.group.position.copy(bossData.pos);
+          }
         }
 
-        if (bossCutsceneTimer >= 4.0) {
+        if (bossCutsceneTimer >= 4.2) {
+          bossCutsceneActiveRef.current = false;
           setBossCutsceneActive(false);
+
           shipPos.set(0, -1.2, 0);
           playerShip.position.copy(shipPos);
           camera.position.copy(cameraBase);
+
+          setBiomeTitle('СЕКТОР: ЗВЕЗДНЫЙ РАЗРУШИТЕЛЬ');
+          inBiomeTransitionRef.current = true;
+          setInBiomeTransition(true);
+          transitionDuration = 0;
         }
 
         renderer.render(scene, camera);
@@ -868,21 +884,22 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         return;
       }
 
-      if (bossVictoryActive) {
+      if (bossVictoryActiveRef.current) {
         bossVictoryTimer += dt;
 
         shipPos.z -= 160 * dt;
         playerShip.position.copy(shipPos);
 
-        camera.position.set(
-          cameraBase.x + 18,
-          cameraBase.y + 14,
-          shipPos.z + 18
-        );
-        camera.lookAt(playerShip.position);
+        if (bossVictoryTimer < 1.8) {
+          camera.position.set(shipPos.x + 22, shipPos.y + 4, shipPos.z + 8);
+          camera.lookAt(shipPos.x, shipPos.y, shipPos.z - 15);
+        } else {
+          camera.position.set(0, 32, shipPos.z + 24);
+          camera.lookAt(0, 0, shipPos.z - 90);
+        }
 
         if (bossData) {
-          if (Math.random() < 0.3) {
+          if (Math.random() < 0.35) {
             const expPos = bossData.group.position.clone().add(
               new THREE.Vector3((Math.random() - 0.5) * 35, (Math.random() - 0.5) * 15, (Math.random() - 0.5) * 50)
             );
@@ -890,11 +907,11 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           }
         }
 
-        if (bossVictoryTimer >= 2.5 && !curtainVisible) {
+        if (bossVictoryTimer >= 2.8 && !curtainVisible) {
           setCurtainVisible(true);
         }
 
-        if (bossVictoryTimer >= 3.8) {
+        if (bossVictoryTimer >= 4.2) {
           onExit();
           return;
         }
@@ -904,10 +921,10 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         return;
       }
 
-      if (isTransitionActive) {
+      if (inBiomeTransitionRef.current) {
         transitionDuration += dt;
         if (transitionDuration >= 3.0) {
-          isTransitionActive = false;
+          inBiomeTransitionRef.current = false;
           setInBiomeTransition(false);
         }
       }
@@ -936,7 +953,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         }
       }
 
-      const input = isTransitionActive || playerStunDuration > 0 ? { x: 0, y: 0, fire: false } : inputRef.current;
+      const input = inBiomeTransitionRef.current || playerStunDuration > 0 ? { x: 0, y: 0, fire: false } : inputRef.current;
       const aspect = window.innerWidth / window.innerHeight;
       const xRange = Math.max(5.2, Math.min(16.0, 10.0 * aspect * 1.05));
       const yRange = 8.5;
@@ -1059,7 +1076,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
       const maxSimultaneousEnemies = Math.min(6, 2 + stageIdx);
 
-      if (!isTransitionActive && !bossData) {
+      if (!inBiomeTransitionRef.current && !bossData) {
         spawnTimer += dt;
         if (spawnTimer > Math.max(2.4, 4.5 - stageIdx * 0.45)) {
           spawnTimer = 0;
@@ -1097,7 +1114,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           const squadCount = Math.min(6, 4 + Math.floor(Math.random() * 3));
           for (let k = 0; k < squadCount; k++) {
             setTimeout(() => {
-              if (!isDisposed && !bossVictoryActive) {
+              if (!isDisposed && !bossVictoryActiveRef.current) {
                 spawnEnemy(k % 2 === 0 ? -1 : 1);
               }
             }, k * 280);
@@ -1109,7 +1126,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           bossData.bombardCooldown = 6.5;
           for (let b = 0; b < 4; b++) {
             setTimeout(() => {
-              if (!isDisposed && !bossVictoryActive) {
+              if (!isDisposed && !bossVictoryActiveRef.current) {
                 const bOrigin = bossData!.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 20, 4, 10));
                 const bDir = new THREE.Vector3().subVectors(shipPos, bOrigin).normalize();
                 const lMesh = new THREE.Mesh(greenLaserGeo, greenLaserMat);
@@ -1235,8 +1252,17 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         if (l.isEnemy) {
           if (l.mesh.position.distanceTo(shipPos) < 1.3) {
             l.life = 0;
-            if (godModeRef.current) {
-              spawnShieldImpact(l.mesh.position);
+
+            const isInvulnerable =
+              godModeRef.current ||
+              inBiomeTransitionRef.current ||
+              bossCutsceneActiveRef.current ||
+              bossVictoryActiveRef.current;
+
+            if (isInvulnerable) {
+              if (godModeRef.current) {
+                spawnShieldImpact(l.mesh.position);
+              }
             } else {
               shakeIntensity = 0.5;
               currentHp = Math.max(0, currentHp - 5);
@@ -1290,6 +1316,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
                     const allGensDown = bossData.generators.every((g) => g.destroyed);
                     if (allGensDown) {
                       bossData.destroyed = true;
+                      bossVictoryActiveRef.current = true;
                       setBossVictoryActive(true);
                       bossVictoryTimer = 0;
                     }
@@ -1507,8 +1534,8 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   const handleApplyCheat = () => {
     const code = consoleInput.trim();
     if (code === 'wuvdjao45roqs') {
-      skipToBossRef.current = true;
-      setConsoleFeedback('ЭТАП 5 АКТИВИРОВАН');
+      skipToStage4Ref.current = true;
+      setConsoleFeedback('ПЕРЕХОД К 95% ЭТАПА 4');
       setTimeout(() => {
         setIsConsoleOpen(false);
         setIsPaused(false);
