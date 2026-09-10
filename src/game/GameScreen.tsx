@@ -17,6 +17,7 @@ interface Enemy {
   shootCooldown: number;
   side: number;
   loopProgress: number;
+  seed: number;
 }
 
 interface Laser {
@@ -82,10 +83,10 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     const height = window.innerHeight;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x02060f, 0.0015);
+    scene.fog = new THREE.FogExp2(0x02060f, 0.0012);
 
-    const camera = new THREE.PerspectiveCamera(54, width / height, 0.1, 2500);
-    const cameraBase = new THREE.Vector3(0, 2.2, 8.0);
+    const camera = new THREE.PerspectiveCamera(54, width / height, 0.1, 3000);
+    const cameraBase = new THREE.Vector3(0, 3.2, 13.0);
     camera.position.copy(cameraBase);
 
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
@@ -109,40 +110,40 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     const ambientLight = new THREE.AmbientLight(0x060e18, 0.8);
     scene.add(ambientLight);
 
-    const starCount = 2000;
+    const starCount = 2200;
     const starPos = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount * 3; i += 3) {
-      starPos[i] = (Math.random() - 0.5) * 1400;
-      starPos[i + 1] = (Math.random() - 0.5) * 900;
-      starPos[i + 2] = (Math.random() - 0.5) * 1800;
+      starPos[i] = (Math.random() - 0.5) * 1200;
+      starPos[i + 1] = (Math.random() - 0.5) * 800;
+      starPos[i + 2] = -Math.random() * 1600 + 20;
     }
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-    const starMat = new THREE.PointsMaterial({ color: 0xd6eaff, size: 1.1, transparent: true, opacity: 0.85 });
+    const starMat = new THREE.PointsMaterial({ color: 0xd6eaff, size: 1.2, transparent: true, opacity: 0.85 });
     const stars = new THREE.Points(starGeo, starMat);
     scene.add(stars);
 
-    const defaultShipPos = new THREE.Vector3(0, -1.6, 0);
+    const defaultShipPos = new THREE.Vector3(0, -1.2, 0);
     const shipPos = defaultShipPos.clone();
 
     const playerShip = models.xwing.clone();
-    playerShip.scale.setScalar(1.0);
+    playerShip.scale.setScalar(0.48);
     playerShip.position.copy(shipPos);
     playerShip.rotation.set(0, 0, 0);
     scene.add(playerShip);
 
     const crosshairTex = new THREE.Mesh(
-      new THREE.RingGeometry(0.3, 0.38, 16),
+      new THREE.RingGeometry(0.24, 0.32, 16),
       new THREE.MeshBasicMaterial({ color: 0x64b5f6, wireframe: true, transparent: true, opacity: 0.45 })
     );
-    crosshairTex.position.set(0, 0, -45);
+    crosshairTex.position.set(0, 0, -50);
     scene.add(crosshairTex);
 
-    const redLaserGeo = new THREE.CylinderGeometry(0.06, 0.06, 2.8, 5);
+    const redLaserGeo = new THREE.CylinderGeometry(0.04, 0.04, 2.4, 5);
     redLaserGeo.rotateX(Math.PI / 2);
     const redLaserMat = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
 
-    const greenLaserGeo = new THREE.CylinderGeometry(0.07, 0.07, 3.0, 5);
+    const greenLaserGeo = new THREE.CylinderGeometry(0.05, 0.05, 2.6, 5);
     greenLaserGeo.rotateX(Math.PI / 2);
     const greenLaserMat = new THREE.MeshBasicMaterial({ color: 0x22ff44 });
 
@@ -151,24 +152,25 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
     const spawnEnemy = (forcedSide?: number) => {
       const side = forcedSide !== undefined ? forcedSide : (Math.random() > 0.5 ? 1 : -1);
-      const startX = side * (55 + Math.random() * 20);
+      const startX = side * (60 + Math.random() * 25);
       const startY = (Math.random() - 0.5) * 8;
-      const startZ = -220 - Math.random() * 30;
+      const startZ = -240 - Math.random() * 40;
 
       const mesh = models.tie.clone();
-      mesh.scale.setScalar(0.85);
+      mesh.scale.setScalar(0.42);
       scene.add(mesh);
 
       enemies.push({
         mesh,
         state: 'attacking',
         pos: new THREE.Vector3(startX, startY, startZ),
-        targetX: (Math.random() - 0.5) * 14,
+        targetX: (Math.random() - 0.5) * 16,
         targetY: (Math.random() - 0.5) * 6,
-        speed: 38 + Math.random() * 8,
+        speed: 42 + Math.random() * 8,
         shootCooldown: 1.5 + Math.random() * 1.5,
         side,
-        loopProgress: 0
+        loopProgress: 0,
+        seed: Math.random() * 10
       });
     };
 
@@ -193,9 +195,21 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       const dt = Math.min((timestamp - lastTime) / 1000, 0.045);
       lastTime = timestamp;
 
+      const warpSpeed = 160;
+      for (let k = 0; k < starCount; k++) {
+        const idx = k * 3 + 2;
+        starPos[idx] += warpSpeed * dt;
+        if (starPos[idx] > camera.position.z + 10) {
+          starPos[idx] = -1400;
+          starPos[k * 3] = (Math.random() - 0.5) * 1200;
+          starPos[k * 3 + 1] = (Math.random() - 0.5) * 800;
+        }
+      }
+      starGeo.attributes.position.needsUpdate = true;
+
       const input = inputRef.current;
-      const targetX = defaultShipPos.x + input.x * 10;
-      const targetY = defaultShipPos.y + input.y * 6;
+      const targetX = defaultShipPos.x + input.x * 12;
+      const targetY = defaultShipPos.y + input.y * 7;
 
       const smoothFactor = input.x === 0 && input.y === 0 ? 8.5 : 5.5;
       shipPos.x = THREE.MathUtils.lerp(shipPos.x, targetX, dt * smoothFactor);
@@ -205,8 +219,8 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       playerShip.rotation.z = THREE.MathUtils.lerp(playerShip.rotation.z, -input.x * 0.45, dt * 8);
       playerShip.rotation.x = THREE.MathUtils.lerp(playerShip.rotation.x, input.y * 0.22, dt * 8);
 
-      camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.3, dt * 5);
-      camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.3, dt * 5);
+      camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.35, dt * 5);
+      camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.35, dt * 5);
 
       let closestEnemy: Enemy | null = null;
       let closestDist = 999;
@@ -214,19 +228,19 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       for (const e of enemies) {
         if (e.state === 'attacking' && e.pos.z < shipPos.z - 8) {
           const d = e.pos.distanceTo(shipPos);
-          if (d < 110 && d < closestDist) {
+          if (d < 120 && d < closestDist) {
             closestDist = d;
             closestEnemy = e;
           }
         }
       }
 
-      if (closestEnemy && closestDist < 65) {
-        crosshairTex.position.set(closestEnemy.pos.x * 0.85, closestEnemy.pos.y * 0.85, -45);
+      if (closestEnemy && closestDist < 75) {
+        crosshairTex.position.set(closestEnemy.pos.x * 0.85, closestEnemy.pos.y * 0.85, -50);
         (crosshairTex.material as THREE.MeshBasicMaterial).color.setHex(0xff3333);
         crosshairTex.scale.setScalar(0.7);
       } else {
-        crosshairTex.position.set(shipPos.x * 0.3, shipPos.y * 0.3 + 1.0, -45);
+        crosshairTex.position.set(shipPos.x * 0.3, shipPos.y * 0.3 + 1.0, -50);
         (crosshairTex.material as THREE.MeshBasicMaterial).color.setHex(0x64b5f6);
         crosshairTex.scale.setScalar(1.0);
       }
@@ -237,18 +251,18 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         wingAlt = (wingAlt + 1) % 4;
 
         const wingOffsets = [
-          new THREE.Vector3(-0.9, 0.25, -0.4),
-          new THREE.Vector3(0.9, 0.25, -0.4),
-          new THREE.Vector3(-0.9, -0.2, -0.4),
-          new THREE.Vector3(0.9, -0.2, -0.4)
+          new THREE.Vector3(-0.45, 0.12, -0.2),
+          new THREE.Vector3(0.45, 0.12, -0.2),
+          new THREE.Vector3(-0.45, -0.1, -0.2),
+          new THREE.Vector3(0.45, -0.1, -0.2)
         ];
         const offset = wingOffsets[wingAlt].clone().applyQuaternion(playerShip.quaternion);
 
         const lMesh = new THREE.Mesh(redLaserGeo, redLaserMat);
         lMesh.position.copy(shipPos).add(offset);
 
-        let aimTarget = new THREE.Vector3(shipPos.x, shipPos.y + 0.2, -140);
-        if (closestEnemy && closestDist < 65) {
+        let aimTarget = new THREE.Vector3(shipPos.x, shipPos.y + 0.2, -150);
+        if (closestEnemy && closestDist < 75) {
           aimTarget.copy(closestEnemy.pos);
         }
 
@@ -256,7 +270,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), lDir);
         scene.add(lMesh);
 
-        lasers.push({ mesh: lMesh, vel: lDir.multiplyScalar(280), life: 1.2, isEnemy: false });
+        lasers.push({ mesh: lMesh, vel: lDir.multiplyScalar(290), life: 1.2, isEnemy: false });
         playTone(900, 280, 0.08, 0.1, 'sawtooth');
       }
 
@@ -270,36 +284,45 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
+        const jitterX = Math.sin(timestamp * 0.015 + e.seed) * 0.12;
+        const jitterY = Math.cos(timestamp * 0.018 + e.seed * 2) * 0.09;
+        const jitterRoll = Math.sin(timestamp * 0.012 + e.seed) * 0.06;
 
         if (e.state === 'attacking') {
           e.pos.z += e.speed * dt;
-          e.pos.x = THREE.MathUtils.lerp(e.pos.x, e.targetX, dt * 0.9);
-          e.pos.y = THREE.MathUtils.lerp(e.pos.y, e.targetY, dt * 0.9);
+          e.pos.x = THREE.MathUtils.lerp(e.pos.x, e.targetX, dt * 0.95);
+          e.pos.y = THREE.MathUtils.lerp(e.pos.y, e.targetY, dt * 0.95);
 
           const moveDir = new THREE.Vector3(e.targetX - e.pos.x, e.targetY - e.pos.y, 40).normalize();
+          e.mesh.position.set(e.pos.x + jitterX, e.pos.y + jitterY, e.pos.z);
           e.mesh.lookAt(e.pos.clone().add(moveDir));
-          e.mesh.rotateY(Math.PI);
-          e.mesh.rotation.z = -(e.targetX - e.pos.x) * 0.04;
+          e.mesh.rotation.z = -(e.targetX - e.pos.x) * 0.05 + jitterRoll;
+
+          const distToCam = e.pos.distanceTo(camera.position);
+          if (distToCam < 18) {
+            const flybyFactor = Math.pow(1 - distToCam / 18, 2);
+            shakeIntensity = Math.max(shakeIntensity, flybyFactor * 0.7);
+          }
 
           e.shootCooldown -= dt;
           if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 18 && e.pos.z > -160) {
             e.shootCooldown = 1.8 + Math.random() * 1.0;
-            const spreadX = (Math.random() - 0.5) * 6;
-            const spreadY = (Math.random() - 0.5) * 4;
+            const spreadX = (Math.random() - 0.5) * 5;
+            const spreadY = (Math.random() - 0.5) * 3.5;
             const targetWithSpread = shipPos.clone().add(new THREE.Vector3(spreadX, spreadY, 0));
 
-            for (const s of [-0.4, 0.4]) {
+            for (const s of [-0.25, 0.25]) {
               const lMesh = new THREE.Mesh(greenLaserGeo, greenLaserMat);
-              lMesh.position.set(e.pos.x + s, e.pos.y - 0.1, e.pos.z + 1.0);
+              lMesh.position.set(e.pos.x + s, e.pos.y - 0.05, e.pos.z + 0.8);
               const laserDir = new THREE.Vector3().subVectors(targetWithSpread, lMesh.position).normalize();
               lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), laserDir);
               scene.add(lMesh);
-              lasers.push({ mesh: lMesh, vel: laserDir.multiplyScalar(140), life: 2.2, isEnemy: true });
+              lasers.push({ mesh: lMesh, vel: laserDir.multiplyScalar(150), life: 2.2, isEnemy: true });
             }
             playTone(450, 140, 0.11, 0.06, 'square');
           }
 
-          if (e.pos.z > camera.position.z + 14) {
+          if (e.pos.z > camera.position.z + 16) {
             e.state = 'looping_out';
             e.loopProgress = 0;
           }
@@ -309,8 +332,9 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           e.pos.y += Math.sin(e.loopProgress * 3) * 4 * dt;
           e.pos.z += 18 * (1 - e.loopProgress) * dt;
 
-          e.mesh.rotation.z = e.side * 0.6;
-          e.mesh.rotation.y = Math.PI - e.side * e.loopProgress * 1.5;
+          e.mesh.position.set(e.pos.x + jitterX, e.pos.y + jitterY, e.pos.z);
+          e.mesh.rotation.z = e.side * 0.6 + jitterRoll;
+          e.mesh.rotation.y = e.side * e.loopProgress * 1.5;
 
           if (e.loopProgress >= 1.0) {
             e.state = 'looping_back';
@@ -318,22 +342,21 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           }
         } else if (e.state === 'looping_back') {
           e.loopProgress += dt * 0.65;
-          e.pos.z -= 85 * dt;
-          e.pos.x = THREE.MathUtils.lerp(e.pos.x, e.side * 35, dt * 1.2);
+          e.pos.z -= 90 * dt;
+          e.pos.x = THREE.MathUtils.lerp(e.pos.x, e.side * 40, dt * 1.2);
 
-          e.mesh.rotation.y = 0;
-          e.mesh.rotation.z = -e.side * 0.4;
+          e.mesh.position.set(e.pos.x + jitterX, e.pos.y + jitterY, e.pos.z);
+          e.mesh.rotation.y = Math.PI;
+          e.mesh.rotation.z = -e.side * 0.4 + jitterRoll;
 
-          if (e.pos.z < -200) {
+          if (e.pos.z < -220) {
             e.state = 'attacking';
-            e.pos.z = -210;
-            e.pos.x = e.side * (45 + Math.random() * 15);
-            e.targetX = (Math.random() - 0.5) * 12;
+            e.pos.z = -230;
+            e.pos.x = e.side * (55 + Math.random() * 15);
+            e.targetX = (Math.random() - 0.5) * 14;
             e.shootCooldown = 1.6;
           }
         }
-
-        e.mesh.position.copy(e.pos);
       }
 
       for (let i = lasers.length - 1; i >= 0; i--) {
@@ -342,7 +365,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         l.mesh.position.addScaledVector(l.vel, dt);
 
         if (l.isEnemy) {
-          if (l.mesh.position.distanceTo(shipPos) < 1.6) {
+          if (l.mesh.position.distanceTo(shipPos) < 1.1) {
             l.life = 0;
             shakeIntensity = 0.5;
             currentHp = Math.max(0, currentHp - 5);
@@ -356,7 +379,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         } else {
           for (let j = enemies.length - 1; j >= 0; j--) {
             const e = enemies[j];
-            if (l.mesh.position.distanceTo(e.pos) < 2.4) {
+            if (l.mesh.position.distanceTo(e.pos) < 1.6) {
               l.life = 0;
               playTone(220, 60, 0.3, 0.25, 'sawtooth');
               scene.remove(e.mesh);
@@ -378,10 +401,12 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           camera.position.y + (Math.random() - 0.5) * shakeIntensity,
           cameraBase.z + (Math.random() - 0.5) * shakeIntensity
         );
-        shakeIntensity = Math.max(0, shakeIntensity - dt * 2.5);
+        shakeIntensity = Math.max(0, shakeIntensity - dt * 2.8);
+      } else {
+        camera.position.z = cameraBase.z;
       }
 
-      camera.lookAt(shipPos.x * 0.2, shipPos.y * 0.2 + 0.5, -40);
+      camera.lookAt(shipPos.x * 0.18, shipPos.y * 0.18 + 0.3, -45);
 
       renderer.render(scene, camera);
       animId = requestAnimationFrame(gameLoop);
