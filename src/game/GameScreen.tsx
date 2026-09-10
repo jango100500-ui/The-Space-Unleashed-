@@ -19,6 +19,7 @@ interface Enemy {
   loopProgress: number;
   seed: number;
   hp: number;
+  isElite: boolean;
 }
 
 interface Laser {
@@ -48,6 +49,25 @@ interface FlashCore {
   light: THREE.PointLight;
   life: number;
   maxLife: number;
+}
+
+interface ShieldGenerator {
+  mesh: THREE.Mesh;
+  localPos: THREE.Vector3;
+  hp: number;
+  maxHp: number;
+  destroyed: boolean;
+}
+
+interface BossState {
+  group: THREE.Group;
+  generators: ShieldGenerator[];
+  pos: THREE.Vector3;
+  speed: number;
+  shootCooldown: number;
+  squadCooldown: number;
+  bombardCooldown: number;
+  destroyed: boolean;
 }
 
 interface PlanetItem {
@@ -124,6 +144,9 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
   const [inBiomeTransition, setInBiomeTransition] = useState<boolean>(false);
   const [biomeTitle, setBiomeTitle] = useState<string>('');
   const [isPaused, setIsPaused] = useState<boolean>(false);
+  const [currentStage, setCurrentStage] = useState<number>(0);
+  const [bossCutsceneActive, setBossCutsceneActive] = useState<boolean>(false);
+  const [bossVictoryActive, setBossVictoryActive] = useState<boolean>(false);
 
   const isPausedRef = useRef<boolean>(false);
   const inputRef = useRef<{ x: number; y: number; fire: boolean }>({ x: 0, y: 0, fire: false });
@@ -180,7 +203,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(0x000103, 0.00035);
 
-    const camera = new THREE.PerspectiveCamera(54, width / height, 0.1, 5500);
+    const camera = new THREE.PerspectiveCamera(54, width / height, 0.1, 7000);
     const cameraBase = new THREE.Vector3(0, 3.2, 13.0);
     camera.position.copy(cameraBase);
 
@@ -234,6 +257,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
     const textureLoader = new THREE.TextureLoader();
     const planetMeshes: THREE.Mesh[] = [];
+    let lastPlanetName = '';
 
     const spawnPlanet = (planetItem: PlanetItem) => {
       const radius = 280 + Math.random() * 180;
@@ -273,6 +297,14 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       planet.userData = { radius, speed: 38 };
       scene.add(planet);
       planetMeshes.push(planet);
+    };
+
+    const getUniquePlanet = (): PlanetItem => {
+      const candidates = availablePlanets.filter((p) => p.name !== lastPlanetName);
+      const pool = candidates.length > 0 ? candidates : availablePlanets;
+      const picked = pool[Math.floor(Math.random() * pool.length)];
+      lastPlanetName = picked.name;
+      return picked;
     };
 
     const defaultShipPos = new THREE.Vector3(0, -1.2, 0);
@@ -324,13 +356,13 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     const shockwaves: ShockwaveRing[] = [];
     const flashCores: FlashCore[] = [];
 
-    const spawnRetroExplosion = (pos: THREE.Vector3) => {
+    const spawnRetroExplosion = (pos: THREE.Vector3, scale = 1.0) => {
       const flashMesh = new THREE.Mesh(flashCoreGeo, flashCoreMat);
       flashMesh.position.copy(pos);
-      flashMesh.scale.setScalar(2.2);
+      flashMesh.scale.setScalar(2.2 * scale);
       scene.add(flashMesh);
 
-      const expLight = new THREE.PointLight(0xff6622, 6.0, 65);
+      const expLight = new THREE.PointLight(0xff6622, 6.0 * scale, 65 * scale);
       expLight.position.copy(pos);
       scene.add(expLight);
 
@@ -340,19 +372,19 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       ringMesh.position.copy(pos);
       ringMesh.rotation.set((Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8, Math.random() * Math.PI);
       scene.add(ringMesh);
-      shockwaves.push({ mesh: ringMesh, life: 0.42, maxLife: 0.42, scaleSpeed: 32.0 });
+      shockwaves.push({ mesh: ringMesh, life: 0.42, maxLife: 0.42, scaleSpeed: 32.0 * scale });
 
-      const debrisCount = 22;
+      const debrisCount = Math.floor(22 * scale);
       for (let i = 0; i < debrisCount; i++) {
         const mat = debrisMats[i % debrisMats.length];
         const dMesh = new THREE.Mesh(debrisPieceGeo, mat);
         dMesh.position.copy(pos);
-        dMesh.scale.setScalar(0.7 + Math.random() * 1.1);
+        dMesh.scale.setScalar((0.7 + Math.random() * 1.1) * scale);
 
         const vel = new THREE.Vector3(
-          (Math.random() - 0.5) * 75,
-          (Math.random() - 0.5) * 75,
-          (Math.random() - 0.5) * 75
+          (Math.random() - 0.5) * 75 * scale,
+          (Math.random() - 0.5) * 75 * scale,
+          (Math.random() - 0.5) * 75 * scale
         );
 
         const spin = new THREE.Vector3(
@@ -365,6 +397,8 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         debrisList.push({ mesh: dMesh, vel, life: 0.75, maxLife: 0.75, spin });
       }
     };
+
+    let enemySpawnCounter = 0;
 
     const spawnEnemy = (forcedSide?: number) => {
       const side = forcedSide !== undefined ? forcedSide : (Math.random() > 0.5 ? 1 : -1);
@@ -380,34 +414,82 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       const lateralLane = (Math.random() > 0.5 ? 1 : -1) * (13 + Math.random() * 12);
       const vertLane = defaultShipPos.y + (Math.random() > 0.5 ? 1 : -1) * (5 + Math.random() * 5);
 
+      enemySpawnCounter++;
+      const isElite = enemySpawnCounter % 2 === 0;
+      const baseHp = isElite ? 6 : 4;
+
       enemies.push({
         mesh,
         state: 'attacking',
         pos: new THREE.Vector3(startX, startY, startZ),
         targetX: lateralLane,
         targetY: vertLane,
-        speed: 42 + Math.random() * 8,
-        shootCooldown: 0.8 + Math.random() * 0.8,
+        speed: 40 + stageRef.current * 2 + Math.random() * 6,
+        shootCooldown: isElite ? 0.7 + Math.random() * 0.5 : 1.0 + Math.random() * 0.7,
         side,
         loopProgress: 0,
         seed: Math.random() * 10,
-        hp: 4
+        hp: baseHp,
+        isElite
       });
     };
 
-    spawnEnemy(-1);
-    spawnEnemy(1);
+    let bossData: BossState | null = null;
+    let bossSpawned = false;
+    let bossCutsceneTimer = 0;
+    let bossVictoryTimer = 0;
+
+    const initBoss = () => {
+      const grp = models.destroyer.clone();
+      grp.scale.setScalar(0.001);
+      grp.position.set(0, 16, -260);
+      grp.rotation.set(0, Math.PI, 0);
+      tuneTextures(grp);
+      scene.add(grp);
+
+      const genGeo = new THREE.SphereGeometry(1.6, 16, 12);
+      const genMat1 = new THREE.MeshBasicMaterial({ color: 0x33ccff, wireframe: true });
+      const genMat2 = new THREE.MeshBasicMaterial({ color: 0x33ccff, wireframe: true });
+
+      const gen1Mesh = new THREE.Mesh(genGeo, genMat1);
+      const gen2Mesh = new THREE.Mesh(genGeo, genMat2);
+
+      const gen1Pos = new THREE.Vector3(-4.5, 9.5, -4);
+      const gen2Pos = new THREE.Vector3(4.5, 9.5, -4);
+
+      gen1Mesh.position.copy(gen1Pos);
+      gen2Mesh.position.copy(gen2Pos);
+
+      grp.add(gen1Mesh);
+      grp.add(gen2Mesh);
+
+      bossData = {
+        group: grp,
+        generators: [
+          { mesh: gen1Mesh, localPos: gen1Pos, hp: 12, maxHp: 12, destroyed: false },
+          { mesh: gen2Mesh, localPos: gen2Pos, hp: 12, maxHp: 12, destroyed: false }
+        ],
+        pos: new THREE.Vector3(0, 16, -260),
+        speed: 12,
+        shootCooldown: 1.2,
+        squadCooldown: 6.0,
+        bombardCooldown: 4.0,
+        destroyed: false
+      };
+    };
+
+    let stageIdx = 0;
+    const stageRef = { current: 0 };
+    let stageTimer = 0;
+    const STAGE_DURATION = 135;
 
     let spawnTimer = 0;
     let fireCooldown = 0;
     let shakeIntensity = 0;
     let currentHp = 100;
 
-    let biomeTimer = 0;
-    let biomeInterval = 65 + Math.random() * 10;
     let isTransitionActive = false;
     let transitionDuration = 0;
-    let biomeCycleCount = 0;
 
     setTimeout(() => {
       if (!isDisposed) setCurtainVisible(false);
@@ -429,29 +511,101 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
       const dt = realDt;
 
-      biomeTimer += dt;
-      if (!isTransitionActive && biomeTimer >= biomeInterval) {
-        isTransitionActive = true;
-        transitionDuration = 0;
-        biomeCycleCount++;
+      if (!bossSpawned && stageIdx < 4) {
+        stageTimer += dt;
+        if (stageTimer >= STAGE_DURATION) {
+          stageTimer = 0;
+          stageIdx++;
+          stageRef.current = stageIdx;
+          setCurrentStage(stageIdx);
 
-        if (biomeCycleCount % 2 === 1) {
-          setBiomeTitle('ГЛУБОКИЙ КОСМОС');
-        } else {
-          const nextPlanet = availablePlanets[Math.floor(Math.random() * availablePlanets.length)];
-          setBiomeTitle(`СИСТЕМА ${nextPlanet.name.toUpperCase()}`);
-          spawnPlanet(nextPlanet);
+          isTransitionActive = true;
+          transitionDuration = 0;
+
+          if (stageIdx % 2 === 1) {
+            setBiomeTitle('ГЛУБОКИЙ КОСМОС');
+          } else {
+            const nextP = getUniquePlanet();
+            setBiomeTitle(`СИСТЕМА ${nextP.name.toUpperCase()}`);
+            spawnPlanet(nextP);
+          }
+
+          setInBiomeTransition(true);
+        }
+      } else if (!bossSpawned && stageIdx >= 4 && !bossCutsceneActive) {
+        bossSpawned = true;
+        setBossCutsceneActive(true);
+        initBoss();
+        bossCutsceneTimer = 0;
+      }
+
+      if (bossCutsceneActive) {
+        bossCutsceneTimer += dt;
+
+        shipPos.z -= 45 * dt;
+        playerShip.position.copy(shipPos);
+
+        camera.lookAt(playerShip.position.x, playerShip.position.y, playerShip.position.z - 20);
+
+        if (bossData) {
+          const growProgress = THREE.MathUtils.clamp((bossCutsceneTimer - 1.2) / 1.8, 0, 1);
+          const easeScale = 1 - Math.pow(1 - growProgress, 3);
+          bossData.group.scale.setScalar(0.001 + easeScale * 2.8);
+          bossData.group.position.z += 6 * dt;
         }
 
-        setInBiomeTransition(true);
+        if (bossCutsceneTimer >= 4.0) {
+          setBossCutsceneActive(false);
+          shipPos.set(0, -1.2, 0);
+          playerShip.position.copy(shipPos);
+          camera.position.copy(cameraBase);
+        }
+
+        renderer.render(scene, camera);
+        animId = requestAnimationFrame(gameLoop);
+        return;
+      }
+
+      if (bossVictoryActive) {
+        bossVictoryTimer += dt;
+
+        shipPos.z -= 160 * dt;
+        playerShip.position.copy(shipPos);
+
+        camera.position.set(
+          cameraBase.x + 18,
+          cameraBase.y + 14,
+          shipPos.z + 18
+        );
+        camera.lookAt(playerShip.position);
+
+        if (bossData) {
+          if (Math.random() < 0.3) {
+            const expPos = bossData.group.position.clone().add(
+              new THREE.Vector3((Math.random() - 0.5) * 35, (Math.random() - 0.5) * 15, (Math.random() - 0.5) * 50)
+            );
+            spawnRetroExplosion(expPos, 1.6);
+          }
+        }
+
+        if (bossVictoryTimer >= 2.5 && !curtainVisible) {
+          setCurtainVisible(true);
+        }
+
+        if (bossVictoryTimer >= 3.8) {
+          onExit();
+          return;
+        }
+
+        renderer.render(scene, camera);
+        animId = requestAnimationFrame(gameLoop);
+        return;
       }
 
       if (isTransitionActive) {
         transitionDuration += dt;
         if (transitionDuration >= 3.0) {
           isTransitionActive = false;
-          biomeTimer = 0;
-          biomeInterval = 60 + Math.random() * 15;
           setInBiomeTransition(false);
         }
       }
@@ -511,7 +665,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.32, 1 - Math.exp(-6.0 * dt));
       camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.32, 1 - Math.exp(-6.0 * dt));
 
-      let autoTargetEnemy: Enemy | null = null;
+      let autoTargetPos: THREE.Vector3 | null = null;
       let minLockDist = 240;
 
       for (const e of enemies) {
@@ -519,7 +673,21 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           const d = e.pos.distanceTo(shipPos);
           if (d < minLockDist) {
             minLockDist = d;
-            autoTargetEnemy = e;
+            autoTargetPos = e.pos;
+          }
+        }
+      }
+
+      if (bossData && !bossData.destroyed) {
+        for (const gen of bossData.generators) {
+          if (!gen.destroyed) {
+            const worldGPos = new THREE.Vector3();
+            gen.mesh.getWorldPosition(worldGPos);
+            const d = worldGPos.distanceTo(shipPos);
+            if (d < minLockDist) {
+              minLockDist = d;
+              autoTargetPos = worldGPos;
+            }
           }
         }
       }
@@ -528,12 +696,12 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       const defaultAimDistance = 140;
       let bulletAimTarget = shipPos.clone().addScaledVector(shipForward, defaultAimDistance);
 
-      if (autoTargetEnemy) {
-        bulletAimTarget.copy(autoTargetEnemy.pos);
+      if (autoTargetPos) {
+        bulletAimTarget.copy(autoTargetPos);
         const crossZ = -50;
-        const crossT = (crossZ - camera.position.z) / (autoTargetEnemy.pos.z - camera.position.z);
-        const lockX = camera.position.x + (autoTargetEnemy.pos.x - camera.position.x) * crossT;
-        const lockY = camera.position.y + (autoTargetEnemy.pos.y - camera.position.y) * crossT;
+        const crossT = (crossZ - camera.position.z) / (autoTargetPos.z - camera.position.z);
+        const lockX = camera.position.x + (autoTargetPos.x - camera.position.x) * crossT;
+        const lockY = camera.position.y + (autoTargetPos.y - camera.position.y) * crossT;
 
         crosshairTex.position.set(lockX, lockY, crossZ);
         (crosshairTex.material as THREE.MeshBasicMaterial).color.setHex(0xff3838);
@@ -578,12 +746,70 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         playTone(920, 260, 0.075, 0.12, 'sawtooth');
       }
 
-      if (!isTransitionActive) {
+      const maxSimultaneousEnemies = Math.min(6, 2 + stageIdx);
+
+      if (!isTransitionActive && !bossData) {
         spawnTimer += dt;
-        if (spawnTimer > 4.5) {
+        if (spawnTimer > Math.max(2.4, 4.5 - stageIdx * 0.45)) {
           spawnTimer = 0;
-          if (enemies.length < 2) {
+          if (enemies.length < maxSimultaneousEnemies) {
             spawnEnemy();
+          }
+        }
+      }
+
+      if (bossData && !bossData.destroyed) {
+        bossData.pos.z += bossData.speed * dt;
+        bossData.group.position.copy(bossData.pos);
+
+        bossData.shootCooldown -= dt;
+        if (bossData.shootCooldown <= 0) {
+          bossData.shootCooldown = 1.4;
+          for (const s of [-8, 8]) {
+            const origin = bossData.pos.clone().add(new THREE.Vector3(s, 2, 20));
+            const targetWithSpread = shipPos.clone().add(
+              new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 5, 0)
+            );
+            const bDir = new THREE.Vector3().subVectors(targetWithSpread, origin).normalize();
+            const lMesh = new THREE.Mesh(greenLaserGeo, greenLaserMat);
+            lMesh.position.copy(origin);
+            lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), bDir);
+            scene.add(lMesh);
+            lasers.push({ mesh: lMesh, vel: bDir.multiplyScalar(170), life: 2.5, isEnemy: true });
+          }
+          playTone(480, 110, 0.12, 0.1, 'square');
+        }
+
+        bossData.squadCooldown -= dt;
+        if (bossData.squadCooldown <= 0) {
+          bossData.squadCooldown = 14.0;
+          const squadCount = Math.min(6, 4 + Math.floor(Math.random() * 3));
+          for (let k = 0; k < squadCount; k++) {
+            setTimeout(() => {
+              if (!isDisposed && !bossVictoryActive) {
+                spawnEnemy(k % 2 === 0 ? -1 : 1);
+              }
+            }, k * 280);
+          }
+        }
+
+        bossData.bombardCooldown -= dt;
+        if (bossData.bombardCooldown <= 0) {
+          bossData.bombardCooldown = 6.5;
+          for (let b = 0; b < 4; b++) {
+            setTimeout(() => {
+              if (!isDisposed && !bossVictoryActive) {
+                const bOrigin = bossData!.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 20, 4, 10));
+                const bDir = new THREE.Vector3().subVectors(shipPos, bOrigin).normalize();
+                const lMesh = new THREE.Mesh(greenLaserGeo, greenLaserMat);
+                lMesh.position.copy(bOrigin);
+                lMesh.scale.set(1.6, 1.6, 1.4);
+                lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), bDir);
+                scene.add(lMesh);
+                lasers.push({ mesh: lMesh, vel: bDir.multiplyScalar(190), life: 2.2, isEnemy: true });
+                shakeIntensity = Math.max(shakeIntensity, 0.4);
+              }
+            }, b * 160);
           }
         }
       }
@@ -612,9 +838,9 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
           e.shootCooldown -= dt;
           if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 18 && e.pos.z > -160) {
-            e.shootCooldown = 1.0 + Math.random() * 0.7;
-            const spreadX = (Math.random() - 0.5) * 4.5;
-            const spreadY = (Math.random() - 0.5) * 3.0;
+            e.shootCooldown = e.isElite ? 0.8 + Math.random() * 0.5 : 1.1 + Math.random() * 0.7;
+            const spreadX = (Math.random() - 0.5) * (e.isElite ? 3.0 : 4.5);
+            const spreadY = (Math.random() - 0.5) * (e.isElite ? 2.0 : 3.0);
             const targetWithSpread = shipPos.clone().add(new THREE.Vector3(spreadX, spreadY, 0));
 
             const baseLaserDir = new THREE.Vector3().subVectors(targetWithSpread, e.pos).normalize();
@@ -685,10 +911,13 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
             }
           }
         } else {
+          let hitAny = false;
+
           for (let j = enemies.length - 1; j >= 0; j--) {
             const e = enemies[j];
             if (l.mesh.position.distanceTo(e.pos) < 1.8) {
               l.life = 0;
+              hitAny = true;
               e.hp -= 1;
               playTone(300, 150, 0.08, 0.15, 'sawtooth');
 
@@ -700,6 +929,36 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
                 enemies.splice(j, 1);
               }
               break;
+            }
+          }
+
+          if (!hitAny && bossData && !bossData.destroyed) {
+            for (const gen of bossData.generators) {
+              if (!gen.destroyed) {
+                const worldGPos = new THREE.Vector3();
+                gen.mesh.getWorldPosition(worldGPos);
+                if (l.mesh.position.distanceTo(worldGPos) < 3.2) {
+                  l.life = 0;
+                  hitAny = true;
+                  gen.hp -= 1;
+                  playTone(280, 160, 0.06, 0.2, 'sawtooth');
+
+                  if (gen.hp <= 0) {
+                    gen.destroyed = true;
+                    spawnRetroExplosion(worldGPos, 1.5);
+                    playTone(120, 25, 0.6, 0.4, 'sawtooth');
+                    gen.mesh.visible = false;
+
+                    const allGensDown = bossData.generators.every((g) => g.destroyed);
+                    if (allGensDown) {
+                      bossData.destroyed = true;
+                      setBossVictoryActive(true);
+                      bossVictoryTimer = 0;
+                    }
+                  }
+                  break;
+                }
+              }
             }
           }
         }
@@ -792,6 +1051,9 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         scene.remove(f.mesh);
         scene.remove(f.light);
       });
+      if (bossData) {
+        scene.remove(bossData.group);
+      }
       if (renderer.domElement && renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
@@ -800,7 +1062,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
   }, [models, onExit]);
 
   const handleStickPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (inBiomeTransition || isPaused) return;
+    if (inBiomeTransition || isPaused || bossCutsceneActive || bossVictoryActive) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     stickTouchId.current = e.pointerId;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -810,7 +1072,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
   };
 
   const handleStickMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (inBiomeTransition || isPaused || stickTouchId.current !== e.pointerId) return;
+    if (inBiomeTransition || isPaused || bossCutsceneActive || bossVictoryActive || stickTouchId.current !== e.pointerId) return;
     const dx = e.clientX - stickCenter.current.x;
     const dy = e.clientY - stickCenter.current.y;
     const maxRadius = 55;
@@ -910,6 +1172,49 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
             linear-gradient(180deg, #d31820 0%, #ff3b30 45%, #b50e17 55%, #66050b 100%);
           clip-path: polygon(6px 0%, calc(100% - 6px) 0%, 100% 100%, 0% 100%);
           transition: width 0.15s ease-out;
+        }
+        .tfu-progress-tracker {
+          position: absolute;
+          top: 16px;
+          left: 50%;
+          transform: translateX(-50%);
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .tracker-node {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          border: 1.5px solid #5a738e;
+          background: #09131d;
+          transition: all 0.3s;
+        }
+        .tracker-node.active {
+          border-color: #64b5f6;
+          background: #2196f3;
+          box-shadow: 0 0 8px #2196f3;
+        }
+        .tracker-line {
+          width: 18px;
+          height: 2px;
+          background: #233446;
+        }
+        .tracker-line.active {
+          background: #64b5f6;
+        }
+        .tracker-boss {
+          width: 12px;
+          height: 12px;
+          transform: rotate(45deg);
+          border: 1.5px solid #ff4757;
+          background: #200508;
+          transition: all 0.3s;
+        }
+        .tracker-boss.active {
+          border-color: #ff3838;
+          background: #ff3838;
+          box-shadow: 0 0 10px #ff3838;
         }
         .tfu-pause-btn {
           position: absolute;
@@ -1020,8 +1325,10 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           position: absolute;
           inset: 0;
           display: flex;
+          flex-direction: column;
           align-items: center;
           justify-content: center;
+          gap: 6px;
           pointer-events: none;
           z-index: 45;
           opacity: 0;
@@ -1036,6 +1343,22 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           font-weight: 800;
           letter-spacing: 6px;
           color: #ffffff;
+          text-transform: uppercase;
+        }
+        .biome-subtext {
+          font-family: Arial, sans-serif;
+          font-size: clamp(10px, 2vw, 13px);
+          font-weight: bold;
+          letter-spacing: 4px;
+          color: #ff6b81;
+          text-transform: uppercase;
+        }
+        .victory-text {
+          font-family: Arial, sans-serif;
+          font-size: clamp(28px, 6vw, 46px);
+          font-weight: 900;
+          letter-spacing: 8px;
+          color: #2ed573;
           text-transform: uppercase;
         }
         .pause-overlay {
@@ -1097,11 +1420,28 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
       <div className={`game-curtain ${curtainVisible ? 'curtain-black' : 'curtain-clear'}`} />
 
-      <div className={`letterbox-bar letterbox-top ${inBiomeTransition || isPaused ? 'letterbox-active' : ''}`} />
-      <div className={`letterbox-bar letterbox-bottom ${inBiomeTransition || isPaused ? 'letterbox-active' : ''}`} />
+      <div
+        className={`letterbox-bar letterbox-top ${
+          inBiomeTransition || isPaused || bossCutsceneActive || bossVictoryActive ? 'letterbox-active' : ''
+        }`}
+      />
+      <div
+        className={`letterbox-bar letterbox-bottom ${
+          inBiomeTransition || isPaused || bossCutsceneActive || bossVictoryActive ? 'letterbox-active' : ''
+        }`}
+      />
 
       <div className={`biome-banner ${inBiomeTransition && !isPaused ? 'show-banner' : ''}`}>
         <div className="biome-text">{biomeTitle}</div>
+      </div>
+
+      <div className={`biome-banner ${bossCutsceneActive ? 'show-banner' : ''}`}>
+        <div className="biome-text">ЗВЕЗДНЫЙ РАЗРУШИТЕЛЬ</div>
+        <div className="biome-subtext">ВЫХОДИТ ИЗ ГИПЕРПРОСТРАНСТВА</div>
+      </div>
+
+      <div className={`biome-banner ${bossVictoryActive ? 'show-banner' : ''}`}>
+        <div className="victory-text">ПОБЕДА!</div>
       </div>
 
       {isPaused && (
@@ -1118,12 +1458,28 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         </div>
       )}
 
-      <div className={`tfu-hud ${inBiomeTransition || isPaused ? 'hidden-hud' : ''}`}>
+      <div
+        className={`tfu-hud ${
+          inBiomeTransition || isPaused || bossCutsceneActive || bossVictoryActive ? 'hidden-hud' : ''
+        }`}
+      >
         <div className="tfu-hp-container">
           <div className="tfu-hp-label">HULL INTEGRITY</div>
           <div className="tfu-hp-frame">
             <div className="tfu-hp-fill" style={{ width: `${hp}%` }} />
           </div>
+        </div>
+
+        <div className="tfu-progress-tracker">
+          <div className={`tracker-node ${currentStage >= 0 ? 'active' : ''}`} />
+          <div className={`tracker-line ${currentStage >= 1 ? 'active' : ''}`} />
+          <div className={`tracker-node ${currentStage >= 1 ? 'active' : ''}`} />
+          <div className={`tracker-line ${currentStage >= 2 ? 'active' : ''}`} />
+          <div className={`tracker-node ${currentStage >= 2 ? 'active' : ''}`} />
+          <div className={`tracker-line ${currentStage >= 3 ? 'active' : ''}`} />
+          <div className={`tracker-node ${currentStage >= 3 ? 'active' : ''}`} />
+          <div className={`tracker-line ${currentStage >= 4 ? 'active' : ''}`} />
+          <div className={`tracker-boss ${currentStage >= 4 ? 'active' : ''}`} />
         </div>
 
         <button type="button" className="tfu-pause-btn" onClick={handleTogglePause}>
@@ -1151,7 +1507,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           type="button"
           className="tfu-fire-btn"
           onPointerDown={() => {
-            if (!inBiomeTransition && !isPaused) setIsFiring(true);
+            if (!inBiomeTransition && !isPaused && !bossCutsceneActive && !bossVictoryActive) setIsFiring(true);
           }}
           onPointerUp={() => setIsFiring(false)}
           onPointerCancel={() => setIsFiring(false)}
