@@ -18,6 +18,7 @@ interface Enemy {
   side: number;
   loopProgress: number;
   seed: number;
+  hp: number;
 }
 
 interface Laser {
@@ -27,17 +28,12 @@ interface Laser {
   isEnemy: boolean;
 }
 
-interface Debris {
-  mesh: THREE.Mesh;
-  vel: THREE.Vector3;
-  life: number;
-  maxLife: number;
-}
-
-interface Shockwave {
-  mesh: THREE.Mesh;
-  life: number;
-  maxLife: number;
+interface GifExplosion {
+  id: number;
+  x: number;
+  y: number;
+  size: number;
+  rotation: number;
 }
 
 interface PlanetItem {
@@ -113,6 +109,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
   const [inBiomeTransition, setInBiomeTransition] = useState<boolean>(false);
   const [biomeTitle, setBiomeTitle] = useState<string>('');
+  const [gifExplosions, setGifExplosions] = useState<GifExplosion[]>([]);
 
   const inputRef = useRef<{ x: number; y: number; fire: boolean }>({ x: 0, y: 0, fire: false });
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -162,7 +159,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     const height = window.innerHeight;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x000103, 0.0004);
+    scene.fog = new THREE.FogExp2(0x000103, 0.00035);
 
     const camera = new THREE.PerspectiveCamera(54, width / height, 0.1, 5500);
     const cameraBase = new THREE.Vector3(0, 3.2, 13.0);
@@ -220,7 +217,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     const planetMeshes: THREE.Mesh[] = [];
 
     const spawnPlanet = (planetItem: PlanetItem) => {
-      const radius = 260 + Math.random() * 160;
+      const radius = 280 + Math.random() * 180;
       const geo = new THREE.SphereGeometry(radius, 64, 48);
 
       const mat = new THREE.MeshLambertMaterial({
@@ -250,11 +247,11 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       const planet = new THREE.Mesh(geo, mat);
       const side = Math.random() > 0.5 ? 1 : -1;
       planet.position.set(
-        side * (320 + Math.random() * 220),
-        -120 - Math.random() * 80,
-        -1300
+        side * (480 + Math.random() * 200),
+        -160 - Math.random() * 80,
+        -1800 - Math.random() * 400
       );
-      planet.userData = { radius, speed: 56 };
+      planet.userData = { radius, speed: 38 };
       scene.add(planet);
       planetMeshes.push(planet);
     };
@@ -291,50 +288,8 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     greenLaserGeo.rotateX(Math.PI / 2);
     const greenLaserMat = new THREE.MeshBasicMaterial({ color: 0x22ff44 });
 
-    const debrisGeo = new THREE.IcosahedronGeometry(0.4, 0);
-    const debrisMatOrange = new THREE.MeshBasicMaterial({ color: 0xff8833 });
-    const debrisMatYellow = new THREE.MeshBasicMaterial({ color: 0xffd24d });
-    const debrisMatGrey = new THREE.MeshBasicMaterial({ color: 0x8d949c });
-
-    const ringGeo = new THREE.RingGeometry(0.2, 0.6, 12);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0xffaa33, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
-
-    const flashGeo = new THREE.IcosahedronGeometry(1.2, 0);
-    const flashMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1.0 });
-
     const lasers: Laser[] = [];
     const enemies: Enemy[] = [];
-    const debrisList: Debris[] = [];
-    const shockwaves: Shockwave[] = [];
-
-    const spawnExplosion = (pos: THREE.Vector3) => {
-      const flashMesh = new THREE.Mesh(flashGeo, flashMat.clone());
-      flashMesh.position.copy(pos);
-      flashMesh.scale.setScalar(1.6);
-      scene.add(flashMesh);
-      shockwaves.push({ mesh: flashMesh, life: 0.09, maxLife: 0.09 });
-
-      const ringMesh = new THREE.Mesh(ringGeo, ringMat.clone());
-      ringMesh.position.copy(pos);
-      ringMesh.rotation.x = Math.PI / 2;
-      scene.add(ringMesh);
-      shockwaves.push({ mesh: ringMesh, life: 0.35, maxLife: 0.35 });
-
-      const count = 15;
-      for (let i = 0; i < count; i++) {
-        const mat = i % 3 === 0 ? debrisMatOrange : i % 3 === 1 ? debrisMatYellow : debrisMatGrey;
-        const dMesh = new THREE.Mesh(debrisGeo, mat);
-        dMesh.position.copy(pos);
-        dMesh.scale.setScalar(0.6 + Math.random() * 0.9);
-        const vel = new THREE.Vector3(
-          (Math.random() - 0.5) * 45,
-          (Math.random() - 0.5) * 45,
-          (Math.random() - 0.5) * 45
-        );
-        scene.add(dMesh);
-        debrisList.push({ mesh: dMesh, vel, life: 0.65, maxLife: 0.65 });
-      }
-    };
 
     const spawnEnemy = (forcedSide?: number) => {
       const side = forcedSide !== undefined ? forcedSide : (Math.random() > 0.5 ? 1 : -1);
@@ -360,7 +315,8 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         shootCooldown: 0.8 + Math.random() * 0.8,
         side,
         loopProgress: 0,
-        seed: Math.random() * 10
+        seed: Math.random() * 10,
+        hp: 4
       });
     };
 
@@ -373,7 +329,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     let currentHp = 100;
 
     let biomeTimer = 0;
-    const biomeInterval = 38;
+    let biomeInterval = 65 + Math.random() * 10;
     let isTransitionActive = false;
     let transitionDuration = 0;
 
@@ -382,6 +338,22 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     }, 50);
 
     let lastTime = performance.now();
+
+    const triggerGifExplosion = (worldPos: THREE.Vector3) => {
+      const p = worldPos.clone().project(camera);
+      const screenX = (p.x * 0.5 + 0.5) * window.innerWidth;
+      const screenY = (-p.y * 0.5 + 0.5) * window.innerHeight;
+      const dist = Math.max(10, worldPos.distanceTo(camera.position));
+      const size = Math.max(90, Math.min(280, (900 / dist) * 12));
+      const rotation = Math.floor(Math.random() * 360);
+      const id = Date.now() + Math.random();
+
+      setGifExplosions((prev) => [...prev, { id, x: screenX, y: screenY, size, rotation }]);
+
+      setTimeout(() => {
+        setGifExplosions((prev) => prev.filter((exp) => exp.id !== id));
+      }, 750);
+    };
 
     const gameLoop = (timestamp: number) => {
       if (isDisposed) return;
@@ -406,6 +378,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         if (transitionDuration >= 3.0) {
           isTransitionActive = false;
           biomeTimer = 0;
+          biomeInterval = 60 + Math.random() * 15;
           setInBiomeTransition(false);
         }
       }
@@ -424,7 +397,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
       for (let i = planetMeshes.length - 1; i >= 0; i--) {
         const pl = planetMeshes[i];
-        const pSpeed = pl.userData.speed || 56;
+        const pSpeed = pl.userData.speed || 38;
         pl.position.z += pSpeed * dt;
         pl.rotation.y += 0.001 * dt;
         if (pl.position.z > camera.position.z + pl.userData.radius + 60) {
@@ -465,16 +438,15 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.32, 1 - Math.exp(-6.0 * dt));
       camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.32, 1 - Math.exp(-6.0 * dt));
 
-      const lockRadius = 85;
-      let lockedEnemy: Enemy | null = null;
-      let minLockDist = lockRadius;
+      let autoTargetEnemy: Enemy | null = null;
+      let minLockDist = 240;
 
       for (const e of enemies) {
-        if (e.state === 'attacking' && e.pos.z < shipPos.z - 6) {
+        if (e.state === 'attacking' && e.pos.z < shipPos.z - 2) {
           const d = e.pos.distanceTo(shipPos);
           if (d < minLockDist) {
             minLockDist = d;
-            lockedEnemy = e;
+            autoTargetEnemy = e;
           }
         }
       }
@@ -483,12 +455,12 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       const defaultAimDistance = 140;
       let bulletAimTarget = shipPos.clone().addScaledVector(shipForward, defaultAimDistance);
 
-      if (lockedEnemy) {
-        bulletAimTarget.copy(lockedEnemy.pos);
+      if (autoTargetEnemy) {
+        bulletAimTarget.copy(autoTargetEnemy.pos);
         const crossZ = -50;
-        const crossT = (crossZ - camera.position.z) / (lockedEnemy.pos.z - camera.position.z);
-        const lockX = camera.position.x + (lockedEnemy.pos.x - camera.position.x) * crossT;
-        const lockY = camera.position.y + (lockedEnemy.pos.y - camera.position.y) * crossT;
+        const crossT = (crossZ - camera.position.z) / (autoTargetEnemy.pos.z - camera.position.z);
+        const lockX = camera.position.x + (autoTargetEnemy.pos.x - camera.position.x) * crossT;
+        const lockY = camera.position.y + (autoTargetEnemy.pos.y - camera.position.y) * crossT;
 
         crosshairTex.position.set(lockX, lockY, crossZ);
         (crosshairTex.material as THREE.MeshBasicMaterial).color.setHex(0xff3838);
@@ -507,7 +479,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       fireCooldown -= dt;
 
       if (input.fire && fireCooldown <= 0) {
-        fireCooldown = 0.3;
+        fireCooldown = 0.25;
 
         const leftOffset = new THREE.Vector3(-0.46, 0, -0.3).applyQuaternion(playerShip.quaternion);
         const rightOffset = new THREE.Vector3(0.46, 0, -0.3).applyQuaternion(playerShip.quaternion);
@@ -642,12 +614,17 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         } else {
           for (let j = enemies.length - 1; j >= 0; j--) {
             const e = enemies[j];
-            if (l.mesh.position.distanceTo(e.pos) < 1.6) {
+            if (l.mesh.position.distanceTo(e.pos) < 1.8) {
               l.life = 0;
-              spawnExplosion(e.pos);
-              playTone(220, 60, 0.3, 0.25, 'sawtooth');
-              scene.remove(e.mesh);
-              enemies.splice(j, 1);
+              e.hp -= 1;
+              playTone(300, 150, 0.08, 0.15, 'sawtooth');
+
+              if (e.hp <= 0) {
+                triggerGifExplosion(e.pos);
+                playTone(180, 40, 0.3, 0.25, 'sawtooth');
+                scene.remove(e.mesh);
+                enemies.splice(j, 1);
+              }
               break;
             }
           }
@@ -656,33 +633,6 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         if (l.life <= 0) {
           scene.remove(l.mesh);
           lasers.splice(i, 1);
-        }
-      }
-
-      for (let i = shockwaves.length - 1; i >= 0; i--) {
-        const s = shockwaves[i];
-        s.life -= dt;
-        const progress = 1 - s.life / s.maxLife;
-        s.mesh.scale.setScalar(1.2 + progress * 5.0);
-        (s.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, s.life / s.maxLife);
-        if (s.life <= 0) {
-          scene.remove(s.mesh);
-          shockwaves.splice(i, 1);
-        }
-      }
-
-      for (let i = debrisList.length - 1; i >= 0; i--) {
-        const d = debrisList[i];
-        d.life -= dt;
-        d.mesh.position.addScaledVector(d.vel, dt);
-        d.vel.multiplyScalar(1 - 1.8 * dt);
-        d.mesh.rotation.x += dt * 5;
-        d.mesh.rotation.y += dt * 4;
-        const scaleProgress = Math.max(0, d.life / d.maxLife);
-        d.mesh.scale.setScalar(scaleProgress);
-        if (d.life <= 0) {
-          scene.remove(d.mesh);
-          debrisList.splice(i, 1);
         }
       }
 
@@ -720,8 +670,6 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       window.removeEventListener('resize', handleResize);
       lasers.forEach((l) => scene.remove(l.mesh));
       enemies.forEach((e) => scene.remove(e.mesh));
-      debrisList.forEach((d) => scene.remove(d.mesh));
-      shockwaves.forEach((s) => scene.remove(s.mesh));
       planetMeshes.forEach((pl) => scene.remove(pl));
       if (renderer.domElement && renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
@@ -929,9 +877,31 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           color: #ffffff;
           text-transform: uppercase;
         }
+        .gif-explosion {
+          position: absolute;
+          pointer-events: none;
+          z-index: 25;
+          object-fit: contain;
+        }
       `}</style>
 
       <div className={`game-curtain ${curtainVisible ? 'curtain-black' : 'curtain-clear'}`} />
+
+      {gifExplosions.map((exp) => (
+        <img
+          key={exp.id}
+          src={`/mocs/explode.gif?t=${exp.id}`}
+          alt="Explosion"
+          className="gif-explosion"
+          style={{
+            left: `${exp.x}px`,
+            top: `${exp.y}px`,
+            width: `${exp.size}px`,
+            height: `${exp.size}px`,
+            transform: `translate(-50%, -50%) rotate(${exp.rotation}deg)`
+          }}
+        />
+      ))}
 
       <div className={`letterbox-bar letterbox-top ${inBiomeTransition ? 'letterbox-active' : ''}`} />
       <div className={`letterbox-bar letterbox-bottom ${inBiomeTransition ? 'letterbox-active' : ''}`} />
