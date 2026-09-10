@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import LoadingScreen from './components/LoadingScreen.tsx';
 import MainMenu from './components/MainMenu.tsx';
 import IntroCutscene from './cutscenes/IntroCutscene.tsx';
+import GameScreen from './game/GameScreen.tsx';
 
 export interface PreloadedModels {
   xwing: THREE.Group;
@@ -10,7 +11,7 @@ export interface PreloadedModels {
 }
 
 export default function App() {
-  const [stage, setStage] = useState<'loading' | 'menu' | 'cutscene'>('loading');
+  const [stage, setStage] = useState<'loading' | 'menu' | 'cutscene' | 'game'>('loading');
   const [models, setModels] = useState<PreloadedModels | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -33,6 +34,10 @@ export default function App() {
   };
 
   const handleCutsceneComplete = () => {
+    setStage('game');
+  };
+
+  const handleGameOver = () => {
     setStage('menu');
   };
 
@@ -76,7 +81,7 @@ export default function App() {
           margin-bottom: 20px;
         }
         .modal-btn {
-          background: linear-gradient(180deg, #d31820 0%, #ff3b30 45%, #66050b 100%);
+          background: linear-gradient(180deg, #d31820 0%, #ff3b30 45%, #b50e17 55%, #66050b 100%);
           border: 1px solid #ff6b81;
           color: #ffffff;
           padding: 10px 24px;
@@ -103,6 +108,13 @@ export default function App() {
           models={models}
           onComplete={handleCutsceneComplete}
           onError={handleCutsceneError}
+        />
+      )}
+
+      {stage === 'game' && models && (
+        <GameScreen
+          models={models}
+          onExit={handleGameOver}
         />
       )}
 
