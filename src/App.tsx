@@ -11,19 +11,25 @@ export interface PreloadedModels {
   destroyer: THREE.Group;
 }
 
+export interface PreloadedAssets {
+  models: PreloadedModels;
+  audioBuffers: Record<string, AudioBuffer>;
+  audioCtx: AudioContext;
+}
+
 export default function App() {
   const [stage, setStage] = useState<'loading' | 'menu' | 'cutscene' | 'game'>('loading');
-  const [models, setModels] = useState<PreloadedModels | null>(null);
+  const [assets, setAssets] = useState<PreloadedAssets | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleLoadingComplete = (loaded: PreloadedModels) => {
-    setModels(loaded);
+  const handleLoadingComplete = (loaded: PreloadedAssets) => {
+    setAssets(loaded);
     setStage('menu');
   };
 
   const handleStartRequested = () => {
-    if (!models) {
-      setErrorMessage('Модели кораблей ещё не инициализированы');
+    if (!assets) {
+      setErrorMessage('Ресурсы игры ещё не загружены');
       return;
     }
     setStage('cutscene');
@@ -104,17 +110,17 @@ export default function App() {
         <MainMenu onStart={handleStartRequested} />
       )}
 
-      {stage === 'cutscene' && models && (
+      {stage === 'cutscene' && assets && (
         <IntroCutscene
-          models={models}
+          assets={assets}
           onComplete={handleCutsceneComplete}
           onError={handleCutsceneError}
         />
       )}
 
-      {stage === 'game' && models && (
+      {stage === 'game' && assets && (
         <GameScreen
-          models={models}
+          assets={assets}
           onExit={handleGameOver}
         />
       )}
