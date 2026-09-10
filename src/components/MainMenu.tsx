@@ -54,7 +54,7 @@ export default function MainMenu({ onStart }: MainMenuProps) {
       setIsTransitioning(true);
       setTimeout(() => {
         onStart();
-      }, 450);
+      }, 400);
     }
   };
 
@@ -85,7 +85,7 @@ export default function MainMenu({ onStart }: MainMenuProps) {
           flex-direction: column;
           align-items: center;
           justify-content: space-between;
-          padding: 12px 18px 24px;
+          padding: 10px 18px 10px;
           overflow: hidden;
         }
         .tfu-fade-curtain {
@@ -94,7 +94,7 @@ export default function MainMenu({ onStart }: MainMenuProps) {
           background-color: #000000;
           opacity: 0;
           pointer-events: none;
-          transition: opacity 0.45s ease-out;
+          transition: opacity 0.4s ease-out;
           z-index: 100;
         }
         .tfu-fade-curtain.active {
@@ -133,8 +133,7 @@ export default function MainMenu({ onStart }: MainMenuProps) {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 16px;
-          margin-top: -15px;
+          gap: 14px;
         }
         .tfu-logo-wrapper {
           position: relative;
@@ -248,7 +247,7 @@ export default function MainMenu({ onStart }: MainMenuProps) {
         </div>
       </div>
 
-      <div style={{ height: '10px' }} />
+      <div style={{ height: '4px' }} />
     </div>
   );
 }
