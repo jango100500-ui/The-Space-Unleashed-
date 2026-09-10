@@ -194,7 +194,7 @@ html,body{
   <!-- Главное Меню -->
   <div id="menuOverlay">
     <div class="game-title">
-      <h1>Outer Rim: TFU</h1>
+      <h1>The Space Unleashed</h1>
       <p>ПРОТОКОЛ "ПОЛЁТ СИЛЫ" // 2008 EDITION</p>
     </div>
     <div class="menu-actions menu-interactive">
@@ -277,7 +277,7 @@ scene.fog = new THREE.FogExp2(BIOMES[0].fog, 0.0035);
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ canvas: $('world'), antialias: false, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25)); // Легкая ретро-пикселизация
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.setClearColor(BIOMES[0].fog);
 
@@ -297,7 +297,6 @@ scene.add(ambient);
 const gltfLoader = new THREE.GLTFLoader();
 const MODELS = { player: null, tie: null, destroyer: null };
 
-// Процедурные заглушки на случай, если файлы ещё не доехали
 function createBoxFallback(w, h, d, color) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.8 }));
   const group = new THREE.Group(); group.add(mesh); return group;
@@ -307,13 +306,12 @@ function loadModel(url, key, fallback) {
   return new Promise(resolve => {
     gltfLoader.load(url, gltf => {
       const model = gltf.scene;
-      // Оптимизация материалов под ретро-стиль
       model.traverse(child => {
         if (child.isMesh) {
           child.castShadow = false;
           child.receiveShadow = false;
           if (child.material) {
-            child.material.roughness = 0.45; // Спекулярный блеск нулевых
+            child.material.roughness = 0.45;
             child.material.metalness = 0.6;
           }
         }
@@ -328,17 +326,17 @@ function loadModel(url, key, fallback) {
   });
 }
 
-// Загрузка 3 моделей пользователя
+// Загрузка моделей из папки public/models
 Promise.all([
-  loadModel('./models/x-wing.glb', 'player', () => createBoxFallback(2.5, 0.6, 3.5, 0xbdc3c7)),
-  loadModel('./models/tie.glb', 'tie', () => createBoxFallback(1.8, 1.8, 1.5, 0x475569)),
-  loadModel('./models/star-destroyer.glb', 'destroyer', () => createBoxFallback(35, 6, 60, 0x7f8c8d))
+  loadModel('./public/models/x-wing.glb', 'player', () => createBoxFallback(2.5, 0.6, 3.5, 0xbdc3c7)),
+  loadModel('./public/models/tie.glb', 'tie', () => createBoxFallback(1.8, 1.8, 1.5, 0x475569)),
+  loadModel('./public/models/star-destroyer.glb', 'destroyer', () => createBoxFallback(35, 6, 60, 0x7f8c8d))
 ]).then(() => {
   $('loaderScreen').style.display = 'none';
   initGameWorld();
 });
 
-/* ЗВЁЗДЫ И ЧАСТИЦЫ СКОРОСТИ */
+/* ЗВЁЗДЫ */
 const starCount = 900, starPos = new Float32Array(starCount * 3);
 for (let i = 0; i < starCount * 3; i += 3) {
   starPos[i] = rand(-140, 140);
@@ -358,8 +356,7 @@ let flight = { distance: 0, kills: 0, speed: 30, boost: 1, wingTurn: 0 };
 let enemies = [], lasers = [], asteroids = [], explosions = [];
 let starDestroyerBoss = null;
 let input = { x: 0, y: 0, boost: false };
-let wingGunIndex = 0; // 0..3 для чередования огня 4 крыльев
-let timeScale = 1;
+let wingGunIndex = 0;
 
 function showBanner(title, sub) {
   $('bannerTitle').textContent = title;
@@ -369,13 +366,11 @@ function showBanner(title, sub) {
 }
 
 function initGameWorld() {
-  // Игрок
   playerShip = MODELS.player.clone();
   playerShip.scale.setScalar(0.7);
   playerShip.position.set(0, -1, 0);
   scene.add(playerShip);
 
-  // Камера в меню
   camera.position.set(0, 3, 9);
   camera.lookAt(0, 0, -5);
 }
@@ -400,7 +395,7 @@ $('restartBtn').onclick = () => {
   $('startBtn').click();
 };
 
-/* СИСТЕМА СТРЕЛЬБЫ X-WING (4 ОРУДИЯ С ЧЕРЕДОВАНИЕМ) */
+/* СИСТЕМА СТРЕЛЬБЫ X-WING (4 ОРУДИЯ) */
 const LASER_GEO = new THREE.CylinderGeometry(0.04, 0.04, 2.2, 4);
 LASER_GEO.rotateX(Math.PI / 2);
 const RED_LASER_MAT = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
@@ -408,7 +403,6 @@ const GREEN_LASER_MAT = new THREE.MeshBasicMaterial({ color: 0x33ff44 });
 
 function firePlayerLaser() {
   if (gameState !== 'PLAYING') return;
-  // 4 позиции пушек X-wing (крылья)
   const wingOffsets = [
     new THREE.Vector3(-1.4, 0.45, -0.6),
     new THREE.Vector3(1.4, 0.45, -0.6),
@@ -448,7 +442,6 @@ function createExplosion(pos, scale = 1) {
     explosions.push({ mesh, vel, life: 0.6 });
   }
 
-  // Ударная волна
   const ringGeo = new THREE.RingGeometry(0.2, 0.45 * scale, 16);
   const ringMat = new THREE.MeshBasicMaterial({ color: 0xff8833, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
   const ring = new THREE.Mesh(ringGeo, ringMat);
@@ -458,7 +451,7 @@ function createExplosion(pos, scale = 1) {
   explosions.push({ mesh: ring, vel: new THREE.Vector3(), life: 0.45, isRing: true, maxLife: 0.45 });
 }
 
-/* ВРАГИ: СИД-ИСТРЕБИТЕЛИ */
+/* СИД-ИСТРЕБИТЕЛИ */
 function spawnTieFighter() {
   if (starDestroyerBoss && enemies.length > 2) return;
   const tie = MODELS.tie.clone();
@@ -489,21 +482,20 @@ function spawnAsteroid() {
   });
 }
 
-/* БОСС: ЗВЕЗДНЫЙ РАЗРУШИТЕЛЬ ВЫХОДИТ ИЗ ГИПЕРПРОСТРАНСТВА */
+/* ЗВЕЗДНЫЙ РАЗРУШИТЕЛЬ */
 function summonStarDestroyer() {
   if (starDestroyerBoss) return;
   showBanner("ТРЕВОГА СВЕРХДАЛЬНЕГО ОБНАРУЖЕНИЯ", "ЗВЁЗДНЫЙ РАЗРУШИТЕЛЬ ВЫХОДИТ ИЗ ГИПЕРА");
 
   const mesh = MODELS.destroyer.clone();
   mesh.scale.setScalar(0.85);
-  mesh.position.set(0, -6, -240); // Появляется далеко впереди
+  mesh.position.set(0, -6, -240);
   scene.add(mesh);
 
   starDestroyerBoss = {
     mesh,
     hp: 450,
     maxHp: 450,
-    shieldGens: 2, // 2 шара-генератора на мостике
     state: 'ENTERING',
     fireCooldown: 2
   };
@@ -525,7 +517,6 @@ window.addEventListener('keyup', e => {
   if (e.code === 'ShiftLeft') input.boost = false;
 });
 
-// Сенсорный джойстик
 const knob = $('stickKnob'), zone = $('stickZone');
 let touchId = null;
 zone.addEventListener('pointerdown', e => {
@@ -548,7 +539,6 @@ zone.addEventListener('pointercancel', resetTouch);
 $('boostBtn').addEventListener('pointerdown', () => input.boost = true);
 $('boostBtn').addEventListener('pointerup', () => input.boost = false);
 
-// Автоматическая стрельба при зажатом клике мыши
 let autoFireTimer = 0;
 window.addEventListener('pointerdown', e => { if (e.clientY < window.innerHeight - 150) firePlayerLaser(); });
 
@@ -559,7 +549,6 @@ function gameLoop(now) {
   const dt = Math.min((now - lastFrame) / 1000, 0.05);
   lastFrame = now;
 
-  // Меню: анимация парения
   if (gameState === 'MENU') {
     if (playerShip) {
       playerShip.rotation.y = Math.sin(now * 0.001) * 0.3;
@@ -568,13 +557,11 @@ function gameLoop(now) {
     }
   }
 
-  // Игра
   if (gameState === 'PLAYING') {
     flight.boost = input.boost ? 1.8 : 1;
     flight.distance += (flight.speed * flight.boost * dt) * 0.02;
     $('distVal').textContent = flight.distance.toFixed(1);
 
-    // Смена биомов каждые 4 км
     const bIndex = Math.floor(flight.distance / 4) % BIOMES.length;
     if (bIndex !== currentBiome) {
       currentBiome = bIndex;
@@ -584,47 +571,39 @@ function gameLoop(now) {
       showBanner("СЕКТОР: " + BIOMES[currentBiome].name, "СМЕНА ЗОНЫ ОПЕРАЦИИ");
     }
 
-    // Появление босса на 6 км дистанции
     if (flight.distance > 6 && !starDestroyerBoss) {
       summonStarDestroyer();
     }
 
-    // Движение корабля игрока (TFU стиль: четкий отклик и крен)
     const moveX = input.x * 16 * flight.boost;
     const moveY = input.y * 12 * flight.boost;
     playerShip.position.x = clamp(playerShip.position.x + moveX * dt, -12, 12);
     playerShip.position.y = clamp(playerShip.position.y + moveY * dt, -5.5, 6.5);
 
-    // Крен (Roll/Pitch)
     flight.wingTurn = lerp(flight.wingTurn, -input.x * 0.65, 0.12);
     playerShip.rotation.z = flight.wingTurn;
     playerShip.rotation.x = -input.y * 0.25;
 
-    // Автострельба
     autoFireTimer += dt;
     if (autoFireTimer > 0.16) {
       firePlayerLaser();
       autoFireTimer = 0;
     }
 
-    // Камера от третьего лица с инерцией
     camera.position.x = lerp(camera.position.x, playerShip.position.x * 0.45, 0.08);
     camera.position.y = lerp(camera.position.y, playerShip.position.y * 0.35 + 3.2, 0.08);
     camera.position.z = input.boost ? 8.5 : 7.5;
     camera.lookAt(playerShip.position.x * 0.2, playerShip.position.y * 0.2, -35);
 
-    // Спавн врагов и метеоритов
     if (Math.random() < 0.025) spawnTieFighter();
     if (Math.random() < 0.04 * BIOMES[currentBiome].rocks) spawnAsteroid();
 
-    // Регенерация щита
     playerStats.shield = Math.min(playerStats.maxShield, playerStats.shield + 4 * dt);
     $('shieldFill').style.width = (playerStats.shield / playerStats.maxShield * 100) + '%';
     $('hullFill').style.width = (playerStats.hp / playerStats.maxHp * 100) + '%';
     $('shieldVal').textContent = Math.round(playerStats.shield);
     $('hullVal').textContent = Math.round(playerStats.hp);
 
-    // Апдейт Босса
     if (starDestroyerBoss) {
       const b = starDestroyerBoss;
       if (b.state === 'ENTERING') {
@@ -634,7 +613,6 @@ function gameLoop(now) {
         b.fireCooldown -= dt;
         if (b.fireCooldown <= 0) {
           b.fireCooldown = 1.6;
-          // Залп турболазеров Разрушителя
           for (const sx of [-6, 6]) {
             const origin = b.mesh.position.clone().add(new THREE.Vector3(sx, 2, 20));
             const dir = playerShip.position.clone().sub(origin).normalize();
@@ -645,7 +623,6 @@ function gameLoop(now) {
       $('bossFill').style.width = (b.hp / b.maxHp * 100) + '%';
     }
 
-    // Апдейт СИД-истребителей
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
       e.mesh.position.z += (e.speed + flight.speed * flight.boost) * dt;
@@ -659,7 +636,6 @@ function gameLoop(now) {
         fireEnemyLaser(e.mesh.position, dir);
       }
 
-      // Таран игрока
       if (e.mesh.position.distanceTo(playerShip.position) < 2.2) {
         takeDamage(35);
         createExplosion(e.mesh.position, 1.3);
@@ -668,14 +644,12 @@ function gameLoop(now) {
         continue;
       }
 
-      // Улетел за спину
       if (e.mesh.position.z > 20) {
         scene.remove(e.mesh);
         enemies.splice(i, 1);
       }
     }
 
-    // Апдейт астероидов
     for (let i = asteroids.length - 1; i >= 0; i--) {
       const a = asteroids[i];
       a.mesh.position.z += (a.speed + flight.speed * flight.boost) * dt;
@@ -695,20 +669,17 @@ function gameLoop(now) {
       }
     }
 
-    // Апдейт лазеров и коллизии
     for (let i = lasers.length - 1; i >= 0; i--) {
       const l = lasers[i];
       l.life -= dt;
       if (l.isEnemy) {
         l.mesh.position.addScaledVector(l.dir, l.speed * dt);
-        // Попадание в игрока
         if (l.mesh.position.distanceTo(playerShip.position) < 1.3) {
           takeDamage(12);
           l.life = 0;
         }
       } else {
         l.mesh.position.z -= l.speed * dt;
-        // Попадание во врагов
         for (let j = enemies.length - 1; j >= 0; j--) {
           const e = enemies[j];
           if (l.mesh.position.distanceTo(e.mesh.position) < 2.0) {
@@ -724,7 +695,6 @@ function gameLoop(now) {
             break;
           }
         }
-        // Попадание в Босса
         if (starDestroyerBoss && l.mesh.position.distanceTo(starDestroyerBoss.mesh.position) < 18) {
           starDestroyerBoss.hp -= 4;
           createExplosion(l.mesh.position, 0.6);
@@ -746,7 +716,6 @@ function gameLoop(now) {
     }
   }
 
-  // Общий апдейт звезд
   const curSpeed = (gameState === 'PLAYING' ? flight.speed * flight.boost : 6);
   for (let i = 2; i < starCount * 3; i += 3) {
     starPos[i] += curSpeed * dt;
@@ -754,7 +723,6 @@ function gameLoop(now) {
   }
   starGeo.attributes.position.needsUpdate = true;
 
-  // Взрывы
   for (let i = explosions.length - 1; i >= 0; i--) {
     const exp = explosions[i];
     exp.life -= dt;
@@ -779,7 +747,6 @@ function takeDamage(dmg) {
   playerStats.shield -= absorb;
   playerStats.hp -= (dmg - absorb);
 
-  // Вспышка экрана при уроне
   $('hitFlash').style.opacity = '0.7';
   setTimeout(() => $('hitFlash').style.opacity = '0', 90);
 
