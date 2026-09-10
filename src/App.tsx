@@ -1,13 +1,29 @@
 import { useState } from 'react';
+import * as THREE from 'three';
 import LoadingScreen from './components/LoadingScreen.tsx';
 import MainMenu from './components/MainMenu.tsx';
 import IntroCutscene from './cutscenes/IntroCutscene.tsx';
 
+export interface PreloadedModels {
+  xwing: THREE.Group;
+  tie: THREE.Group;
+}
+
 export default function App() {
   const [stage, setStage] = useState<'loading' | 'menu' | 'cutscene'>('loading');
+  const [models, setModels] = useState<PreloadedModels | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const handleLoadingComplete = (loaded: PreloadedModels) => {
+    setModels(loaded);
+    setStage('menu');
+  };
+
   const handleStartRequested = () => {
+    if (!models) {
+      setErrorMessage('Модели кораблей ещё не инициализированы');
+      return;
+    }
     setStage('cutscene');
   };
 
@@ -26,7 +42,7 @@ export default function App() {
         .modal-overlay {
           position: fixed;
           inset: 0;
-          background: rgba(0, 0, 0, 0.85);
+          background: rgba(0, 0, 0, 0.88);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -74,14 +90,17 @@ export default function App() {
         }
       `}</style>
 
-      {stage === 'loading' && <LoadingScreen onComplete={() => setStage('menu')} />}
+      {stage === 'loading' && (
+        <LoadingScreen onComplete={handleLoadingComplete} />
+      )}
 
       {stage === 'menu' && (
         <MainMenu onStart={handleStartRequested} />
       )}
 
-      {stage === 'cutscene' && (
+      {stage === 'cutscene' && models && (
         <IntroCutscene
+          models={models}
           onComplete={handleCutsceneComplete}
           onError={handleCutsceneError}
         />
@@ -90,7 +109,7 @@ export default function App() {
       {errorMessage && (
         <div className="modal-overlay">
           <div className="modal-box">
-            <div className="modal-title">Ошибка загрузки</div>
+            <div className="modal-title">Ошибка</div>
             <div className="modal-text">{errorMessage}</div>
             <button
               type="button"
