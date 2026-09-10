@@ -84,7 +84,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
       `}</style>
 
       <div className="ls-logo-box">
-        <img src="/tsu.png" alt="TSU" className="ls-logo" />
+        <img src="/mocs/tsu.png" alt="TSU" className="ls-logo" />
       </div>
 
       <div className="ls-bar-frame">
