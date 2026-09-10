@@ -45,7 +45,13 @@ interface PlanetItem {
   url: string;
 }
 
-const planetModules = import.meta.glob('/public/planets/*.{png,PNG}', { eager: true });
+interface ViteImportMeta {
+  glob?: (pattern: string, options?: { eager?: boolean }) => Record<string, unknown>;
+}
+
+const globFn = (import.meta as unknown as ViteImportMeta).glob;
+const planetModules = globFn ? globFn('/public/planets/*.{png,PNG}', { eager: true }) : {};
+
 const discoveredPlanets: PlanetItem[] = Object.keys(planetModules).map((fullPath) => {
   const file = fullPath.split('/').pop() || '';
   const name = file.replace(/\.png$/i, '');
@@ -379,7 +385,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
       for (let i = planetMeshes.length - 1; i >= 0; i--) {
         const pl = planetMeshes[i];
-        pl.position.z += 12 * dt;
+        pl.position.z += 10 * dt;
         pl.rotation.y += 0.001 * dt;
         if (pl.position.z > camera.position.z + 300) {
           scene.remove(pl);
