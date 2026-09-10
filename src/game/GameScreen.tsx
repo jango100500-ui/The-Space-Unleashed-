@@ -1,17 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import type { PreloadedModels } from '../App.tsx';
-
-const SOUNDS = {
-  xwingEngine: '/sounds/xwingengine.mp3',
-  explode: '/sounds/explode.mp3',
-  xwingShot: '/sounds/xwingshot.mp3',
-  tieShot: '/sounds/tieshot.mp3',
-  tieEngine: '/sounds/tieengine.mp3'
-};
+import type { PreloadedAssets } from '../App.tsx';
 
 interface GameScreenProps {
-  models: PreloadedModels;
+  assets: PreloadedAssets;
   onExit: () => void;
 }
 
@@ -83,6 +75,11 @@ interface PlanetItem {
   url: string;
 }
 
+interface BiomeRunStep {
+  isDeepSpace: boolean;
+  planet?: PlanetItem;
+}
+
 const globPlanetFiles = import.meta.glob<string>(
   ['/public/planets/*.{png,PNG,jpg,jpeg,webp}', '../../public/planets/*.{png,PNG,jpg,jpeg,webp}'],
   { eager: true, query: '?url', import: 'default' }
@@ -106,6 +103,36 @@ const defaultPlanets: PlanetItem[] = [
 ];
 
 const availablePlanets: PlanetItem[] = discoveredPlanets.length > 0 ? discoveredPlanets : defaultPlanets;
+
+function generateBiomeRun(planets: PlanetItem[]): BiomeRunStep[] {
+  const shuffledPlanets = [...planets].sort(() => Math.random() - 0.5);
+  let pIdx = 0;
+  const run: BiomeRunStep[] = [];
+  let deepSpaceCount = 0;
+  const maxDeepSpace = Math.random() < 0.6 ? 2 : 1;
+
+  for (let i = 0; i < 5; i++) {
+    const isAllowedDeepSpacePos = i === 0 || i === 2 || i === 3 || i === 4;
+    const prevWasDeepSpace = i > 0 && run[i - 1].isDeepSpace;
+    const canBeDeepSpace = isAllowedDeepSpacePos && !prevWasDeepSpace && deepSpaceCount < maxDeepSpace;
+
+    let chooseDeepSpace = false;
+    if (canBeDeepSpace) {
+      chooseDeepSpace = Math.random() < 0.5;
+    }
+
+    if (chooseDeepSpace) {
+      run.push({ isDeepSpace: true });
+      deepSpaceCount++;
+    } else {
+      const chosen = shuffledPlanets[pIdx % shuffledPlanets.length];
+      pIdx++;
+      run.push({ isDeepSpace: false, planet: chosen });
+    }
+  }
+
+  return run;
+}
 
 function createProceduralPlanetTexture(name: string): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
@@ -141,7 +168,7 @@ function createProceduralPlanetTexture(name: string): THREE.CanvasTexture {
   return tex;
 }
 
-export default function GameScreen({ models, onExit }: GameScreenProps) {
+export default function GameScreen({ assets, onExit }: GameScreenProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [curtainVisible, setCurtainVisible] = useState<boolean>(true);
   const [hp, setHp] = useState<number>(100);
@@ -153,20 +180,21 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
   const [biomeTitle, setBiomeTitle] = useState<string>('');
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [currentStage, setCurrentStage] = useState<number>(0);
+  const [stageProgressPercent, setStageProgressPercent] = useState<number>(0);
   const [bossCutsceneActive, setBossCutsceneActive] = useState<boolean>(false);
   const [bossVictoryActive, setBossVictoryActive] = useState<boolean>(false);
 
   const isPausedRef = useRef<boolean>(false);
   const inputRef = useRef<{ x: number; y: number; fire: boolean }>({ x: 0, y: 0, fire: false });
 
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const audioBuffersRef = useRef<Record<string, AudioBuffer>>({});
   const xwingGainRef = useRef<GainNode | null>(null);
   const tieEngineGainRef = useRef<GainNode | null>(null);
   const spaceMuffleFilterRef = useRef<BiquadFilterNode | null>(null);
 
   const stickTouchId = useRef<number | null>(null);
   const stickCenter = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const biomeRunRef = useRef<BiomeRunStep[]>(generateBiomeRun(availablePlanets));
 
   useEffect(() => {
     isPausedRef.current = isPaused;
@@ -179,79 +207,64 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
   }, [isPaused]);
 
   useEffect(() => {
-    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new AudioContextClass();
-    audioCtxRef.current = ctx;
+    const { audioCtx, audioBuffers } = assets;
 
-    const muffle = ctx.createBiquadFilter();
+    const muffle = audioCtx.createBiquadFilter();
     muffle.type = 'lowpass';
     muffle.frequency.value = 460;
-    muffle.connect(ctx.destination);
+    muffle.connect(audioCtx.destination);
     spaceMuffleFilterRef.current = muffle;
 
-    const loadSound = async (key: string, url: string) => {
-      try {
-        const res = await fetch(url);
-        const arrayBuf = await res.arrayBuffer();
-        const decoded = await ctx.decodeAudioData(arrayBuf);
-        audioBuffersRef.current[key] = decoded;
+    let xwingSource: AudioBufferSourceNode | null = null;
+    let tieSource: AudioBufferSourceNode | null = null;
 
-        if (key === 'xwingEngine') {
-          const src = ctx.createBufferSource();
-          src.buffer = decoded;
-          src.loop = true;
-          const gain = ctx.createGain();
-          gain.gain.value = 0.14;
-          src.connect(gain);
-          gain.connect(muffle);
-          src.start(0);
-          xwingGainRef.current = gain;
-        }
+    if (audioBuffers.xwingEngine) {
+      xwingSource = audioCtx.createBufferSource();
+      xwingSource.buffer = audioBuffers.xwingEngine;
+      xwingSource.loop = true;
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0.14;
+      xwingSource.connect(gain);
+      gain.connect(muffle);
+      xwingSource.start(0);
+      xwingGainRef.current = gain;
+    }
 
-        if (key === 'tieEngine') {
-          const src = ctx.createBufferSource();
-          src.buffer = decoded;
-          src.loop = true;
-          const gain = ctx.createGain();
-          gain.gain.value = 0;
-          src.connect(gain);
-          gain.connect(muffle);
-          src.start(0);
-          tieEngineGainRef.current = gain;
-        }
-      } catch {
-        return;
-      }
-    };
-
-    loadSound('xwingEngine', SOUNDS.xwingEngine);
-    loadSound('explode', SOUNDS.explode);
-    loadSound('xwingShot', SOUNDS.xwingShot);
-    loadSound('tieShot', SOUNDS.tieShot);
-    loadSound('tieEngine', SOUNDS.tieEngine);
+    if (audioBuffers.tieEngine) {
+      tieSource = audioCtx.createBufferSource();
+      tieSource.buffer = audioBuffers.tieEngine;
+      tieSource.loop = true;
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0;
+      tieSource.connect(gain);
+      gain.connect(muffle);
+      tieSource.start(0);
+      tieEngineGainRef.current = gain;
+    }
 
     return () => {
-      ctx.close();
+      if (xwingSource) xwingSource.stop();
+      if (tieSource) tieSource.stop();
     };
-  }, []);
+  }, [assets]);
 
   const playBuffer = (buffer: AudioBuffer | undefined, volume: number, useMuffle = false) => {
-    if (!buffer || !audioCtxRef.current || isPausedRef.current) return;
+    if (!buffer || isPausedRef.current) return;
     try {
-      const ctx = audioCtxRef.current;
-      if (ctx.state === 'suspended') ctx.resume();
+      const { audioCtx } = assets;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
 
-      const src = ctx.createBufferSource();
+      const src = audioCtx.createBufferSource();
       src.buffer = buffer;
 
-      const gain = ctx.createGain();
+      const gain = audioCtx.createGain();
       gain.gain.value = volume;
 
       src.connect(gain);
       if (useMuffle && spaceMuffleFilterRef.current) {
         gain.connect(spaceMuffleFilterRef.current);
       } else {
-        gain.connect(ctx.destination);
+        gain.connect(audioCtx.destination);
       }
 
       src.start(0);
@@ -267,6 +280,8 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
   useEffect(() => {
     let animId: number;
     let isDisposed = false;
+
+    const { models, audioBuffers } = assets;
 
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -328,7 +343,6 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
     const textureLoader = new THREE.TextureLoader();
     const planetMeshes: THREE.Mesh[] = [];
-    let lastPlanetName = '';
 
     const spawnPlanet = (planetItem: PlanetItem) => {
       const radius = 280 + Math.random() * 180;
@@ -370,13 +384,10 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       planetMeshes.push(planet);
     };
 
-    const getUniquePlanet = (): PlanetItem => {
-      const candidates = availablePlanets.filter((p) => p.name !== lastPlanetName);
-      const pool = candidates.length > 0 ? candidates : availablePlanets;
-      const picked = pool[Math.floor(Math.random() * pool.length)];
-      lastPlanetName = picked.name;
-      return picked;
-    };
+    const firstStep = biomeRunRef.current[0];
+    if (!firstStep.isDeepSpace && firstStep.planet) {
+      spawnPlanet(firstStep.planet);
+    }
 
     const defaultShipPos = new THREE.Vector3(0, -1.2, 0);
     const shipPos = defaultShipPos.clone();
@@ -468,7 +479,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         debrisList.push({ mesh: dMesh, vel, life: 0.75, maxLife: 0.75, spin });
       }
 
-      playBuffer(audioBuffersRef.current.explode, 0.42, true);
+      playBuffer(audioBuffers.explode, 0.42, true);
     };
 
     let enemySpawnCounter = 0;
@@ -554,7 +565,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     let stageIdx = 0;
     const stageRef = { current: 0 };
     let stageTimer = 0;
-    const STAGE_DURATION = 135;
+    const STAGE_DURATION = 140;
 
     let spawnTimer = 0;
     let fireCooldown = 0;
@@ -593,9 +604,9 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       }
 
       if (tieEngineGainRef.current) {
-        if (closestTieDistance < 70) {
-          const factor = Math.max(0, 1 - closestTieDistance / 70);
-          tieEngineGainRef.current.gain.value = factor * 0.18;
+        if (closestTieDistance < 130) {
+          const factor = Math.max(0, 1 - closestTieDistance / 130);
+          tieEngineGainRef.current.gain.value = factor * 0.22;
         } else {
           tieEngineGainRef.current.gain.value = 0;
         }
@@ -607,21 +618,25 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
       if (!bossSpawned && stageIdx < 4) {
         stageTimer += dt;
+        const pFrac = Math.min(1, stageTimer / STAGE_DURATION);
+        setStageProgressPercent(Math.floor(pFrac * 100));
+
         if (stageTimer >= STAGE_DURATION) {
           stageTimer = 0;
           stageIdx++;
           stageRef.current = stageIdx;
           setCurrentStage(stageIdx);
+          setStageProgressPercent(0);
 
           isTransitionActive = true;
           transitionDuration = 0;
 
-          if (stageIdx % 2 === 1) {
+          const step = biomeRunRef.current[stageIdx];
+          if (step.isDeepSpace) {
             setBiomeTitle('ГЛУБОКИЙ КОСМОС');
-          } else {
-            const nextP = getUniquePlanet();
-            setBiomeTitle(`СИСТЕМА ${nextP.name.toUpperCase()}`);
-            spawnPlanet(nextP);
+          } else if (step.planet) {
+            setBiomeTitle(`СИСТЕМА ${step.planet.name.toUpperCase()}`);
+            spawnPlanet(step.planet);
           }
 
           setInBiomeTransition(true);
@@ -837,7 +852,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         scene.add(lMesh2);
         lasers.push({ mesh: lMesh2, vel: rightDir.multiplyScalar(640), life: 1.0, isEnemy: false });
 
-        playBuffer(audioBuffersRef.current.xwingShot, 0.28);
+        playBuffer(audioBuffers.xwingShot, 0.28);
       }
 
       const maxSimultaneousEnemies = Math.min(6, 2 + stageIdx);
@@ -871,7 +886,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
             scene.add(lMesh);
             lasers.push({ mesh: lMesh, vel: bDir.multiplyScalar(170), life: 2.5, isEnemy: true });
           }
-          playBuffer(audioBuffersRef.current.tieShot, 0.22, true);
+          playBuffer(audioBuffers.tieShot, 0.22, true);
         }
 
         bossData.squadCooldown -= dt;
@@ -947,9 +962,9 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
               lasers.push({ mesh: lMesh, vel: baseLaserDir.clone().multiplyScalar(155), life: 2.2, isEnemy: true });
             }
 
-            const distVolume = Math.max(0, Math.min(0.24, (1 - distToCam / 85) * 0.24));
+            const distVolume = Math.max(0, Math.min(0.25, (1 - distToCam / 135) * 0.25));
             if (distVolume > 0.02) {
-              playBuffer(audioBuffersRef.current.tieShot, distVolume, true);
+              playBuffer(audioBuffers.tieShot, distVolume, true);
             }
           }
 
@@ -1152,7 +1167,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       }
       renderer.dispose();
     };
-  }, [models, onExit]);
+  }, [assets, onExit]);
 
   const handleStickPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (inBiomeTransition || isPaused || bossCutsceneActive || bossVictoryActive) return;
@@ -1281,20 +1296,23 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           border-radius: 50%;
           border: 1.5px solid #5a738e;
           background: #09131d;
-          transition: all 0.3s;
+          transition: all 0.2s;
         }
         .tracker-node.active {
           border-color: #64b5f6;
           background: #2196f3;
-          box-shadow: 0 0 8px #2196f3;
         }
         .tracker-line {
-          width: 18px;
+          width: 22px;
           height: 2px;
           background: #233446;
+          position: relative;
+          overflow: hidden;
         }
-        .tracker-line.active {
+        .tracker-line-fill {
+          height: 100%;
           background: #64b5f6;
+          transition: width 0.12s linear;
         }
         .tracker-boss {
           width: 12px;
@@ -1302,12 +1320,11 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           transform: rotate(45deg);
           border: 1.5px solid #ff4757;
           background: #200508;
-          transition: all 0.3s;
+          transition: all 0.2s;
         }
         .tracker-boss.active {
           border-color: #ff3838;
           background: #ff3838;
-          box-shadow: 0 0 10px #ff3838;
         }
         .tfu-pause-btn {
           position: absolute;
@@ -1565,13 +1582,45 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
         <div className="tfu-progress-tracker">
           <div className={`tracker-node ${currentStage >= 0 ? 'active' : ''}`} />
-          <div className={`tracker-line ${currentStage >= 1 ? 'active' : ''}`} />
+          <div className="tracker-line">
+            <div
+              className="tracker-line-fill"
+              style={{
+                width: `${currentStage > 0 ? 100 : currentStage === 0 ? stageProgressPercent : 0}%`
+              }}
+            />
+          </div>
+
           <div className={`tracker-node ${currentStage >= 1 ? 'active' : ''}`} />
-          <div className={`tracker-line ${currentStage >= 2 ? 'active' : ''}`} />
+          <div className="tracker-line">
+            <div
+              className="tracker-line-fill"
+              style={{
+                width: `${currentStage > 1 ? 100 : currentStage === 1 ? stageProgressPercent : 0}%`
+              }}
+            />
+          </div>
+
           <div className={`tracker-node ${currentStage >= 2 ? 'active' : ''}`} />
-          <div className={`tracker-line ${currentStage >= 3 ? 'active' : ''}`} />
+          <div className="tracker-line">
+            <div
+              className="tracker-line-fill"
+              style={{
+                width: `${currentStage > 2 ? 100 : currentStage === 2 ? stageProgressPercent : 0}%`
+              }}
+            />
+          </div>
+
           <div className={`tracker-node ${currentStage >= 3 ? 'active' : ''}`} />
-          <div className={`tracker-line ${currentStage >= 4 ? 'active' : ''}`} />
+          <div className="tracker-line">
+            <div
+              className="tracker-line-fill"
+              style={{
+                width: `${currentStage > 3 ? 100 : currentStage === 3 ? stageProgressPercent : 0}%`
+              }}
+            />
+          </div>
+
           <div className={`tracker-boss ${currentStage >= 4 ? 'active' : ''}`} />
         </div>
 
