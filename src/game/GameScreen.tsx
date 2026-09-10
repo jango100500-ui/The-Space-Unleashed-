@@ -252,11 +252,10 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   const [showVictoryText, setShowVictoryText] = useState<boolean>(false);
   const [playerStunned, setPlayerStunned] = useState<boolean>(false);
 
-  const [zoneAttackUi, setZoneAttackUi] = useState<{ visible: boolean; leftPct: number; widthPct: number; firing: boolean }>({
+  const [zoneAttackUi, setZoneAttackUi] = useState<{ visible: boolean; leftPct: number; widthPct: number }>({
     visible: false,
     leftPct: 40,
-    widthPct: 20,
-    firing: false
+    widthPct: 20
   });
 
   const isPausedRef = useRef<boolean>(false);
@@ -431,6 +430,15 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     const textureLoader = new THREE.TextureLoader();
     const planetMeshes: THREE.Mesh[] = [];
 
+    const clearAllPlanets = () => {
+      for (let i = planetMeshes.length - 1; i >= 0; i--) {
+        const pl = planetMeshes[i];
+        scene.remove(pl);
+        pl.geometry.dispose();
+        planetMeshes.splice(i, 1);
+      }
+    };
+
     const spawnPlanet = (planetItem: PlanetItem) => {
       const radius = 280 + Math.random() * 180;
       const geo = new THREE.SphereGeometry(radius, 64, 48);
@@ -578,7 +586,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         const mat = debrisMats[i % debrisMats.length];
         const dMesh = new THREE.Mesh(debrisPieceGeo, mat);
         dMesh.position.copy(pos);
-        dMesh.scale.setScalar((0.7 + Math.random() * 0.8) * scale);
+        dMesh.scale.setScalar((0.6 + Math.random() * 0.8) * scale);
 
         const vel = new THREE.Vector3(
           (Math.random() - 0.5) * 60 * scale,
@@ -667,20 +675,20 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     const initBoss = () => {
       const grp = models.destroyer.clone();
       grp.scale.setScalar(0.0001);
-      grp.position.set(0, 3.5, -340);
+      grp.position.set(0, 24, -420);
       grp.rotation.set(0, Math.PI, 0);
       tuneTextures(grp);
       scene.add(grp);
 
-      const genGeo = new THREE.SphereGeometry(2.4, 16, 12);
+      const genGeo = new THREE.SphereGeometry(0.8, 16, 12);
       const genMat1 = new THREE.MeshBasicMaterial({ color: 0x33ccff, wireframe: true });
       const genMat2 = new THREE.MeshBasicMaterial({ color: 0x33ccff, wireframe: true });
 
       const gen1Mesh = new THREE.Mesh(genGeo, genMat1);
       const gen2Mesh = new THREE.Mesh(genGeo, genMat2);
 
-      const gen1Pos = new THREE.Vector3(-3.2, 2.2, 5.0);
-      const gen2Pos = new THREE.Vector3(3.2, 2.2, 5.0);
+      const gen1Pos = new THREE.Vector3(-8.5, 31.5, -8);
+      const gen2Pos = new THREE.Vector3(8.5, 31.5, -8);
 
       gen1Mesh.position.copy(gen1Pos);
       gen2Mesh.position.copy(gen2Pos);
@@ -694,7 +702,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           { mesh: gen1Mesh, localPos: gen1Pos, hp: 16, maxHp: 16, destroyed: false },
           { mesh: gen2Mesh, localPos: gen2Pos, hp: 16, maxHp: 16, destroyed: false }
         ],
-        pos: new THREE.Vector3(0, 3.5, -340),
+        pos: new THREE.Vector3(0, 24, -420),
         shootCooldown: 1.2,
         squadCooldown: 16.0,
         bombardCooldown: 5.5,
@@ -834,6 +842,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           title: titleText,
           fogColor: targetColor
         };
+        clearAllPlanets();
         (scene.fog as THREE.FogExp2).color.setHex(targetColor);
         renderer.setClearColor(targetColor);
         setBiomeTitle(titleText);
@@ -852,9 +861,13 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       }
 
       const currentStep = biomeRunRef.current[stageIdx] || biomeRunRef.current[0];
-      const hasLightningBiome = currentStep.type === 'nebula_storm' || currentStep.type === 'ionic_vapors';
+      const hasLightningBiome =
+        !bossData &&
+        !bossCutsceneActiveRef.current &&
+        !bossVictoryActiveRef.current &&
+        (currentStep.type === 'nebula_storm' || currentStep.type === 'ionic_vapors');
 
-      if (hasLightningBiome && !bossCutsceneActiveRef.current && !bossVictoryActiveRef.current) {
+      if (hasLightningBiome) {
         lightningTimer += dt;
         if (lightningTimer >= lightningInterval) {
           lightningTimer = 0;
@@ -918,6 +931,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
             (scene.fog as THREE.FogExp2).color.lerp(fogTarget, 0.8);
             renderer.setClearColor(fogTarget);
 
+            clearAllPlanets();
             if (step.type === 'planet' && step.planet) {
               spawnPlanet(step.planet);
             }
@@ -1079,13 +1093,13 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.32, 1 - Math.exp(-6.0 * dt));
 
       let autoTargetPos: THREE.Vector3 | null = null;
-      let minLockDist = 240;
+      let minLockDist = 480;
 
       if (playerStunDuration <= 0) {
         for (const e of enemies) {
           if (e.state === 'attacking' && e.pos.z < shipPos.z - 2) {
             const d = e.pos.distanceTo(shipPos);
-            if (d < minLockDist) {
+            if (d < 240 && d < minLockDist) {
               minLockDist = d;
               autoTargetPos = e.pos;
             }
@@ -1098,7 +1112,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
               const worldGPos = new THREE.Vector3();
               gen.mesh.getWorldPosition(worldGPos);
               const d = worldGPos.distanceTo(shipPos);
-              if (d < minLockDist) {
+              if (d < 480 && d < minLockDist) {
                 minLockDist = d;
                 autoTargetPos = worldGPos;
               }
@@ -1206,8 +1220,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           setZoneAttackUi({
             visible: true,
             leftPct: Math.max(0, Math.min(100, leftNorm * 100)),
-            widthPct: Math.max(5, Math.min(100, widthNorm * 100)),
-            firing: false
+            widthPct: Math.max(5, Math.min(100, widthNorm * 100))
           });
         }
 
@@ -1215,8 +1228,20 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           zoneAttack.timer += dt;
           if (zoneAttack.timer >= zoneAttack.duration && !zoneAttack.fired) {
             zoneAttack.fired = true;
-            setZoneAttackUi((prev) => ({ ...prev, firing: true }));
+            setZoneAttackUi((prev) => ({ ...prev, visible: false }));
             shakeIntensity = Math.max(shakeIntensity, 0.85);
+
+            const laneCenter = (zoneAttack.xMin + zoneAttack.xMax) / 2;
+            const blastZ = shipPos.z - 6;
+
+            const yPoints = [10, 2, -6];
+            yPoints.forEach((yPos, idx) => {
+              setTimeout(() => {
+                if (!isDisposed && !bossVictoryActiveRef.current) {
+                  spawnRetroExplosion(new THREE.Vector3(laneCenter, yPos, blastZ), 1.6, false);
+                }
+              }, idx * 75);
+            });
 
             if (shipPos.x >= zoneAttack.xMin && shipPos.x <= zoneAttack.xMax) {
               if (godModeRef.current) {
@@ -1233,8 +1258,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
             setTimeout(() => {
               zoneAttack.active = false;
-              setZoneAttackUi((prev) => ({ ...prev, visible: false, firing: false }));
-            }, 300);
+            }, 350);
           }
         }
 
@@ -1258,7 +1282,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
         bossData.squadCooldown -= dt;
         if (bossData.squadCooldown <= 0) {
-          bossData.squadCooldown = 16.0 + Math.random() * 4.0;
+          bossData.squadCooldown = 15.0 + Math.random() * 5.0;
           const squadCount = Math.min(6, 4 + Math.floor(Math.random() * 3));
           for (let k = 0; k < squadCount; k++) {
             setTimeout(() => {
@@ -1451,7 +1475,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
               if (!gen.destroyed) {
                 const worldGPos = new THREE.Vector3();
                 gen.mesh.getWorldPosition(worldGPos);
-                if (l.mesh.position.distanceTo(worldGPos) < 6.5) {
+                if (l.mesh.position.distanceTo(worldGPos) < 10.0) {
                   l.life = 0;
                   hitAny = true;
                   gen.hp -= 1;
@@ -1988,11 +2012,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           z-index: 8;
           animation: zoneBlink 0.22s infinite alternate;
         }
-        .zone-attack-indicator.firing {
-          background: rgba(255, 50, 50, 0.75);
-          border: none;
-          animation: none;
-        }
         @keyframes zoneBlink {
           from { opacity: 0.15; }
           to { opacity: 0.55; }
@@ -2182,7 +2201,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
       {zoneAttackUi.visible && (
         <div
-          className={`zone-attack-indicator ${zoneAttackUi.firing ? 'firing' : ''}`}
+          className="zone-attack-indicator"
           style={{
             left: `${zoneAttackUi.leftPct}%`,
             width: `${zoneAttackUi.widthPct}%`
