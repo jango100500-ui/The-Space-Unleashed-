@@ -9,16 +9,14 @@ interface GameScreenProps {
 
 interface Enemy {
   mesh: THREE.Group;
-  state: 'entering' | 'attacking' | 'looping';
+  state: 'attacking' | 'looping_out' | 'looping_back';
   pos: THREE.Vector3;
-  dir: THREE.Vector3;
+  targetX: number;
+  targetY: number;
   speed: number;
   shootCooldown: number;
-  loopAngle: number;
-  loopCenter: THREE.Vector3;
-  loopRadius: number;
   side: number;
-  roll: number;
+  loopProgress: number;
 }
 
 interface Laser {
@@ -84,10 +82,10 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     const height = window.innerHeight;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x02060f, 0.002);
+    scene.fog = new THREE.FogExp2(0x02060f, 0.0015);
 
-    const camera = new THREE.PerspectiveCamera(54, width / height, 0.1, 2000);
-    const cameraBase = new THREE.Vector3(0, 2.5, 9.5);
+    const camera = new THREE.PerspectiveCamera(54, width / height, 0.1, 2500);
+    const cameraBase = new THREE.Vector3(0, 2.2, 8.0);
     camera.position.copy(cameraBase);
 
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
@@ -100,23 +98,23 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       mountRef.current.appendChild(renderer.domElement);
     }
 
-    const sunLight = new THREE.DirectionalLight(0xfffae8, 5.0);
-    sunLight.position.set(60, 90, 40);
+    const sunLight = new THREE.DirectionalLight(0xfffae8, 4.8);
+    sunLight.position.set(70, 80, 50);
     scene.add(sunLight);
 
-    const rimLight = new THREE.DirectionalLight(0x0088ff, 4.2);
-    rimLight.position.set(-60, -30, -50);
+    const rimLight = new THREE.DirectionalLight(0x0088ff, 3.8);
+    rimLight.position.set(-70, -30, -60);
     scene.add(rimLight);
 
-    const ambientLight = new THREE.AmbientLight(0x050c18, 0.9);
+    const ambientLight = new THREE.AmbientLight(0x060e18, 0.8);
     scene.add(ambientLight);
 
     const starCount = 2000;
     const starPos = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount * 3; i += 3) {
-      starPos[i] = (Math.random() - 0.5) * 1200;
-      starPos[i + 1] = (Math.random() - 0.5) * 800;
-      starPos[i + 2] = (Math.random() - 0.5) * 1600;
+      starPos[i] = (Math.random() - 0.5) * 1400;
+      starPos[i + 1] = (Math.random() - 0.5) * 900;
+      starPos[i + 2] = (Math.random() - 0.5) * 1800;
     }
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
@@ -124,63 +122,58 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
     const stars = new THREE.Points(starGeo, starMat);
     scene.add(stars);
 
-    const defaultShipPos = new THREE.Vector3(0, -1.8, 0);
+    const defaultShipPos = new THREE.Vector3(0, -1.6, 0);
     const shipPos = defaultShipPos.clone();
 
     const playerShip = models.xwing.clone();
-    playerShip.scale.setScalar(1.9);
+    playerShip.scale.setScalar(1.0);
     playerShip.position.copy(shipPos);
-    playerShip.rotation.set(0, Math.PI, 0);
+    playerShip.rotation.set(0, 0, 0);
     scene.add(playerShip);
 
     const crosshairTex = new THREE.Mesh(
-      new THREE.RingGeometry(0.35, 0.45, 16),
+      new THREE.RingGeometry(0.3, 0.38, 16),
       new THREE.MeshBasicMaterial({ color: 0x64b5f6, wireframe: true, transparent: true, opacity: 0.45 })
     );
     crosshairTex.position.set(0, 0, -45);
     scene.add(crosshairTex);
 
-    const redLaserGeo = new THREE.CylinderGeometry(0.08, 0.08, 3.2, 5);
+    const redLaserGeo = new THREE.CylinderGeometry(0.06, 0.06, 2.8, 5);
     redLaserGeo.rotateX(Math.PI / 2);
     const redLaserMat = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
 
-    const greenLaserGeo = new THREE.CylinderGeometry(0.09, 0.09, 3.5, 5);
+    const greenLaserGeo = new THREE.CylinderGeometry(0.07, 0.07, 3.0, 5);
     greenLaserGeo.rotateX(Math.PI / 2);
     const greenLaserMat = new THREE.MeshBasicMaterial({ color: 0x22ff44 });
 
     const lasers: Laser[] = [];
     const enemies: Enemy[] = [];
 
-    const spawnEnemyWave = () => {
-      const side = Math.random() > 0.5 ? 1 : -1;
-      const startX = side * (35 + Math.random() * 15);
-      const startY = (Math.random() - 0.5) * 12;
-      const startZ = -160 - Math.random() * 40;
+    const spawnEnemy = (forcedSide?: number) => {
+      const side = forcedSide !== undefined ? forcedSide : (Math.random() > 0.5 ? 1 : -1);
+      const startX = side * (55 + Math.random() * 20);
+      const startY = (Math.random() - 0.5) * 8;
+      const startZ = -220 - Math.random() * 30;
 
       const mesh = models.tie.clone();
-      mesh.scale.setScalar(1.6);
+      mesh.scale.setScalar(0.85);
       scene.add(mesh);
-
-      const targetPos = new THREE.Vector3(startX > 0 ? 6 : -6, (Math.random() - 0.5) * 4, -40);
-      const dir = new THREE.Vector3().subVectors(targetPos, new THREE.Vector3(startX, startY, startZ)).normalize();
 
       enemies.push({
         mesh,
-        state: 'entering',
+        state: 'attacking',
         pos: new THREE.Vector3(startX, startY, startZ),
-        dir,
-        speed: 85 + Math.random() * 20,
-        shootCooldown: 1.2 + Math.random() * 1.5,
-        loopAngle: 0,
-        loopCenter: new THREE.Vector3(),
-        loopRadius: 28 + Math.random() * 12,
+        targetX: (Math.random() - 0.5) * 14,
+        targetY: (Math.random() - 0.5) * 6,
+        speed: 38 + Math.random() * 8,
+        shootCooldown: 1.5 + Math.random() * 1.5,
         side,
-        roll: 0
+        loopProgress: 0
       });
     };
 
-    spawnEnemyWave();
-    spawnEnemyWave();
+    spawnEnemy(-1);
+    spawnEnemy(1);
 
     let spawnTimer = 0;
     let fireCooldown = 0;
@@ -201,39 +194,39 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       lastTime = timestamp;
 
       const input = inputRef.current;
-      const targetX = defaultShipPos.x + input.x * 11;
-      const targetY = defaultShipPos.y + input.y * 6.5;
+      const targetX = defaultShipPos.x + input.x * 10;
+      const targetY = defaultShipPos.y + input.y * 6;
 
-      const smoothFactor = input.x === 0 && input.y === 0 ? 9.0 : 6.0;
+      const smoothFactor = input.x === 0 && input.y === 0 ? 8.5 : 5.5;
       shipPos.x = THREE.MathUtils.lerp(shipPos.x, targetX, dt * smoothFactor);
       shipPos.y = THREE.MathUtils.lerp(shipPos.y, targetY, dt * smoothFactor);
 
       playerShip.position.copy(shipPos);
-      playerShip.rotation.z = THREE.MathUtils.lerp(playerShip.rotation.z, -input.x * 0.55, dt * 8);
-      playerShip.rotation.x = THREE.MathUtils.lerp(playerShip.rotation.x, input.y * 0.25, dt * 8);
+      playerShip.rotation.z = THREE.MathUtils.lerp(playerShip.rotation.z, -input.x * 0.45, dt * 8);
+      playerShip.rotation.x = THREE.MathUtils.lerp(playerShip.rotation.x, input.y * 0.22, dt * 8);
 
-      camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.35, dt * 5);
-      camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.35, dt * 5);
+      camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.3, dt * 5);
+      camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.3, dt * 5);
 
       let closestEnemy: Enemy | null = null;
       let closestDist = 999;
 
       for (const e of enemies) {
-        if (e.state === 'attacking' && e.pos.z < shipPos.z - 5) {
+        if (e.state === 'attacking' && e.pos.z < shipPos.z - 8) {
           const d = e.pos.distanceTo(shipPos);
-          if (d < 120 && d < closestDist) {
+          if (d < 110 && d < closestDist) {
             closestDist = d;
             closestEnemy = e;
           }
         }
       }
 
-      if (closestEnemy && closestDist < 75) {
+      if (closestEnemy && closestDist < 65) {
         crosshairTex.position.set(closestEnemy.pos.x * 0.85, closestEnemy.pos.y * 0.85, -45);
         (crosshairTex.material as THREE.MeshBasicMaterial).color.setHex(0xff3333);
         crosshairTex.scale.setScalar(0.7);
       } else {
-        crosshairTex.position.set(shipPos.x * 0.3, shipPos.y * 0.3 + 1.2, -45);
+        crosshairTex.position.set(shipPos.x * 0.3, shipPos.y * 0.3 + 1.0, -45);
         (crosshairTex.material as THREE.MeshBasicMaterial).color.setHex(0x64b5f6);
         crosshairTex.scale.setScalar(1.0);
       }
@@ -244,18 +237,18 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         wingAlt = (wingAlt + 1) % 4;
 
         const wingOffsets = [
-          new THREE.Vector3(-1.6, 0.45, -0.6),
-          new THREE.Vector3(1.6, 0.45, -0.6),
-          new THREE.Vector3(-1.6, -0.35, -0.6),
-          new THREE.Vector3(1.6, -0.35, -0.6)
+          new THREE.Vector3(-0.9, 0.25, -0.4),
+          new THREE.Vector3(0.9, 0.25, -0.4),
+          new THREE.Vector3(-0.9, -0.2, -0.4),
+          new THREE.Vector3(0.9, -0.2, -0.4)
         ];
         const offset = wingOffsets[wingAlt].clone().applyQuaternion(playerShip.quaternion);
 
         const lMesh = new THREE.Mesh(redLaserGeo, redLaserMat);
         lMesh.position.copy(shipPos).add(offset);
 
-        let aimTarget = new THREE.Vector3(shipPos.x, shipPos.y + 0.3, -120);
-        if (closestEnemy && closestDist < 75) {
+        let aimTarget = new THREE.Vector3(shipPos.x, shipPos.y + 0.2, -140);
+        if (closestEnemy && closestDist < 65) {
           aimTarget.copy(closestEnemy.pos);
         }
 
@@ -263,80 +256,84 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), lDir);
         scene.add(lMesh);
 
-        lasers.push({ mesh: lMesh, vel: lDir.multiplyScalar(260), life: 1.2, isEnemy: false });
-        playTone(900, 280, 0.08, 0.12, 'sawtooth');
+        lasers.push({ mesh: lMesh, vel: lDir.multiplyScalar(280), life: 1.2, isEnemy: false });
+        playTone(900, 280, 0.08, 0.1, 'sawtooth');
       }
 
       spawnTimer += dt;
-      if (spawnTimer > 4.2) {
+      if (spawnTimer > 4.5) {
         spawnTimer = 0;
-        if (enemies.length < 3) {
-          spawnEnemyWave();
+        if (enemies.length < 2) {
+          spawnEnemy();
         }
       }
 
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
 
-        if (e.state === 'entering') {
-          e.pos.addScaledVector(e.dir, e.speed * dt);
-          if (e.pos.z > -100) {
-            e.state = 'attacking';
-            e.dir.set(0, 0, 1);
-          }
-        } else if (e.state === 'attacking') {
-          const chaseDir = new THREE.Vector3().subVectors(shipPos, e.pos).normalize();
-          e.dir.x = THREE.MathUtils.lerp(e.dir.x, chaseDir.x * 0.4, dt * 2);
-          e.dir.y = THREE.MathUtils.lerp(e.dir.y, chaseDir.y * 0.3, dt * 2);
-          e.dir.z = 1;
-          e.dir.normalize();
+        if (e.state === 'attacking') {
+          e.pos.z += e.speed * dt;
+          e.pos.x = THREE.MathUtils.lerp(e.pos.x, e.targetX, dt * 0.9);
+          e.pos.y = THREE.MathUtils.lerp(e.pos.y, e.targetY, dt * 0.9);
 
-          e.pos.addScaledVector(e.dir, e.speed * dt);
+          const moveDir = new THREE.Vector3(e.targetX - e.pos.x, e.targetY - e.pos.y, 40).normalize();
+          e.mesh.lookAt(e.pos.clone().add(moveDir));
+          e.mesh.rotateY(Math.PI);
+          e.mesh.rotation.z = -(e.targetX - e.pos.x) * 0.04;
 
           e.shootCooldown -= dt;
-          if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 15) {
-            e.shootCooldown = 1.6 + Math.random() * 0.8;
-            for (const s of [-0.6, 0.6]) {
+          if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 18 && e.pos.z > -160) {
+            e.shootCooldown = 1.8 + Math.random() * 1.0;
+            const spreadX = (Math.random() - 0.5) * 6;
+            const spreadY = (Math.random() - 0.5) * 4;
+            const targetWithSpread = shipPos.clone().add(new THREE.Vector3(spreadX, spreadY, 0));
+
+            for (const s of [-0.4, 0.4]) {
               const lMesh = new THREE.Mesh(greenLaserGeo, greenLaserMat);
-              lMesh.position.set(e.pos.x + s, e.pos.y - 0.2, e.pos.z + 1.2);
-              const laserDir = new THREE.Vector3().subVectors(shipPos, lMesh.position).normalize();
+              lMesh.position.set(e.pos.x + s, e.pos.y - 0.1, e.pos.z + 1.0);
+              const laserDir = new THREE.Vector3().subVectors(targetWithSpread, lMesh.position).normalize();
               lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), laserDir);
               scene.add(lMesh);
-              lasers.push({ mesh: lMesh, vel: laserDir.multiplyScalar(155), life: 2.0, isEnemy: true });
+              lasers.push({ mesh: lMesh, vel: laserDir.multiplyScalar(140), life: 2.2, isEnemy: true });
             }
-            playTone(450, 140, 0.12, 0.08, 'square');
+            playTone(450, 140, 0.11, 0.06, 'square');
           }
 
           if (e.pos.z > camera.position.z + 14) {
-            e.state = 'looping';
-            e.loopAngle = 0;
-            const turnRight = e.pos.x > 0;
-            e.loopCenter.set(e.pos.x + (turnRight ? -e.loopRadius : e.loopRadius), e.pos.y, e.pos.z);
+            e.state = 'looping_out';
+            e.loopProgress = 0;
           }
-        } else if (e.state === 'looping') {
-          e.loopAngle += dt * 1.8;
-          const turnRight = e.side > 0;
-          const currentA = turnRight ? e.loopAngle : -e.loopAngle;
-          e.pos.x = e.loopCenter.x + Math.sin(currentA) * e.loopRadius;
-          e.pos.z = e.loopCenter.z - (1 - Math.cos(currentA)) * e.loopRadius * 2.2;
-          e.roll = turnRight ? -0.8 : 0.8;
+        } else if (e.state === 'looping_out') {
+          e.loopProgress += dt * 0.7;
+          e.pos.x += e.side * 28 * dt;
+          e.pos.y += Math.sin(e.loopProgress * 3) * 4 * dt;
+          e.pos.z += 18 * (1 - e.loopProgress) * dt;
 
-          if (e.loopAngle >= Math.PI) {
+          e.mesh.rotation.z = e.side * 0.6;
+          e.mesh.rotation.y = Math.PI - e.side * e.loopProgress * 1.5;
+
+          if (e.loopProgress >= 1.0) {
+            e.state = 'looping_back';
+            e.loopProgress = 0;
+          }
+        } else if (e.state === 'looping_back') {
+          e.loopProgress += dt * 0.65;
+          e.pos.z -= 85 * dt;
+          e.pos.x = THREE.MathUtils.lerp(e.pos.x, e.side * 35, dt * 1.2);
+
+          e.mesh.rotation.y = 0;
+          e.mesh.rotation.z = -e.side * 0.4;
+
+          if (e.pos.z < -200) {
             e.state = 'attacking';
-            e.pos.z = -180;
-            e.pos.x = (Math.random() - 0.5) * 40;
-            e.dir.set(0, 0, 1);
-            e.shootCooldown = 1.2;
+            e.pos.z = -210;
+            e.pos.x = e.side * (45 + Math.random() * 15);
+            e.targetX = (Math.random() - 0.5) * 12;
+            e.shootCooldown = 1.6;
           }
         }
 
         e.mesh.position.copy(e.pos);
-        const lookTarget = e.pos.clone().add(e.dir);
-        e.mesh.lookAt(lookTarget);
-        e.mesh.rotateY(Math.PI);
-        if (e.state === 'looping') {
-          e.mesh.rotateZ(e.roll);
-        }
       }
 
       for (let i = lasers.length - 1; i >= 0; i--) {
@@ -345,12 +342,12 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         l.mesh.position.addScaledVector(l.vel, dt);
 
         if (l.isEnemy) {
-          if (l.mesh.position.distanceTo(shipPos) < 2.0) {
+          if (l.mesh.position.distanceTo(shipPos) < 1.6) {
             l.life = 0;
-            shakeIntensity = 0.85;
-            currentHp = Math.max(0, currentHp - 14);
+            shakeIntensity = 0.5;
+            currentHp = Math.max(0, currentHp - 5);
             setHp(currentHp);
-            playTone(160, 40, 0.25, 0.25, 'sawtooth');
+            playTone(160, 40, 0.2, 0.2, 'sawtooth');
             if (currentHp <= 0) {
               setCurtainVisible(true);
               setTimeout(() => onExit(), 500);
@@ -359,9 +356,9 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         } else {
           for (let j = enemies.length - 1; j >= 0; j--) {
             const e = enemies[j];
-            if (l.mesh.position.distanceTo(e.pos) < 2.8) {
+            if (l.mesh.position.distanceTo(e.pos) < 2.4) {
               l.life = 0;
-              playTone(220, 60, 0.35, 0.3, 'sawtooth');
+              playTone(220, 60, 0.3, 0.25, 'sawtooth');
               scene.remove(e.mesh);
               enemies.splice(j, 1);
               break;
@@ -381,10 +378,10 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
           camera.position.y + (Math.random() - 0.5) * shakeIntensity,
           cameraBase.z + (Math.random() - 0.5) * shakeIntensity
         );
-        shakeIntensity = Math.max(0, shakeIntensity - dt * 2.8);
+        shakeIntensity = Math.max(0, shakeIntensity - dt * 2.5);
       }
 
-      camera.lookAt(shipPos.x * 0.25, shipPos.y * 0.25 + 0.8, -40);
+      camera.lookAt(shipPos.x * 0.2, shipPos.y * 0.2 + 0.5, -40);
 
       renderer.render(scene, camera);
       animId = requestAnimationFrame(gameLoop);
@@ -472,23 +469,23 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         }
         .tfu-hp-container {
           position: absolute;
-          top: 16px;
+          top: 14px;
           left: 18px;
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 3px;
         }
         .tfu-hp-label {
           font-family: Arial, sans-serif;
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 900;
           letter-spacing: 2px;
           color: #ff4757;
           text-shadow: 0 1px 3px #000;
         }
         .tfu-hp-frame {
-          width: min(240px, 32vw);
-          height: 14px;
+          width: min(220px, 30vw);
+          height: 13px;
           background-color: rgba(58, 5, 8, 0.75);
           border: 1px solid #ff4757;
           box-shadow: 0 0 0 1px #000, 0 4px 10px rgba(0, 0, 0, 0.85);
@@ -505,7 +502,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         }
         .tfu-joystick-zone {
           position: absolute;
-          right: 25px;
+          left: 25px;
           bottom: 20px;
           width: 120px;
           height: 120px;
@@ -536,8 +533,8 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         }
         .tfu-fire-btn {
           position: absolute;
-          right: 165px;
-          bottom: 30px;
+          right: 30px;
+          bottom: 25px;
           width: 72px;
           height: 72px;
           border-radius: 50%;
