@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 
-export default function MainMenu() {
+interface MainMenuProps {
+  onStart?: () => void;
+}
+
+export default function MainMenu({ onStart }: MainMenuProps) {
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
@@ -44,6 +49,13 @@ export default function MainMenu() {
   const handleItemClick = (index: number) => {
     playClickSound();
     setSelectedIndex(index);
+
+    if (index === 0 && onStart && !isTransitioning) {
+      setIsTransitioning(true);
+      setTimeout(() => {
+        onStart();
+      }, 450);
+    }
   };
 
   const toggleSound = () => {
@@ -75,6 +87,19 @@ export default function MainMenu() {
           justify-content: space-between;
           padding: 12px 18px 24px;
           overflow: hidden;
+        }
+        .tfu-fade-curtain {
+          position: absolute;
+          inset: 0;
+          background-color: #000000;
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.45s ease-out;
+          z-index: 100;
+        }
+        .tfu-fade-curtain.active {
+          opacity: 1;
+          pointer-events: auto;
         }
         .tfu-top-triggers {
           width: 100%;
@@ -177,6 +202,8 @@ export default function MainMenu() {
           text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
         }
       `}</style>
+
+      <div className={`tfu-fade-curtain ${isTransitioning ? 'active' : ''}`} />
 
       <div className="tfu-top-triggers">
         <button type="button" className="tfu-trigger">
