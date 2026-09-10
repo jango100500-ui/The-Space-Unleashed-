@@ -2,6 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { PreloadedModels } from '../App.tsx';
 
+const SOUNDS = {
+  xwingEngine: '/sounds/xwingengine.mp3',
+  explode: '/sounds/explode.mp3',
+  xwingShot: '/sounds/xwingshot.mp3',
+  tieShot: '/sounds/tieshot.mp3',
+  tieEngine: '/sounds/tieengine.mp3'
+};
+
 interface GameScreenProps {
   models: PreloadedModels;
   onExit: () => void;
@@ -150,40 +158,103 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
   const isPausedRef = useRef<boolean>(false);
   const inputRef = useRef<{ x: number; y: number; fire: boolean }>({ x: 0, y: 0, fire: false });
+
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioBuffersRef = useRef<Record<string, AudioBuffer>>({});
+  const xwingGainRef = useRef<GainNode | null>(null);
+  const tieEngineGainRef = useRef<GainNode | null>(null);
+  const spaceMuffleFilterRef = useRef<BiquadFilterNode | null>(null);
 
   const stickTouchId = useRef<number | null>(null);
   const stickCenter = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   useEffect(() => {
     isPausedRef.current = isPaused;
+    if (xwingGainRef.current && tieEngineGainRef.current) {
+      if (isPaused) {
+        xwingGainRef.current.gain.value = 0;
+        tieEngineGainRef.current.gain.value = 0;
+      }
+    }
   }, [isPaused]);
 
   useEffect(() => {
-    try {
-      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      audioCtxRef.current = new AudioContextClass();
-    } catch {
-      return;
-    }
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new AudioContextClass();
+    audioCtxRef.current = ctx;
+
+    const muffle = ctx.createBiquadFilter();
+    muffle.type = 'lowpass';
+    muffle.frequency.value = 460;
+    muffle.connect(ctx.destination);
+    spaceMuffleFilterRef.current = muffle;
+
+    const loadSound = async (key: string, url: string) => {
+      try {
+        const res = await fetch(url);
+        const arrayBuf = await res.arrayBuffer();
+        const decoded = await ctx.decodeAudioData(arrayBuf);
+        audioBuffersRef.current[key] = decoded;
+
+        if (key === 'xwingEngine') {
+          const src = ctx.createBufferSource();
+          src.buffer = decoded;
+          src.loop = true;
+          const gain = ctx.createGain();
+          gain.gain.value = 0.14;
+          src.connect(gain);
+          gain.connect(muffle);
+          src.start(0);
+          xwingGainRef.current = gain;
+        }
+
+        if (key === 'tieEngine') {
+          const src = ctx.createBufferSource();
+          src.buffer = decoded;
+          src.loop = true;
+          const gain = ctx.createGain();
+          gain.gain.value = 0;
+          src.connect(gain);
+          gain.connect(muffle);
+          src.start(0);
+          tieEngineGainRef.current = gain;
+        }
+      } catch {
+        return;
+      }
+    };
+
+    loadSound('xwingEngine', SOUNDS.xwingEngine);
+    loadSound('explode', SOUNDS.explode);
+    loadSound('xwingShot', SOUNDS.xwingShot);
+    loadSound('tieShot', SOUNDS.tieShot);
+    loadSound('tieEngine', SOUNDS.tieEngine);
+
+    return () => {
+      ctx.close();
+    };
   }, []);
 
-  const playTone = (freq: number, endFreq: number, dur: number, vol = 0.15, type: OscillatorType = 'sawtooth') => {
-    if (!audioCtxRef.current || isPausedRef.current) return;
+  const playBuffer = (buffer: AudioBuffer | undefined, volume: number, useMuffle = false) => {
+    if (!buffer || !audioCtxRef.current || isPausedRef.current) return;
     try {
-      if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
-      const t = audioCtxRef.current.currentTime;
-      const osc = audioCtxRef.current.createOscillator();
-      const gain = audioCtxRef.current.createGain();
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, t);
-      osc.frequency.exponentialRampToValueAtTime(endFreq, t + dur);
-      gain.gain.setValueAtTime(vol, t);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
-      osc.connect(gain);
-      gain.connect(audioCtxRef.current.destination);
-      osc.start(t);
-      osc.stop(t + dur);
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') ctx.resume();
+
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+
+      const gain = ctx.createGain();
+      gain.gain.value = volume;
+
+      src.connect(gain);
+      if (useMuffle && spaceMuffleFilterRef.current) {
+        gain.connect(spaceMuffleFilterRef.current);
+      } else {
+        gain.connect(ctx.destination);
+      }
+
+      src.start(0);
     } catch {
       return;
     }
@@ -396,6 +467,8 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         scene.add(dMesh);
         debrisList.push({ mesh: dMesh, vel, life: 0.75, maxLife: 0.75, spin });
       }
+
+      playBuffer(audioBuffersRef.current.explode, 0.42, true);
     };
 
     let enemySpawnCounter = 0;
@@ -510,6 +583,27 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
       }
 
       const dt = realDt;
+
+      let closestTieDistance = 999;
+      for (const e of enemies) {
+        const d = e.pos.distanceTo(camera.position);
+        if (d < closestTieDistance) {
+          closestTieDistance = d;
+        }
+      }
+
+      if (tieEngineGainRef.current) {
+        if (closestTieDistance < 70) {
+          const factor = Math.max(0, 1 - closestTieDistance / 70);
+          tieEngineGainRef.current.gain.value = factor * 0.18;
+        } else {
+          tieEngineGainRef.current.gain.value = 0;
+        }
+      }
+
+      if (xwingGainRef.current) {
+        xwingGainRef.current.gain.value = 0.14;
+      }
 
       if (!bossSpawned && stageIdx < 4) {
         stageTimer += dt;
@@ -743,7 +837,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
         scene.add(lMesh2);
         lasers.push({ mesh: lMesh2, vel: rightDir.multiplyScalar(640), life: 1.0, isEnemy: false });
 
-        playTone(920, 260, 0.075, 0.12, 'sawtooth');
+        playBuffer(audioBuffersRef.current.xwingShot, 0.28);
       }
 
       const maxSimultaneousEnemies = Math.min(6, 2 + stageIdx);
@@ -777,7 +871,7 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
             scene.add(lMesh);
             lasers.push({ mesh: lMesh, vel: bDir.multiplyScalar(170), life: 2.5, isEnemy: true });
           }
-          playTone(480, 110, 0.12, 0.1, 'square');
+          playBuffer(audioBuffersRef.current.tieShot, 0.22, true);
         }
 
         bossData.squadCooldown -= dt;
@@ -852,7 +946,11 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
               scene.add(lMesh);
               lasers.push({ mesh: lMesh, vel: baseLaserDir.clone().multiplyScalar(155), life: 2.2, isEnemy: true });
             }
-            playTone(460, 130, 0.1, 0.07, 'square');
+
+            const distVolume = Math.max(0, Math.min(0.24, (1 - distToCam / 85) * 0.24));
+            if (distVolume > 0.02) {
+              playBuffer(audioBuffersRef.current.tieShot, distVolume, true);
+            }
           }
 
           if (e.pos.z > camera.position.z + 16) {
@@ -904,7 +1002,6 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
             shakeIntensity = 0.5;
             currentHp = Math.max(0, currentHp - 5);
             setHp(currentHp);
-            playTone(160, 40, 0.2, 0.2, 'sawtooth');
             if (currentHp <= 0) {
               setCurtainVisible(true);
               setTimeout(() => onExit(), 500);
@@ -915,16 +1012,14 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
 
           for (let j = enemies.length - 1; j >= 0; j--) {
             const e = enemies[j];
-            if (l.mesh.position.distanceTo(e.pos) < 1.8) {
+            if (l.mesh.position.distanceTo(e.pos) < 3.8) {
               l.life = 0;
               hitAny = true;
               e.hp -= 1;
-              playTone(300, 150, 0.08, 0.15, 'sawtooth');
 
               if (e.hp <= 0) {
                 spawnRetroExplosion(e.pos);
                 shakeIntensity = Math.max(shakeIntensity, 0.8);
-                playTone(140, 30, 0.45, 0.35, 'sawtooth');
                 scene.remove(e.mesh);
                 enemies.splice(j, 1);
               }
@@ -937,16 +1032,14 @@ export default function GameScreen({ models, onExit }: GameScreenProps) {
               if (!gen.destroyed) {
                 const worldGPos = new THREE.Vector3();
                 gen.mesh.getWorldPosition(worldGPos);
-                if (l.mesh.position.distanceTo(worldGPos) < 3.2) {
+                if (l.mesh.position.distanceTo(worldGPos) < 4.2) {
                   l.life = 0;
                   hitAny = true;
                   gen.hp -= 1;
-                  playTone(280, 160, 0.06, 0.2, 'sawtooth');
 
                   if (gen.hp <= 0) {
                     gen.destroyed = true;
-                    spawnRetroExplosion(worldGPos, 1.5);
-                    playTone(120, 25, 0.6, 0.4, 'sawtooth');
+                    spawnRetroExplosion(worldGPos, 1.8);
                     gen.mesh.visible = false;
 
                     const allGensDown = bossData.generators.every((g) => g.destroyed);
