@@ -128,7 +128,20 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   };
 
   const playUiSound = () => {
-    playBuffer(assets.audioBuffers.click, 0.55);
+    if (!assets.audioBuffers.click) return;
+    try {
+      const { audioCtx } = assets;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const src = audioCtx.createBufferSource();
+      src.buffer = assets.audioBuffers.click;
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0.55;
+      src.connect(gain);
+      gain.connect(audioCtx.destination);
+      src.start(0);
+    } catch {
+      return;
+    }
   };
 
   useEffect(() => {
@@ -1485,15 +1498,19 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         dp.mesh.rotation.x += dp.rotSpeed.x * dt;
         dp.mesh.rotation.y += dp.rotSpeed.y * dt;
 
-        dp.pos.z += 90 * dt;
+        dp.pos.z += 95 * dt;
 
         const dToPlayer = dp.pos.distanceTo(shipPos);
-        if (dToPlayer < 75) {
-          dp.pos.lerp(shipPos, dt * 9.0);
+        if (dToPlayer < 85) {
+          const pullDir = new THREE.Vector3().subVectors(shipPos, dp.pos).normalize();
+          dp.pos.addScaledVector(pullDir, 120 * dt);
+          dp.pos.lerp(shipPos, dt * 8.0);
         }
         dp.mesh.position.copy(dp.pos);
 
-        if (dToPlayer < 2.8) {
+        const isCloseEnough = dToPlayer < 6.5 || (dp.pos.z >= shipPos.z - 1.5 && Math.hypot(dp.pos.x - shipPos.x, dp.pos.y - shipPos.y) < 5.5);
+
+        if (isCloseEnough) {
           currentHp = Math.min(100, currentHp + dp.healPercent);
           setHp(currentHp);
           setHealBonus(dp.healPercent);
