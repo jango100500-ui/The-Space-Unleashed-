@@ -570,44 +570,47 @@ export default function GameScreen({
     };
 
     const triggerBrotherHelpAttack = () => {
-      const activeTargets: { pos: THREE.Vector3; enemyRef?: Enemy }[] = [];
-      const live = enemies.filter((e) => e.state === 'attacking' && e.pos.z < shipPos.z - 6);
+      const targetPositions: THREE.Vector3[] = [];
+      const targetEnemies: (Enemy | null)[] = [];
 
+      const live = enemies.filter((e) => e.state === 'attacking' && e.pos.z < shipPos.z - 6);
       if (live.length > 0) {
         live.sort((a, b) => a.pos.distanceTo(shipPos) - b.pos.distanceTo(shipPos));
-        activeTargets.push({ pos: live[0].pos, enemyRef: live[0] });
+        targetPositions.push(live[0].pos);
+        targetEnemies.push(live[0]);
         if (live.length > 1) {
-          activeTargets.push({ pos: live[1].pos, enemyRef: live[1] });
+          targetPositions.push(live[1].pos);
+          targetEnemies.push(live[1]);
         }
       } else if (bossData && !bossData.destroyed && !bossData.raidActive) {
         const liveGens = bossData.generators.filter((g) => !g.destroyed);
         if (liveGens.length > 0) {
-          activeTargets.push({ pos: liveGens[0].localPos.clone().applyMatrix4(bossData.group.matrixWorld) });
+          const gPos = liveGens[0].localPos.clone().applyMatrix4(bossData.group.matrixWorld);
+          targetPositions.push(gPos);
+          targetEnemies.push(null);
         } else {
-          activeTargets.push({ pos: bossData.pos.clone().add(new THREE.Vector3(0, 4, 30)));
+          const bPos = bossData.pos.clone().add(new THREE.Vector3(0, 4, 30));
+          targetPositions.push(bPos);
+          targetEnemies.push(null);
         }
       }
 
-      if (activeTargets.length === 0) {
-        activeTargets.push({ pos: shipPos.clone().add(new THREE.Vector3(-4, 0, -180)) });
-        activeTargets.push({ pos: shipPos.clone().add(new THREE.Vector3(4, 0, -180)) });
+      if (targetPositions.length === 0) {
+        targetPositions.push(new THREE.Vector3(shipPos.x - 4, shipPos.y, -180));
+        targetPositions.push(new THREE.Vector3(shipPos.x + 4, shipPos.y, -180));
+        targetEnemies.push(null);
+        targetEnemies.push(null);
       }
 
       for (let s = 0; s < 6; s++) {
         setTimeout(() => {
           if (isDisposed) return;
-          const targetObj = activeTargets[s % activeTargets.length];
-          const target = targetObj.pos;
-          const originL = new THREE.Vector3(
-            shipPos.x + (s % 2 === 0 ? -7 : 7) - 0.45,
-            shipPos.y + 6 + (Math.random() - 0.5) * 0.8,
-            shipPos.z + 18
-          );
-          const originR = new THREE.Vector3(
-            shipPos.x + (s % 2 === 0 ? -7 : 7) + 0.45,
-            shipPos.y + 6 + (Math.random() - 0.5) * 0.8,
-            shipPos.z + 18
-          );
+          const targetIndex = s % targetPositions.length;
+          const target = targetPositions[targetIndex];
+          const xOffset = s % 2 === 0 ? -7.45 : 6.55;
+          const yOffset = shipPos.y + 6 + (Math.random() - 0.5) * 0.8;
+          const originL = new THREE.Vector3(shipPos.x + xOffset, yOffset, shipPos.z + 18);
+          const originR = new THREE.Vector3(shipPos.x + xOffset + 0.9, yOffset, shipPos.z + 18);
           const dir = new THREE.Vector3().subVectors(target, originL).normalize();
 
           const lMesh1 = new THREE.Mesh(redLaserGeo, redLaserMat);
@@ -622,8 +625,9 @@ export default function GameScreen({
           scene.add(lMesh2);
           lasers.push({ mesh: lMesh2, vel: dir.clone().multiplyScalar(780), life: 1.1, isEnemy: false });
 
-          if (targetObj.enemyRef && targetObj.enemyRef.hp > 0) {
-            targetObj.enemyRef.hp = Math.max(0, targetObj.enemyRef.hp - 2);
+          const enemyRef = targetEnemies[targetIndex];
+          if (enemyRef && enemyRef.hp > 0) {
+            enemyRef.hp = Math.max(0, enemyRef.hp - 3);
           }
 
           playBuffer(audioBuffers.xwingShot, 0.14, true);
@@ -706,9 +710,14 @@ export default function GameScreen({
       const startZ = -240 - Math.random() * 40;
 
       const allowTie2 = stageRef.current >= 2 && Math.random() < 0.45;
-      const useTie2Mesh = isRaid ? true : allowTie2;
+      const useTie2Mesh = isRaid || allowTie2;
 
-      const baseMesh = useTie2Mesh ? (models.tie2 ? models.tie2.clone() : models.tie.clone()) : models.tie.clone();
+      let baseMesh: THREE.Group;
+      if (useTie2Mesh && models.tie2) {
+        baseMesh = models.tie2.clone();
+      } else {
+        baseMesh = models.tie.clone();
+      }
       baseMesh.scale.setScalar(0.42);
       scene.add(baseMesh);
 
@@ -717,7 +726,14 @@ export default function GameScreen({
 
       enemySpawnCounter++;
       const isElite = !isRaid && (useTie2Mesh || enemySpawnCounter % 2 === 0);
-      const baseHp = isRaid ? 7 : isElite ? 6 : 4;
+      const baseHp = isRaid ? 7 : (isElite ? 6 : 4);
+
+      let shootCd = 0.95 + Math.random() * 0.6;
+      if (isRaid) {
+        shootCd = 0.9;
+      } else if (isElite) {
+        shootCd = 0.65 + Math.random() * 0.45;
+      }
 
       enemies.push({
         mesh: baseMesh,
@@ -726,7 +742,7 @@ export default function GameScreen({
         targetX: lateralLane,
         targetY: vertLane,
         speed: 42 + stageRef.current * 3 + Math.random() * 6,
-        shootCooldown: isRaid ? 0.9 : isElite ? 0.65 + Math.random() * 0.45 : 0.95 + Math.random() * 0.6,
+        shootCooldown: shootCd,
         side,
         loopProgress: 0,
         seed: Math.random() * 10,
