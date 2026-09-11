@@ -33,9 +33,9 @@ export default function WelcomeModal({ onClose }: WelcomeModalProps) {
           font-size: 20px;
           font-weight: 900;
           letter-spacing: 3px;
-          color: #e6f2ff;
+          color: #ffffff;
           text-transform: uppercase;
-          text-align: left;
+          text-align: center;
           margin-bottom: 14px;
         }
         .tfu-welcome-content {
