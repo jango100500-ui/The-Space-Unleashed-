@@ -13,7 +13,8 @@ const SOUND_LIST = [
   { key: 'xwingShot', url: '/sounds/xwingshot.mp3' },
   { key: 'tieShot', url: '/sounds/tieshot.mp3' },
   { key: 'tieEngine', url: '/sounds/tieengine.mp3' },
-  { key: 'click', url: '/sounds/click.mp3' }
+  { key: 'click', url: '/sounds/click.mp3' },
+  { key: 'destroyerSoundtrack', url: '/sounds/destroyer_soundtrack.mp3' }
 ];
 
 export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
@@ -70,6 +71,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
     const runLoading = async () => {
       let loadedXwing: THREE.Group | null = null;
       let loadedTie: THREE.Group | null = null;
+      let loadedTie2: THREE.Group | null = null;
       let loadedDestroyer: THREE.Group | null = null;
       let loadedDatapad: THREE.Group | null = null;
       let loadedCr90: THREE.Group | null = null;
@@ -77,31 +79,42 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
 
       try {
         setStatusText('ЗАГРУЗКА T-65B X-WING...');
-        setProgress(10);
+        setProgress(8);
         loadedXwing = await loadModel('/models/x-wing.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(10 + p * 12));
+          if (!isDisposed) setProgress(Math.floor(8 + p * 10));
         });
 
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА СИД-ИСТРЕБИТЕЛЕЙ...');
-        setProgress(22);
+        setProgress(18);
         loadedTie = await loadModel('/models/tie.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(22 + p * 12));
+          if (!isDisposed) setProgress(Math.floor(18 + p * 10));
         });
 
         if (isDisposed) return;
+        setStatusText('ЗАГРУЗКА TIE/IN INTERCEPTOR...');
+        setProgress(28);
+        try {
+          loadedTie2 = await loadModel('/models/tie2.glb', (p) => {
+            if (!isDisposed) setProgress(Math.floor(28 + p * 10));
+          });
+        } catch {
+          loadedTie2 = loadedTie ? loadedTie.clone() : null;
+        }
+
+        if (isDisposed) return;
         setStatusText('ЗАГРУЗКА ЗВЁЗДНОГО РАЗРУШИТЕЛЯ...');
-        setProgress(34);
+        setProgress(40);
         loadedDestroyer = await loadModel('/models/star-destroyer.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(34 + p * 16));
+          if (!isDisposed) setProgress(Math.floor(40 + p * 15));
         });
 
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА КОРВЕТА CR90...');
-        setProgress(50);
+        setProgress(55);
         try {
           loadedCr90 = await loadModel('/models/cr90.glb', (p) => {
-            if (!isDisposed) setProgress(Math.floor(50 + p * 12));
+            if (!isDisposed) setProgress(Math.floor(55 + p * 10));
           });
         } catch {
           const g = new THREE.Group();
@@ -151,6 +164,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
               models: {
                 xwing: loadedXwing,
                 tie: loadedTie,
+                tie2: loadedTie2 || loadedTie.clone(),
                 destroyer: loadedDestroyer,
                 datapad: loadedDatapad || undefined,
                 cr90: loadedCr90 || undefined
@@ -169,6 +183,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
 
         const fbXwing = loadedXwing || createBox(3, 0.8, 4, 0xbdc3c7);
         const fbTie = loadedTie || createBox(2, 2, 1.8, 0x475569);
+        const fbTie2 = loadedTie2 || fbTie.clone();
         const fbDestroyer = loadedDestroyer || createBox(40, 10, 70, 0x7f8c8d);
         const fbDatapad = loadedDatapad || createBox(0.35, 0.06, 0.5, 0x3399ff);
         const fbCr90 = loadedCr90 || createBox(4, 3, 24, 0xdddddd);
@@ -180,7 +195,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
         setTimeout(() => {
           if (!isDisposed) {
             onComplete({
-              models: { xwing: fbXwing, tie: fbTie, destroyer: fbDestroyer, datapad: fbDatapad, cr90: fbCr90 },
+              models: { xwing: fbXwing, tie: fbTie, tie2: fbTie2, destroyer: fbDestroyer, datapad: fbDatapad, cr90: fbCr90 },
               audioBuffers,
               audioCtx
             });
