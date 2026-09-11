@@ -3,9 +3,10 @@ import WelcomeModal from './WelcomeModal.tsx';
 
 interface MainMenuProps {
   onStart?: () => void;
+  onOpenHangar?: () => void;
 }
 
-export default function MainMenu({ onStart }: MainMenuProps) {
+export default function MainMenu({ onStart, onOpenHangar }: MainMenuProps) {
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
@@ -57,6 +58,8 @@ export default function MainMenu({ onStart }: MainMenuProps) {
       setTimeout(() => {
         onStart();
       }, 400);
+    } else if (index === 1 && onOpenHangar) {
+      onOpenHangar();
     }
   };
 
