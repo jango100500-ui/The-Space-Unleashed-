@@ -9,6 +9,7 @@ import {
   availablePlanets, BiomeType, GeneratorScreenTarget, BossDebris
 } from './GameData.ts';
 import { HANGAR_SHIPS } from '../components/HangarScreen.tsx';
+import VictoryCutscene from '../cutscenes/VictoryCutscene.tsx';
 import GameUI from './GameUI.tsx';
 
 interface ProtonBomb {
@@ -77,6 +78,7 @@ export default function GameScreen({
   const triggerBombRef = useRef<boolean>(false);
   const triggerBrotherHelpRef = useRef<boolean>(false);
 
+  const [showVictoryCutscene, setShowVictoryCutscene] = useState<boolean>(false);
   const [inBiomeTransition, setInBiomeTransition] = useState<boolean>(false);
   const [biomeTitle, setBiomeTitle] = useState<string>('');
   const [biomeSubtext, setBiomeSubtext] = useState<string>('');
@@ -99,10 +101,25 @@ export default function GameScreen({
   const [zoneAttackUi, setZoneAttackUi] = useState<{ visible: boolean; leftPct: number; widthPct: number }>({ visible: false, leftPct: 40, widthPct: 20 });
   const [tractorBeamUi, setTractorBeamUi] = useState<{ visible: boolean; leftPct: number; widthPct: number }>({ visible: false, leftPct: 35, widthPct: 30 });
 
+  const onAddCreditsRef = useRef(onAddCredits);
+  const onRestartRef = useRef(onRestart);
+  const onExitRef = useRef(onExit);
+  const onTriggerIntroCutsceneRef = useRef(onTriggerIntroCutscene);
+  const onTriggerVictoryCutsceneRef = useRef(onTriggerVictoryCutscene);
+
+  useEffect(() => {
+    onAddCreditsRef.current = onAddCredits;
+    onRestartRef.current = onRestart;
+    onExitRef.current = onExit;
+    onTriggerIntroCutsceneRef.current = onTriggerIntroCutscene;
+    onTriggerVictoryCutsceneRef.current = onTriggerVictoryCutscene;
+  });
+
   const isPausedRef = useRef<boolean>(false);
   const inBiomeTransitionRef = useRef<boolean>(false);
   const bossCutsceneActiveRef = useRef<boolean>(false);
   const inHallwayRef = useRef<boolean>(false);
+  const showVictoryCutsceneRef = useRef<boolean>(false);
 
   const isDeadRef = useRef<boolean>(false);
   const isEndingSequenceRef = useRef<boolean>(false);
@@ -126,20 +143,21 @@ export default function GameScreen({
   useEffect(() => {
     isPausedRef.current = isPaused;
     inHallwayRef.current = showHallwayCutscene;
+    showVictoryCutsceneRef.current = showVictoryCutscene;
     if (xwingGainRef.current && tieEngineGainRef.current) {
-      if (isPaused || endGameModal !== null) {
+      if (isPaused || endGameModal !== null || showVictoryCutscene) {
         xwingGainRef.current.gain.value = 0;
         tieEngineGainRef.current.gain.value = 0;
       }
     }
     if (bossSoundtrackSourceRef.current && assets.audioCtx) {
-      if (isPaused || endGameModal !== null) {
+      if (isPaused || endGameModal !== null || showVictoryCutscene) {
         if (assets.audioCtx.state === 'running') assets.audioCtx.suspend();
       } else {
         if (assets.audioCtx.state === 'suspended') assets.audioCtx.resume();
       }
     }
-  }, [isPaused, showHallwayCutscene, endGameModal, assets.audioCtx]);
+  }, [isPaused, showHallwayCutscene, endGameModal, showVictoryCutscene, assets.audioCtx]);
 
   const playTone = (freq: number, endFreq: number, dur: number, vol = 0.15, type: OscillatorType = 'sawtooth') => {
     if (!assets.audioCtx || isPausedRef.current) return;
@@ -206,7 +224,7 @@ export default function GameScreen({
   }, [isFiring]);
 
   const handleTriggerAbility1 = () => {
-    if (isPausedRef.current || playerStunned || ability1CooldownRef.current > 0 || isDeadRef.current) return;
+    if (isPausedRef.current || playerStunned || ability1CooldownRef.current > 0 || isDeadRef.current || showVictoryCutscene) return;
     if (selectedShipId !== 'xwing') return;
     ability1CooldownRef.current = 25.0;
     setAbility1Cooldown(25);
@@ -214,7 +232,7 @@ export default function GameScreen({
   };
 
   const handleTriggerAbility2 = () => {
-    if (isPausedRef.current || playerStunned || ability2CooldownRef.current > 0 || isDeadRef.current) return;
+    if (isPausedRef.current || playerStunned || ability2CooldownRef.current > 0 || isDeadRef.current || showVictoryCutscene) return;
     if (selectedShipId !== 'xwing') return;
     ability2CooldownRef.current = 26.0;
     setAbility2Cooldown(26);
@@ -838,30 +856,77 @@ export default function GameScreen({
     let activeLightningMesh: THREE.Line | null = null;
     let activeLightningLife = 0;
 
-    const triggerEndGame = (mode: 'defeat' | 'victory') => {
-      if (isEndingSequenceRef.current) return;
-      isEndingSequenceRef.current = true;
+    let isDefeatSequenceActive = false;
 
-      const earned = Math.floor(currentScore * 0.12 + currentKills * 35 + currentStagesDone * 150 + (mode === 'victory' ? 600 : 0));
+    const triggerDefeatSequence = () => {
+      if (isDefeatSequenceActive || isEndingSequenceRef.current) return;
+      isDefeatSequenceActive = true;
+      isDeadRef.current = true;
+
+      spawnRetroExplosion(shipPos, 3.0, true, false);
+      shipHolder.visible = false;
+      crosshairTex.visible = false;
+
+      const earned = Math.floor(currentScore * 0.12 + currentKills * 35 + currentStagesDone * 150);
       setCreditsEarned(earned);
-      if (onAddCredits) {
-        onAddCredits(earned);
+      if (onAddCreditsRef.current) {
+        onAddCreditsRef.current(earned);
       }
 
       setTimeout(() => {
         if (isDisposed) return;
         setCurtainVisible(true);
+
         setTimeout(() => {
           if (isDisposed) return;
+          isPausedRef.current = true;
           if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
           if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
-          setEndGameModal(mode);
-        }, 400);
+          setEndGameModal('defeat');
+        }, 500);
       }, 1000);
     };
 
+    let isVictorySequenceActive = false;
+
+    const triggerVictorySequence = () => {
+      if (isVictorySequenceActive || isEndingSequenceRef.current) return;
+      isVictorySequenceActive = true;
+      bossData!.destroyed = true;
+
+      currentScore += 5000;
+      setScore(currentScore);
+
+      const earned = Math.floor(currentScore * 0.12 + currentKills * 35 + currentStagesDone * 150 + 600);
+      setCreditsEarned(earned);
+      if (onAddCreditsRef.current) {
+        onAddCreditsRef.current(earned);
+      }
+
+      spawnRetroExplosion(bossData!.pos, 3.5, true, false);
+
+      if (bossSoundtrackSourceRef.current) {
+        try { bossSoundtrackSourceRef.current.stop(); } catch {}
+        bossSoundtrackSourceRef.current = null;
+      }
+
+      setShowVictoryCutscene(true);
+    };
+
+    const handleVictoryCutsceneDone = () => {
+      setShowVictoryCutscene(false);
+      setCurtainVisible(true);
+      isPausedRef.current = true;
+      if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
+      if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
+      setTimeout(() => {
+        if (isDisposed) return;
+        setEndGameModal('victory');
+      }, 450);
+    };
+
     const applyDamageToPlayer = (dmg: number) => {
-      if (godModeRef.current || isDeadRef.current || inBiomeTransitionRef.current || bossCutsceneActiveRef.current || showHallwayCutscene) {
+      if (godModeRef.current || isDeadRef.current || inBiomeTransitionRef.current || bossCutsceneActiveRef.current || showHallwayCutscene || showVictoryCutsceneRef.current) {
         if (godModeRef.current) spawnShieldImpact(shipPos);
         return;
       }
@@ -877,11 +942,7 @@ export default function GameScreen({
         setHp(currentHp);
         shakeIntensity = Math.max(shakeIntensity, 0.55);
         if (currentHp <= 0 && !isDeadRef.current) {
-          isDeadRef.current = true;
-          spawnRetroExplosion(shipPos, 2.8, true, false);
-          shipHolder.visible = false;
-          crosshairTex.visible = false;
-          triggerEndGame('defeat');
+          triggerDefeatSequence();
         }
       }
     };
@@ -1022,7 +1083,7 @@ export default function GameScreen({
       const currentStep = biomeRunRef.current[stageIdx] || biomeRunRef.current[0];
       const hasLightningBiome = !bossData && !bossCutsceneActiveRef.current && (currentStep.type === 'nebula_storm' || currentStep.type === 'ionic_vapors');
 
-      if (hasLightningBiome && !inBiomeTransitionRef.current && !showHallwayCutscene) {
+      if (hasLightningBiome && !inBiomeTransitionRef.current && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
         lightningTimer += dt;
         if (lightningTimer >= lightningInterval) {
           lightningTimer = 0;
@@ -1050,7 +1111,7 @@ export default function GameScreen({
       }
 
       if (tieEngineGainRef.current) {
-        if (closestTieDistance < 130 && !showHallwayCutscene) {
+        if (closestTieDistance < 130 && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
           const factor = Math.max(0, 1 - closestTieDistance / 130);
           tieEngineGainRef.current.gain.value = factor * 0.22;
         } else {
@@ -1059,10 +1120,10 @@ export default function GameScreen({
       }
 
       if (xwingGainRef.current) {
-        xwingGainRef.current.gain.value = isDeadRef.current ? 0 : 0.14;
+        xwingGainRef.current.gain.value = (isDeadRef.current || showVictoryCutsceneRef.current) ? 0 : 0.14;
       }
 
-      if (!bossSpawned && stageIdx < 4 && !isDeadRef.current) {
+      if (!bossSpawned && stageIdx < 4 && !isDeadRef.current && !showVictoryCutsceneRef.current) {
         stageTimer += dt;
         const pFrac = Math.min(1, stageTimer / STAGE_DURATION);
         setStageProgressPercent(Math.floor(pFrac * 100));
@@ -1099,7 +1160,7 @@ export default function GameScreen({
             }
           }
         }
-      } else if (!bossSpawned && stageIdx >= 4 && !bossCutsceneActiveRef.current && !isDeadRef.current) {
+      } else if (!bossSpawned && stageIdx >= 4 && !bossCutsceneActiveRef.current && !isDeadRef.current && !showVictoryCutsceneRef.current) {
         applyStageHeal(25);
         bossSpawned = true;
         bossCutsceneActiveRef.current = true;
@@ -1162,7 +1223,7 @@ export default function GameScreen({
         }
       }
 
-      const activeSpeed = (isDeadRef.current && isEndingSequenceRef.current) ? 0 : 160;
+      const activeSpeed = (isDeadRef.current || isEndingSequenceRef.current) ? 0 : 160;
       for (let k = 0; k < starCount; k++) {
         const idx = k * 3 + 2;
         starPos[idx] += activeSpeed * dt;
@@ -1176,7 +1237,7 @@ export default function GameScreen({
 
       for (let i = planetMeshes.length - 1; i >= 0; i--) {
         const pl = planetMeshes[i];
-        const pSpeed = (isDeadRef.current && isEndingSequenceRef.current) ? 0 : (pl.userData.speed || 38);
+        const pSpeed = (isDeadRef.current || isEndingSequenceRef.current) ? 0 : (pl.userData.speed || 38);
         pl.position.z += pSpeed * dt;
         pl.rotation.y += 0.001 * dt;
         if (pl.position.z > camera.position.z + pl.userData.radius + 60) {
@@ -1186,7 +1247,7 @@ export default function GameScreen({
         }
       }
 
-      const input = (isDeadRef.current || inBiomeTransitionRef.current || playerStunDuration > 0 || showHallwayCutscene)
+      const input = (isDeadRef.current || inBiomeTransitionRef.current || playerStunDuration > 0 || showHallwayCutscene || showVictoryCutsceneRef.current)
         ? { x: 0, y: 0, fire: false }
         : inputRef.current;
 
@@ -1221,7 +1282,7 @@ export default function GameScreen({
         }
       }
 
-      if (!bossCutsceneActiveRef.current) {
+      if (!bossCutsceneActiveRef.current && !isDeadRef.current) {
         camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.32, 1 - Math.exp(-6.0 * dt));
         camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.32, 1 - Math.exp(-6.0 * dt));
       }
@@ -1229,7 +1290,7 @@ export default function GameScreen({
       let autoTargetPos: THREE.Vector3 | null = null;
       let bestScore = 9999;
 
-      if (playerStunDuration <= 0 && !isDeadRef.current && !showHallwayCutscene) {
+      if (playerStunDuration <= 0 && !isDeadRef.current && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
         for (const e of enemies) {
           if (e.state === 'attacking' && e.pos.z < shipPos.z - 2) {
             const d = e.pos.distanceTo(shipPos);
@@ -1276,7 +1337,7 @@ export default function GameScreen({
       const defaultAimDistance = 140;
       let bulletAimTarget = shipPos.clone().addScaledVector(shipForward, defaultAimDistance);
 
-      if (playerStunDuration > 0 || isDeadRef.current || showHallwayCutscene) {
+      if (playerStunDuration > 0 || isDeadRef.current || showHallwayCutscene || showVictoryCutsceneRef.current) {
         crosshairTex.visible = false;
       } else {
         crosshairTex.visible = true;
@@ -1443,16 +1504,7 @@ export default function GameScreen({
               spawnRetroExplosion(bomb.mesh.position, 2.8, true, false);
 
               if (bossData.hullHp <= 0) {
-                bossData.destroyed = true;
-                currentScore += 5000;
-                setScore(currentScore);
-                spawnRetroExplosion(bossData.pos, 3.8, true, false);
-
-                if (onTriggerVictoryCutscene) {
-                  onTriggerVictoryCutscene();
-                } else {
-                  triggerEndGame('victory');
-                }
+                triggerVictorySequence();
               }
             }
           }
@@ -1470,7 +1522,7 @@ export default function GameScreen({
       fireCooldown -= dt;
       const calcFireCooldown = THREE.MathUtils.clamp(0.35 - (shipConf.fireRate / 60) * 0.18, 0.14, 0.32);
 
-      if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0 && !isDeadRef.current && !showHallwayCutscene) {
+      if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0 && !isDeadRef.current && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
         fireCooldown = calcFireCooldown;
 
         const leftOffset = new THREE.Vector3(-0.46, 0, -0.3).applyQuaternion(shipHolder.quaternion);
@@ -1499,7 +1551,7 @@ export default function GameScreen({
 
       const maxSimultaneousEnemies = Math.min(8, 3 + stageIdx);
 
-      if (!inBiomeTransitionRef.current && !bossData && !showHallwayCutscene && !isDeadRef.current) {
+      if (!inBiomeTransitionRef.current && !bossData && !showHallwayCutscene && !isDeadRef.current && !showVictoryCutsceneRef.current) {
         spawnTimer += dt;
         const dynamicSpawnInterval = Math.max(1.7, 3.8 - stageIdx * 0.55);
         if (spawnTimer > dynamicSpawnInterval) {
@@ -1597,7 +1649,7 @@ export default function GameScreen({
         }
 
         const newTargetList: GeneratorScreenTarget[] = [];
-        if (!bossData.phase2Active && !showHallwayCutscene) {
+        if (!bossData.phase2Active && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
           for (const gen of bossData.generators) {
             if (!gen.destroyed) {
               const worldGPos = gen.localPos.clone().applyMatrix4(bossData.group.matrixWorld);
@@ -1612,7 +1664,7 @@ export default function GameScreen({
         }
         setGeneratorTargets(newTargetList);
 
-        if (!bossData.raidActive && !bossCutsceneActiveRef.current && !inBiomeTransitionRef.current && !showHallwayCutscene && !isDeadRef.current) {
+        if (!bossData.raidActive && !bossCutsceneActiveRef.current && !inBiomeTransitionRef.current && !showHallwayCutscene && !isDeadRef.current && !showVictoryCutsceneRef.current) {
           const isSpecialBusy = zoneAttack.active || tractorBeam.active || isBossExecutingSpecial;
 
           if (!isSpecialBusy) {
@@ -1817,7 +1869,7 @@ export default function GameScreen({
             shakeIntensity = Math.max(shakeIntensity, flybyFactor * 0.7);
           }
 
-          if (!showHallwayCutscene && !isDeadRef.current) {
+          if (!showHallwayCutscene && !isDeadRef.current && !showVictoryCutsceneRef.current) {
             e.shootCooldown -= dt;
             if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 18 && e.pos.z > -160) {
               e.shootCooldown = e.isRaid ? 0.9 : e.isElite ? 0.8 + Math.random() * 0.5 : 1.1 + Math.random() * 0.7;
@@ -1841,7 +1893,7 @@ export default function GameScreen({
 
               if (e.isRaid) {
                 setTimeout(() => {
-                  if (!isDisposed && e.hp > 0 && !bossCutsceneActiveRef.current && !showHallwayCutscene) {
+                  if (!isDisposed && e.hp > 0 && !bossCutsceneActiveRef.current && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
                     fireSalvo(-0.5);
                   }
                 }, 110);
@@ -1965,7 +2017,7 @@ export default function GameScreen({
             }
           }
 
-          if (!hitAny && bossData && !bossData.destroyed && !bossData.raidActive && !bossCutsceneActiveRef.current) {
+          if (!hitAny && bossData && !bossData.destroyed && !bossData.raidActive && !bossCutsceneActiveRef.current && !showVictoryCutsceneRef.current) {
             bossData.group.updateMatrixWorld(true);
             const hasGenerators = bossData.generators.some((g) => !g.destroyed);
 
@@ -2018,16 +2070,7 @@ export default function GameScreen({
                 }
 
                 if (bossData.hullHp <= 0) {
-                  bossData.destroyed = true;
-                  currentScore += 5000;
-                  setScore(currentScore);
-                  spawnRetroExplosion(bossData.pos, 3.5, true);
-
-                  if (onTriggerVictoryCutscene) {
-                    onTriggerVictoryCutscene();
-                  } else {
-                    triggerEndGame('victory');
-                  }
+                  triggerVictorySequence();
                 }
               }
             }
@@ -2218,10 +2261,10 @@ export default function GameScreen({
       }
       renderer.dispose();
     };
-  }, [assets, selectedShipId, onExit, onAddCredits, onTriggerVictoryCutscene]);
+  }, [assets, selectedShipId]);
 
   const handleStickPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene || endGameModal !== null || isDeadRef.current) return;
+    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene || showVictoryCutscene || endGameModal !== null || isDeadRef.current) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     stickTouchId.current = e.pointerId;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -2231,7 +2274,7 @@ export default function GameScreen({
   };
 
   const handleStickMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene || endGameModal !== null || isDeadRef.current || stickTouchId.current !== e.pointerId) return;
+    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene || showVictoryCutscene || endGameModal !== null || isDeadRef.current || stickTouchId.current !== e.pointerId) return;
     const dx = e.clientX - stickCenter.current.x;
     const dy = e.clientY - stickCenter.current.y;
     const maxRadius = 55;
@@ -2279,7 +2322,9 @@ export default function GameScreen({
     }
     setCurtainVisible(true);
     setTimeout(() => {
-      onExit();
+      if (onExitRef.current) {
+        onExitRef.current();
+      }
     }, 400);
   };
 
@@ -2293,10 +2338,10 @@ export default function GameScreen({
     }
     setCurtainVisible(true);
     setTimeout(() => {
-      if (onRestart) {
-        onRestart();
-      } else {
-        onExit();
+      if (onRestartRef.current) {
+        onRestartRef.current();
+      } else if (onExitRef.current) {
+        onExitRef.current();
       }
     }, 400);
   };
@@ -2370,20 +2415,18 @@ export default function GameScreen({
       setIsPaused(false);
       setConsoleInput('');
       setConsoleFeedback('');
-      if (onTriggerIntroCutscene) {
-        onTriggerIntroCutscene();
+      if (onTriggerIntroCutsceneRef.current) {
+        onTriggerIntroCutsceneRef.current();
       }
     } else if (code === 'njsjaowp6659sjjp') {
       setIsConsoleOpen(false);
       setIsPaused(false);
       setConsoleInput('');
       setConsoleFeedback('');
-      if (onTriggerVictoryCutscene) {
-        onTriggerVictoryCutscene();
-      }
+      setShowVictoryCutscene(true);
     } else if (code === 'pqonfu$$shsji') {
-      if (onAddCredits) {
-        onAddCredits(999999);
+      if (onAddCreditsRef.current) {
+        onAddCreditsRef.current(999999);
       }
       setConsoleFeedback('ПОЛУЧЕНО 999999 КРЕДИТОВ');
       setTimeout(() => {
@@ -2402,62 +2445,72 @@ export default function GameScreen({
   }, []);
 
   return (
-    <GameUI
-      assets={assets}
-      mountRef={mountRef}
-      curtainVisible={curtainVisible}
-      hp={hp}
-      maxShield={maxShield}
-      shieldHp={shieldHp}
-      healBonus={healBonus}
-      score={score}
-      enemiesKilled={enemiesKilled}
-      damageDealt={damageDealt}
-      stagesCompleted={stagesCompleted}
-      creditsEarned={creditsEarned}
-      endGameModal={endGameModal}
-      joystickActive={joystickActive}
-      joystickOffset={joystickOffset}
-      ability1Cooldown={ability1Cooldown}
-      ability2Cooldown={ability2Cooldown}
-      inBiomeTransition={inBiomeTransition}
-      biomeTitle={biomeTitle}
-      biomeSubtext={biomeSubtext}
-      isPaused={isPaused}
-      isConsoleOpen={isConsoleOpen}
-      consoleInput={consoleInput}
-      consoleFeedback={consoleFeedback}
-      showHallwayCutscene={showHallwayCutscene}
-      currentStage={currentStage}
-      stageProgressPercent={stageProgressPercent}
-      bossActive={bossActive}
-      bossShieldsDown={bossShieldsDown}
-      bossBarMode={bossBarMode}
-      bossBarPercent={bossBarPercent}
-      bossCutsceneActive={bossCutsceneActive}
-      playerStunned={playerStunned}
-      zoneAttackUi={zoneAttackUi}
-      tractorBeamUi={tractorBeamUi}
-      generatorTargets={generatorTargets}
-      onStickPointerDown={handleStickPointerDown}
-      onStickMove={handleStickMove}
-      onStickPointerUp={handleStickPointerUp}
-      onTogglePause={handleTogglePause}
-      onResume={handleResume}
-      onOpenConsole={handleOpenConsole}
-      onCloseConsole={handleCloseConsole}
-      onRestartGame={handleRestartGame}
-      onQuit={handleQuit}
-      onConsoleInputChange={setConsoleInput}
-      onApplyCheat={handleApplyCheat}
-      onFirePointerDown={() => {
-        if (!inBiomeTransition && !isPaused && !isConsoleOpen && !bossCutsceneActive && !playerStunned && !showHallwayCutscene && endGameModal === null && !isDeadRef.current) setIsFiring(true);
-      }}
-      onFirePointerUp={() => setIsFiring(false)}
-      onFirePointerCancel={() => setIsFiring(false)}
-      onTriggerAbility1={handleTriggerAbility1}
-      onTriggerAbility2={handleTriggerAbility2}
-      onHallwayComplete={handleHallwayComplete}
-    />
+    <>
+      <GameUI
+        assets={assets}
+        mountRef={mountRef}
+        curtainVisible={curtainVisible}
+        hp={hp}
+        maxShield={maxShield}
+        shieldHp={shieldHp}
+        healBonus={healBonus}
+        score={score}
+        enemiesKilled={enemiesKilled}
+        damageDealt={damageDealt}
+        stagesCompleted={stagesCompleted}
+        creditsEarned={creditsEarned}
+        endGameModal={endGameModal}
+        joystickActive={joystickActive}
+        joystickOffset={joystickOffset}
+        ability1Cooldown={ability1Cooldown}
+        ability2Cooldown={ability2Cooldown}
+        inBiomeTransition={inBiomeTransition}
+        biomeTitle={biomeTitle}
+        biomeSubtext={biomeSubtext}
+        isPaused={isPaused}
+        isConsoleOpen={isConsoleOpen}
+        consoleInput={consoleInput}
+        consoleFeedback={consoleFeedback}
+        showHallwayCutscene={showHallwayCutscene}
+        currentStage={currentStage}
+        stageProgressPercent={stageProgressPercent}
+        bossActive={bossActive}
+        bossShieldsDown={bossShieldsDown}
+        bossBarMode={bossBarMode}
+        bossBarPercent={bossBarPercent}
+        bossCutsceneActive={bossCutsceneActive}
+        playerStunned={playerStunned}
+        zoneAttackUi={zoneAttackUi}
+        tractorBeamUi={tractorBeamUi}
+        generatorTargets={generatorTargets}
+        onStickPointerDown={handleStickPointerDown}
+        onStickMove={handleStickMove}
+        onStickPointerUp={handleStickPointerUp}
+        onTogglePause={handleTogglePause}
+        onResume={handleResume}
+        onOpenConsole={handleOpenConsole}
+        onCloseConsole={handleCloseConsole}
+        onRestartGame={handleRestartGame}
+        onQuit={handleQuit}
+        onConsoleInputChange={setConsoleInput}
+        onApplyCheat={handleApplyCheat}
+        onFirePointerDown={() => {
+          if (!inBiomeTransition && !isPaused && !isConsoleOpen && !bossCutsceneActive && !playerStunned && !showHallwayCutscene && !showVictoryCutscene && endGameModal === null && !isDeadRef.current) setIsFiring(true);
+        }}
+        onFirePointerUp={() => setIsFiring(false)}
+        onFirePointerCancel={() => setIsFiring(false)}
+        onTriggerAbility1={handleTriggerAbility1}
+        onTriggerAbility2={handleTriggerAbility2}
+        onHallwayComplete={handleHallwayComplete}
+      />
+
+      {showVictoryCutscene && (
+        <VictoryCutscene
+          assets={assets}
+          selectedShipId={selectedShipId}
+          onComplete={handleVictoryCutsceneDone}
+        />
+      )}
+    </>
   );
 }
