@@ -26,8 +26,6 @@ interface GameUIProps {
   bossBarMode: 'shield' | 'hull' | 'raid';
   bossBarPercent: number;
   bossCutsceneActive: boolean;
-  bossVictoryActive: boolean;
-  showVictoryText: boolean;
   playerStunned: boolean;
   zoneAttackUi: { visible: boolean; leftPct: number; widthPct: number };
   tractorBeamUi: { visible: boolean; leftPct: number; widthPct: number };
@@ -77,11 +75,13 @@ export default function GameUI(props: GameUIProps) {
         .tfu-boss-hp-frame { width: min(260px, 40vw); height: 13px; border-width: 1px; border-style: solid; box-shadow: 0 0 0 1px #000; padding: 1px; clip-path: polygon(8px 0%, calc(100% - 8px) 0%, 100% 100%, 0% 100%); position: relative; }
         .tfu-boss-hp-frame.shield { background-color: rgba(5, 45, 60, 0.75); border-color: #00d2d3; }
         .tfu-boss-hp-frame.hull { background-color: rgba(60, 50, 5, 0.75); border-color: #f1c40f; }
-        .tfu-boss-hp-frame.raid { background-color: rgba(40, 40, 45, 0.75); border-color: #ffffff; }
+        .tfu-boss-hp-frame.raid { background-color: rgba(255, 255, 255, 0.15); border-color: #ffffff; }
         .tfu-boss-hp-fill { height: 100%; clip-path: polygon(6px 0%, calc(100% - 6px) 0%, 100% 100%, 0% 100%); transition: width 0.15s ease-out; }
         .tfu-boss-hp-fill.shield { background: repeating-linear-gradient(0deg, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.3) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #0984e3 0%, #00d2d3 45%, #0652dd 55%, #002366 100%); }
         .tfu-boss-hp-fill.hull { background: repeating-linear-gradient(0deg, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.3) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #f39c12 0%, #f1c40f 45%, #d68910 55%, #7d6608 100%); }
-        .tfu-boss-hp-fill.raid { background: repeating-linear-gradient(0deg, rgba(0,0,0,0.2) 0px, rgba(0,0,0,0.2) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #ffffff 0%, #e0e0e0 45%, #b0b0b0 55%, #707070 100%); }
+        .tfu-boss-hp-fill.raid { background: #ffffff; }
+        .tfu-boss-raid-subtext { font-family: Arial, sans-serif; font-size: 9px; font-weight: 900; letter-spacing: 2px; color: #ff4757; text-shadow: 0 1px 3px #000; text-transform: uppercase; margin-top: 2px; animation: blinkRaidText 0.5s infinite alternate; }
+        @keyframes blinkRaidText { from { opacity: 0.65; } to { opacity: 1; } }
         .tfu-pause-btn { position: absolute; top: 12px; right: 18px; background: linear-gradient(180deg, #3d586e 0%, #15202b 100%); border: 1px solid #6e8fa8; color: #8faec4; padding: 4px 22px; clip-path: polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%); display: flex; align-items: center; justify-content: center; cursor: pointer; height: 28px; pointer-events: auto; }
         .tfu-pause-btn:active { filter: brightness(1.2); }
         .tfu-pause-btn svg { width: 14px; height: 14px; fill: currentColor; }
@@ -105,19 +105,18 @@ export default function GameUI(props: GameUIProps) {
         .biome-banner.show-banner { opacity: 1; }
         .biome-text { font-family: Arial, sans-serif; font-size: clamp(20px, 4vw, 30px); font-weight: 800; letter-spacing: 6px; color: #ffffff; text-transform: uppercase; }
         .biome-subtext { font-family: Arial, sans-serif; font-size: clamp(10px, 2vw, 13px); font-weight: bold; letter-spacing: 4px; color: #ff6b81; text-transform: uppercase; }
-        .victory-text { font-family: Arial, sans-serif; font-size: clamp(28px, 6vw, 46px); font-weight: 900; letter-spacing: 8px; color: #ffffff; text-transform: uppercase; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 55; pointer-events: none; }
         .no-signal-indicator { position: absolute; top: 48%; left: 50%; transform: translate(-50%, -50%); font-family: monospace; font-size: 16px; font-weight: 900; letter-spacing: 3px; color: #ff3838; pointer-events: none; z-index: 15; animation: blinkSignal 0.25s infinite alternate; }
         @keyframes blinkSignal { from { opacity: 0.3; } to { opacity: 1; } }
         .pause-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; z-index: 46; pointer-events: auto; }
         .pause-title { font-family: Arial, sans-serif; font-size: clamp(22px, 4.5vw, 32px); font-weight: 900; letter-spacing: 5px; color: #ffffff; text-transform: uppercase; }
         .pause-menu-list { display: flex; flex-direction: column; gap: 9px; width: min(340px, 75vw); }
-        .pause-button { width: 100%; height: 38px; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-family: Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; }
+        .pause-button { width: 100%; height: 38px; border-radius: 0px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-family: Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; }
         .pause-btn-primary { border: 2px solid #e2e8f0; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.3) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #d31820 0%, #ff3b30 45%, #b50e17 55%, #66050b 100%); color: #ffffff; }
         .pause-btn-secondary { border: 2px solid #b2c2d4; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #e4edf7 0%, #bdcfdf 45%, #768a9f 50%, #44566b 52%, #8ba0b7 100%); color: #0b141e; }
-        .console-window { background: #0d151f; border: 2px solid #5a738e; border-top: 2px solid #8fa9c4; clip-path: polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%); padding: 20px 24px; display: flex; flex-direction: column; align-items: center; gap: 12px; width: min(380px, 80vw); }
+        .console-window { background: #0d151f; border: 2px solid #5a738e; border-top: 2px solid #8fa9c4; border-radius: 0px; padding: 20px 24px; display: flex; flex-direction: column; align-items: center; gap: 12px; width: min(380px, 80vw); }
         .console-title { font-family: Arial, sans-serif; font-size: 18px; font-weight: 900; letter-spacing: 3px; color: #64b5f6; text-transform: uppercase; }
         .console-desc { font-family: Arial, sans-serif; font-size: 11px; letter-spacing: 1px; color: #8faec4; text-align: center; }
-        .console-input { width: 100%; background: #060b10; border: 1px solid #3d586e; color: #ffffff; padding: 9px 12px; font-family: monospace; font-size: 13px; letter-spacing: 2px; text-align: center; outline: none; }
+        .console-input { width: 100%; background: #060b10; border: 1px solid #3d586e; border-radius: 0px; color: #ffffff; padding: 9px 12px; font-family: monospace; font-size: 13px; letter-spacing: 2px; text-align: center; outline: none; }
         .console-feedback { font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; letter-spacing: 1.5px; color: #ff4757; min-height: 14px; }
       `}</style>
 
@@ -148,10 +147,6 @@ export default function GameUI(props: GameUIProps) {
         <div className="biome-text">ЗВЕЗДНЫЙ РАЗРУШИТЕЛЬ</div>
         <div className="biome-subtext">ВЫХОДИТ ИЗ ГИПЕРПРОСТРАНСТВА</div>
       </div>
-
-      {props.showVictoryText && (
-        <div className="victory-text">ПОБЕДА!</div>
-      )}
 
       {props.showHallwayCutscene && (
         <HallwayCutscene assets={props.assets} onComplete={props.onHallwayComplete} />
@@ -210,6 +205,9 @@ export default function GameUI(props: GameUIProps) {
             <div className={`tfu-boss-hp-frame ${props.bossBarMode}`}>
               <div className={`tfu-boss-hp-fill ${props.bossBarMode}`} style={{ width: `${props.bossBarPercent}%` }} />
             </div>
+            {props.bossBarMode === 'raid' && (
+              <div className="tfu-boss-raid-subtext">УНИЧТОЖЬТЕ ВСЕХ ВРАГОВ</div>
+            )}
           </div>
         ) : (
           <div className="tfu-progress-tracker">
