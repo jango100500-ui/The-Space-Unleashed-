@@ -282,6 +282,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   const [currentStage, setCurrentStage] = useState<number>(0);
   const [stageProgressPercent, setStageProgressPercent] = useState<number>(0);
   const [bossActive, setBossActive] = useState<boolean>(false);
+  const [bossShieldsDown, setBossShieldsDown] = useState<boolean>(false);
   const [bossBarMode, setBossBarMode] = useState<'shield' | 'hull' | 'raid'>('shield');
   const [bossBarPercent, setBossBarPercent] = useState<number>(100);
   const [bossCutsceneActive, setBossCutsceneActive] = useState<boolean>(false);
@@ -316,7 +317,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   const tieEngineGainRef = useRef<GainNode | null>(null);
   const spaceMuffleFilterRef = useRef<BiquadFilterNode | null>(null);
   const bossSoundtrackSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const bossSoundtrackGainRef = useRef<GainNode | null>(null);
 
   const stickTouchId = useRef<number | null>(null);
   const stickCenter = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -1111,7 +1111,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
             gain.connect(audioCtx.destination);
             src.start(0);
             bossSoundtrackSourceRef.current = src;
-            bossSoundtrackGainRef.current = gain;
           } catch {}
         }
       }
@@ -1340,10 +1339,12 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         const totalGenHp = bossData.generators.reduce((acc, g) => acc + g.maxHp, 0);
 
         if (activeGenHp > 0) {
+          setBossShieldsDown(false);
           setBossBarMode('shield');
           setBossBarPercent(Math.floor((activeGenHp / totalGenHp) * 100));
         } else if (!bossData.phase2Active) {
           bossData.phase2Active = true;
+          setBossShieldsDown(true);
           inBiomeTransitionRef.current = true;
           setInBiomeTransition(true);
           setBiomeTitle('ЗВЕЗДНЫЙ РАЗРУШИТЕЛЬ');
@@ -1374,6 +1375,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
             }, k * 450);
           }
         } else if (bossData.raidActive) {
+          setBossShieldsDown(true);
           setBossBarMode('raid');
           const remainingRaid = enemies.filter((e) => e.isRaid).length;
           setBossBarPercent(Math.floor((remainingRaid / 3) * 100));
@@ -1395,6 +1397,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
             });
           }
         } else {
+          setBossShieldsDown(true);
           setBossBarMode('hull');
           setBossBarPercent(Math.floor((bossData.hullHp / bossData.maxHullHp) * 100));
         }
