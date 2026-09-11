@@ -16,7 +16,7 @@ export interface HangarShipData {
   description: string;
   modelUrl?: string;
   scale: number;
-  pitch: number;
+  rot: [number, number, number];
 }
 
 export const HANGAR_SHIPS: HangarShipData[] = [
@@ -25,7 +25,7 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     name: 'X-ВИНГ',
     description: 'Универсальный звездный истребитель T-65B Альянса повстанцев. Баланс скорости, огневой мощи и маневренности.',
     scale: 0.52,
-    pitch: 0.08
+    rot: [0, 0, 0]
   },
   {
     id: 'bwing',
@@ -33,15 +33,15 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     description: 'Тяжелый штурмовой истребитель A/SF-01. Обладает гироскопической кабиной и разрушительной огневой мощью.',
     modelUrl: '/models/b-wing.glb',
     scale: 0.48,
-    pitch: 0.08
+    rot: [0.08, 0, 0]
   },
   {
     id: 'slave1',
     name: 'РАБ 1',
     description: 'Грозный корабль типа «Огневержец-31». Оснащен мощным арсеналом, поворотной кабиной и тяжелой броней.',
     modelUrl: '/models/slave-1.glb',
-    scale: 0.38,
-    pitch: 1.52
+    scale: 0.52,
+    rot: [0, 0, 0]
   },
   {
     id: 'twing',
@@ -49,23 +49,23 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     description: 'Маневренный перехватчик с клиновидным профилем корпуса для скоростных перехватов в открытом космосе.',
     modelUrl: '/models/t-wing.glb',
     scale: 0.52,
-    pitch: 0.08
+    rot: [0.08, 0, 0]
   },
   {
     id: 'uwing',
     name: 'U-ВИНГ',
     description: 'Ударный десантный корабль UT-60D с изменяемой геометрией крыла и усиленными защитными щитами.',
     modelUrl: '/models/u-wing.glb',
-    scale: 0.46,
-    pitch: 0.08
+    scale: 0.52,
+    rot: [0, 0, 0]
   },
   {
     id: 'ywing',
     name: 'Y-ВИНГ',
     description: 'Надежный тяжелый истребитель-бомбардировщик BTL-A4. Превосходная прочность корпуса и выносливость в бою.',
     modelUrl: '/models/y-wing.glb',
-    scale: 0.50,
-    pitch: 0.08
+    scale: 0.52,
+    rot: [0, Math.PI, 0]
   }
 ];
 
@@ -95,11 +95,11 @@ const createFallbackProcedural = (id: string): THREE.Group => {
   } else if (id === 'ywing') {
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.35, 3.2), new THREE.MeshStandardMaterial({ color: 0xecf0f1 }));
     const head = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.2, 5), new THREE.MeshStandardMaterial({ color: 0xf1c40f }));
-    head.rotation.x = -Math.PI / 2;
-    head.position.set(0, 0, -1.8);
+    head.rotation.x = Math.PI / 2;
+    head.position.set(0, 0, 1.8);
     const engL = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 3.6, 10), new THREE.MeshStandardMaterial({ color: 0x7f8c8d }));
     engL.rotation.x = Math.PI / 2;
-    engL.position.set(-1.1, 0, 0.2);
+    engL.position.set(-1.1, 0, -0.2);
     const engR = engL.clone();
     engR.position.x = 1.1;
     g.add(body, head, engL, engR);
@@ -236,8 +236,25 @@ export default function HangarScreen({ assets, selectedShipId, onSelectShip, onB
       if (isDisposed) return;
 
       const cloned = base.clone();
-      cloned.scale.setScalar(ship.scale);
-      cloned.rotation.set(ship.pitch, 0, 0);
+
+      if (ship.id === 'twing') {
+        cloned.scale.setScalar(ship.scale);
+      } else {
+        const xBox = new THREE.Box3().setFromObject(assets.models.xwing);
+        const xSize = new THREE.Vector3();
+        xBox.getSize(xSize);
+        const xMax = Math.max(xSize.x, xSize.y, xSize.z) || 1;
+
+        const mBox = new THREE.Box3().setFromObject(cloned);
+        const mSize = new THREE.Vector3();
+        mBox.getSize(mSize);
+        const mMax = Math.max(mSize.x, mSize.y, mSize.z) || 1;
+
+        const normalizedScale = (xMax / mMax) * 0.52;
+        cloned.scale.setScalar(normalizedScale);
+      }
+
+      cloned.rotation.set(ship.rot[0], ship.rot[1], ship.rot[2]);
 
       if (!isCurrentActive) {
         const holoMat = new THREE.MeshBasicMaterial({
