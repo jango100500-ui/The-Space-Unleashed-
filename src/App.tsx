@@ -8,6 +8,7 @@ import GameScreen from './game/GameScreen.tsx';
 export interface PreloadedModels {
   xwing: THREE.Group;
   tie: THREE.Group;
+  tie2: THREE.Group;
   destroyer: THREE.Group;
   datapad?: THREE.Group;
   cr90?: THREE.Group;
