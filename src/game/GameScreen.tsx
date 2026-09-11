@@ -21,6 +21,14 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [curtainVisible, setCurtainVisible] = useState<boolean>(true);
   const [hp, setHp] = useState<number>(100);
+  const [maxShield] = useState<number>(() => {
+    const s = HANGAR_SHIPS.find((ship) => ship.id === selectedShipId);
+    return s ? s.shield : 0;
+  });
+  const [shieldHp, setShieldHp] = useState<number>(() => {
+    const s = HANGAR_SHIPS.find((ship) => ship.id === selectedShipId);
+    return s ? s.shield : 0;
+  });
   const [healBonus, setHealBonus] = useState<number>(0);
   const [isFiring, setIsFiring] = useState<boolean>(false);
   const [joystickActive, setJoystickActive] = useState<boolean>(false);
@@ -307,7 +315,8 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
       mBox.getSize(mSize);
       const mMax = Math.max(mSize.x, mSize.y, mSize.z) || 1;
 
-      const normalizedScale = (xMax / mMax) * 0.48;
+      const targetScaleRatio = shipConf.id === 'ywing' ? 0.56 : 0.48;
+      const normalizedScale = (xMax / mMax) * targetScaleRatio;
       targetObj.scale.setScalar(normalizedScale);
       targetObj.rotation.set(shipConf.rot[0], shipConf.rot[1], shipConf.rot[2]);
     };
@@ -573,6 +582,7 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
     let fireCooldown = 0;
     let shakeIntensity = 0;
     let currentHp = 100;
+    let currentShield = shipConf.shield;
 
     let transitionDuration = 0;
 
@@ -583,9 +593,38 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
     let activeLightningMesh: THREE.Line | null = null;
     let activeLightningLife = 0;
 
+    const applyDamageToPlayer = (dmg: number) => {
+      if (godModeRef.current) {
+        spawnShieldImpact(shipPos);
+        return;
+      }
+      if (currentShield > 0) {
+        const absorbed = Math.min(currentShield, dmg);
+        currentShield -= absorbed;
+        setShieldHp(currentShield);
+        dmg -= absorbed;
+        spawnShieldImpact(shipPos);
+      }
+      if (dmg > 0) {
+        currentHp = Math.max(0, currentHp - dmg);
+        setHp(currentHp);
+        shakeIntensity = Math.max(shakeIntensity, 0.55);
+        if (currentHp <= 0) {
+          if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
+          if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
+          setCurtainVisible(true);
+          setTimeout(() => onExit(), 500);
+        }
+      }
+    };
+
     const applyStageHeal = (amt: number) => {
       currentHp = Math.min(100, currentHp + amt);
       setHp(currentHp);
+      if (shipConf.shield > 0) {
+        currentShield = Math.min(shipConf.shield, currentShield + Math.floor(amt * 0.75));
+        setShieldHp(currentShield);
+      }
       setHealBonus(amt);
       setTimeout(() => setHealBonus(0), 1200);
     };
@@ -599,14 +638,7 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
         playerStunDuration = 4.5;
         setPlayerStunned(true);
         shakeIntensity = 1.2;
-        if (!godModeRef.current) {
-          currentHp = Math.max(0, currentHp - 8);
-          setHp(currentHp);
-          if (currentHp <= 0) {
-            setCurtainVisible(true);
-            setTimeout(() => onExit(), 500);
-          }
-        }
+        applyDamageToPlayer(8);
       } else {
         const roll = Math.random();
         if (roll < 0.15 && enemies.length > 0) {
@@ -623,14 +655,7 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
           playerStunDuration = 4.5;
           setPlayerStunned(true);
           shakeIntensity = 1.2;
-          if (!godModeRef.current) {
-            currentHp = Math.max(0, currentHp - 8);
-            setHp(currentHp);
-            if (currentHp <= 0) {
-              setCurtainVisible(true);
-              setTimeout(() => onExit(), 500);
-            }
-          }
+          applyDamageToPlayer(8);
         }
       }
 
@@ -995,7 +1020,7 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
       fireCooldown -= dt;
 
       if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0) {
-        fireCooldown = 0.25;
+        fireCooldown = THREE.MathUtils.clamp(0.35 - (shipConf.fireRate / 60) * 0.18, 0.14, 0.32);
 
         const leftOffset = new THREE.Vector3(-0.46, 0, -0.3).applyQuaternion(shipHolder.quaternion);
         const rightOffset = new THREE.Vector3(0.46, 0, -0.3).applyQuaternion(shipHolder.quaternion);
@@ -1241,16 +1266,7 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
               });
 
               if (shipPos.x >= zoneAttack.xMin && shipPos.x <= zoneAttack.xMax) {
-                if (godModeRef.current) {
-                  spawnShieldImpact(shipPos);
-                } else {
-                  currentHp = Math.max(0, currentHp - 18);
-                  setHp(currentHp);
-                  if (currentHp <= 0) {
-                    setCurtainVisible(true);
-                    setTimeout(() => onExit(), 500);
-                  }
-                }
+                applyDamageToPlayer(18);
               }
 
               setTimeout(() => {
@@ -1422,28 +1438,28 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
         l.mesh.position.addScaledVector(l.vel, dt);
 
         if (l.isEnemy) {
-          if (l.mesh.position.distanceTo(shipPos) < 1.3) {
+          const isSlave1 = shipConf.id === 'slave1';
+          const hitRadiusX = isSlave1 ? 1.5 : 1.3;
+          const hitRadiusY = isSlave1 ? 2.4 : 1.3;
+          const hitRadiusZ = 1.8;
+
+          const dx = Math.abs(l.mesh.position.x - shipPos.x);
+          const dy = l.mesh.position.y - shipPos.y;
+          const dz = Math.abs(l.mesh.position.z - shipPos.z);
+
+          const isHit = isSlave1
+            ? dx < hitRadiusX && dy > -1.0 && dy < hitRadiusY && dz < hitRadiusZ
+            : l.mesh.position.distanceTo(shipPos) < 1.3;
+
+          if (isHit) {
             l.life = 0;
 
             const isInvulnerable =
-              godModeRef.current ||
               inBiomeTransitionRef.current ||
               bossCutsceneActiveRef.current;
 
-            if (isInvulnerable) {
-              if (godModeRef.current) {
-                spawnShieldImpact(l.mesh.position);
-              }
-            } else {
-              shakeIntensity = 0.5;
-              currentHp = Math.max(0, currentHp - 5);
-              setHp(currentHp);
-              if (currentHp <= 0) {
-                if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
-                if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
-                setCurtainVisible(true);
-                setTimeout(() => onExit(), 500);
-              }
+            if (!isInvulnerable) {
+              applyDamageToPlayer(5);
             }
           }
         } else {
@@ -1467,7 +1483,8 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
               if (l.mesh.position.distanceTo(e.pos) < 3.8) {
                 l.life = 0;
                 hitAny = true;
-                e.hp -= 1;
+                const dealt = shipConf.damage >= 45 ? 2 : 1;
+                e.hp -= dealt;
 
                 if (e.hp <= 0) {
                   spawnRetroExplosion(e.pos);
@@ -1496,7 +1513,7 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
                   if (l.mesh.position.distanceTo(worldGPos) < 14.0) {
                     l.life = 0;
                     hitAny = true;
-                    gen.hp -= 1;
+                    gen.hp -= (shipConf.damage >= 45 ? 2 : 1);
 
                     if (gen.hp <= 0) {
                       gen.destroyed = true;
@@ -1514,7 +1531,7 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
               if (dx < 32 && dy < 16 && dz < 55) {
                 l.life = 0;
                 hitAny = true;
-                bossData.hullHp -= 1;
+                bossData.hullHp -= (shipConf.damage >= 45 ? 2 : 1);
 
                 bossHullHitCount++;
                 if (bossHullHitCount >= nextExplosionThreshold) {
@@ -1564,6 +1581,10 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
         if (isCloseEnough) {
           currentHp = Math.min(100, currentHp + dp.healPercent);
           setHp(currentHp);
+          if (shipConf.shield > 0) {
+            currentShield = Math.min(shipConf.shield, currentShield + Math.floor(dp.healPercent * 0.5));
+            setShieldHp(currentShield);
+          }
           setHealBonus(dp.healPercent);
           setTimeout(() => setHealBonus(0), 450);
 
@@ -1854,6 +1875,8 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
       mountRef={mountRef}
       curtainVisible={curtainVisible}
       hp={hp}
+      maxShield={maxShield}
+      shieldHp={shieldHp}
       healBonus={healBonus}
       joystickActive={joystickActive}
       joystickOffset={joystickOffset}
