@@ -19,6 +19,9 @@ interface GameUIProps {
   endGameModal: 'defeat' | 'victory' | null;
   joystickActive: boolean;
   joystickOffset: { x: number; y: number };
+  ability1Cooldown: number;
+  ability1Active: boolean;
+  ability2Cooldown: number;
   inBiomeTransition: boolean;
   biomeTitle: string;
   biomeSubtext: string;
@@ -52,6 +55,8 @@ interface GameUIProps {
   onFirePointerDown: () => void;
   onFirePointerUp: () => void;
   onFirePointerCancel: () => void;
+  onTriggerAbility1: () => void;
+  onTriggerAbility2: () => void;
   onHallwayComplete: () => void;
 }
 
@@ -99,12 +104,23 @@ export default function GameUI(props: GameUIProps) {
         .tfu-pause-btn:active { filter: brightness(1.2); }
         .tfu-pause-btn svg { width: 14px; height: 14px; fill: currentColor; }
         .tfu-score-display { font-family: monospace; font-size: 13px; font-weight: 900; letter-spacing: 2px; color: #ffffff; text-shadow: 0 0 6px rgba(100, 181, 246, 0.7); background: rgba(5, 12, 20, 0.75); border: 1px solid #3d586e; border-radius: 0px; padding: 3px 10px; }
-        .tfu-joystick-zone { position: absolute; left: 25px; bottom: 20px; width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(circle, rgba(20, 35, 55, 0.4) 0%, rgba(5, 12, 20, 0.2) 70%, transparent 100%); border: 2px solid rgba(120, 160, 200, 0.35); display: flex; align-items: center; justify-content: center; pointer-events: auto; touch-action: none; opacity: 0.35; transition: opacity 0.2s ease; }
-        .tfu-joystick-zone.active { opacity: 0.95; border-color: rgba(120, 180, 255, 0.8); }
-        .tfu-joystick-knob { width: 46px; height: 46px; border-radius: 50%; background: linear-gradient(180deg, #415b76 0%, #1a2735 100%); border: 2px solid #8faec4; pointer-events: none; }
-        .tfu-fire-btn { position: absolute; right: 30px; bottom: 25px; width: 72px; height: 72px; border-radius: 50%; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.3) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #d31820 0%, #ff3b30 45%, #b50e17 55%, #66050b 100%); border: 2px solid #ff6b81; display: flex; align-items: center; justify-content: center; pointer-events: auto; cursor: pointer; touch-action: none; }
-        .tfu-fire-btn:active { transform: scale(0.94); filter: brightness(1.2); }
-        .tfu-fire-btn svg { width: 32px; height: 32px; fill: #ffffff; }
+        .tfu-joystick-zone { position: absolute; left: 25px; bottom: 20px; width: 120px; height: 120px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(255, 255, 255, 0.22); display: flex; align-items: center; justify-content: center; pointer-events: auto; touch-action: none; transition: background 0.15s, border-color 0.15s; }
+        .tfu-joystick-zone.active { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.45); }
+        .tfu-joystick-knob { width: 46px; height: 46px; border-radius: 50%; background: rgba(255, 255, 255, 0.28); border: 2px solid rgba(255, 255, 255, 0.5); pointer-events: none; }
+        .tfu-cluster-zone { position: absolute; right: 30px; bottom: 35px; width: 144px; height: 144px; pointer-events: auto; }
+        .tfu-pad-btn { position: absolute; width: 46px; height: 46px; border-radius: 50%; background: rgba(255, 255, 255, 0.18); border: 2px solid rgba(255, 255, 255, 0.35); display: flex; align-items: center; justify-content: center; cursor: pointer; touch-action: none; user-select: none; color: rgba(255, 255, 255, 0.9); }
+        .tfu-pad-btn:active { background: rgba(255, 255, 255, 0.38); transform: scale(0.94); }
+        .tfu-pad-btn svg { width: 22px; height: 22px; pointer-events: none; }
+        .tfu-pad-top { top: 0; left: 50%; transform: translateX(-50%); }
+        .tfu-pad-top:active { transform: translateX(-50%) scale(0.94); }
+        .tfu-pad-left { top: 50%; left: 0; transform: translateY(-50%); }
+        .tfu-pad-left:active { transform: translateY(-50%) scale(0.94); }
+        .tfu-pad-right { top: 50%; right: 0; transform: translateY(-50%); }
+        .tfu-pad-right:active { transform: translateY(-50%) scale(0.94); }
+        .tfu-pad-bottom { bottom: 0; left: 50%; transform: translateX(-50%); }
+        .tfu-pad-bottom:active { transform: translateX(-50%) scale(0.94); }
+        .tfu-pad-timer-text { font-family: monospace; font-size: 15px; font-weight: 900; color: #ffffff; }
+        .tfu-pad-active-flash { border-color: #64b5f6; background: rgba(100, 181, 246, 0.35); }
         .zone-attack-indicator { position: absolute; top: 0; bottom: 0; background: rgba(255, 30, 30, 0.2); border-left: 2px dashed rgba(255, 80, 80, 0.65); border-right: 2px dashed rgba(255, 80, 80, 0.65); pointer-events: none; z-index: 8; animation: zoneBlink 0.22s infinite alternate; }
         .tractor-beam-indicator { position: absolute; top: 0; bottom: 0; background: rgba(255, 10, 10, 0.28); border-left: 3px solid rgba(255, 60, 60, 0.85); border-right: 3px solid rgba(255, 60, 60, 0.85); pointer-events: none; z-index: 8; animation: tractorBlink 0.18s infinite alternate; }
         @keyframes zoneBlink { from { opacity: 0.15; } to { opacity: 0.55; } }
@@ -314,15 +330,48 @@ export default function GameUI(props: GameUIProps) {
           <div className="tfu-joystick-knob" style={{ transform: `translate(${props.joystickOffset.x}px, ${props.joystickOffset.y}px)` }} />
         </div>
 
-        <button
-          type="button"
-          className="tfu-fire-btn"
-          onPointerDown={props.onFirePointerDown}
-          onPointerUp={props.onFirePointerUp}
-          onPointerCancel={props.onFirePointerCancel}
-        >
-          <svg viewBox="0 0 24 24"><path d="M12 2C9.5 2 7.5 4 7.5 6.5v9l4.5 4.5 4.5-4.5v-9C16.5 4 14.5 2 12 2zm0 3c.8 0 1.5.7 1.5 1.5v6h-3v-6c0-.8.7-1.5 1.5-1.5z" /></svg>
-        </button>
+        <div className="tfu-cluster-zone">
+          <button
+            type="button"
+            className={`tfu-pad-btn tfu-pad-top ${props.ability1Active ? 'tfu-pad-active-flash' : ''}`}
+            onClick={props.onTriggerAbility1}
+          >
+            {props.ability1Cooldown > 0 ? (
+              <span className="tfu-pad-timer-text">{props.ability1Cooldown}</span>
+            ) : (
+              <svg viewBox="0 0 24 24"><polygon points="12,5 20,19 4,19" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" /></svg>
+            )}
+          </button>
+
+          <button
+            type="button"
+            className="tfu-pad-btn tfu-pad-left"
+          >
+            <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" /></svg>
+          </button>
+
+          <button
+            type="button"
+            className="tfu-pad-btn tfu-pad-right"
+            onClick={props.onTriggerAbility2}
+          >
+            {props.ability2Cooldown > 0 ? (
+              <span className="tfu-pad-timer-text">{props.ability2Cooldown}</span>
+            ) : (
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" strokeWidth="2.5" /></svg>
+            )}
+          </button>
+
+          <button
+            type="button"
+            className="tfu-pad-btn tfu-pad-bottom"
+            onPointerDown={props.onFirePointerDown}
+            onPointerUp={props.onFirePointerUp}
+            onPointerCancel={props.onFirePointerCancel}
+          >
+            <svg viewBox="0 0 24 24"><path d="M6 6L18 18M18 6L6 18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" /></svg>
+          </button>
+        </div>
       </div>
 
       <div ref={props.mountRef} style={{ width: '100%', height: '100%' }} />
