@@ -21,7 +21,6 @@ interface ShieldGenerator {
   hp: number;
   maxHp: number;
   destroyed: boolean;
-  fireParticles: THREE.Points;
 }
 
 interface Enemy {
@@ -583,7 +582,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
     const shockRingGeo = new THREE.RingGeometry(0.5, 1.4, 18);
     const shockRingMat = new THREE.MeshBasicMaterial({ color: 0xff8822, side: THREE.DoubleSide, transparent: true, opacity: 0.95 });
-    const shockRingCyanMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, side: THREE.DoubleSide, transparent: true, opacity: 0.95 });
+    const shockRingGreenMat = new THREE.MeshBasicMaterial({ color: 0x22ff44, side: THREE.DoubleSide, transparent: true, opacity: 0.95 });
 
     const debrisPieceGeo = new THREE.DodecahedronGeometry(0.65, 0);
     const debrisMats = [
@@ -592,11 +591,11 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       new THREE.MeshBasicMaterial({ color: 0xd32f2f }),
       new THREE.MeshBasicMaterial({ color: 0x8a9ba8 })
     ];
-    const debrisMatsCyan = [
-      new THREE.MeshBasicMaterial({ color: 0x80d8ff }),
-      new THREE.MeshBasicMaterial({ color: 0x00e5ff }),
-      new THREE.MeshBasicMaterial({ color: 0xffffff }),
-      new THREE.MeshBasicMaterial({ color: 0x40c4ff })
+    const debrisMatsGreen = [
+      new THREE.MeshBasicMaterial({ color: 0x33ff44 }),
+      new THREE.MeshBasicMaterial({ color: 0x88ff66 }),
+      new THREE.MeshBasicMaterial({ color: 0x11cc33 }),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
     ];
 
     const shieldSphereGeo = new THREE.SphereGeometry(1.4, 16, 12);
@@ -641,7 +640,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       shieldImpacts.push({ mesh: sMesh, life: 0.28, maxLife: 0.28 });
     };
 
-    const spawnRetroExplosion = (pos: THREE.Vector3, scale = 1.0, withLight = true, isCyan = false) => {
+    const spawnRetroExplosion = (pos: THREE.Vector3, scale = 1.0, withLight = true, isGreen = false) => {
       const flashMesh = new THREE.Mesh(flashCoreGeo, flashCoreMat);
       flashMesh.position.copy(pos);
       flashMesh.scale.setScalar(2.2 * scale);
@@ -649,20 +648,20 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
       let expLight: THREE.PointLight | undefined = undefined;
       if (withLight) {
-        expLight = new THREE.PointLight(isCyan ? 0x00d2ff : 0xff6622, 5.0 * scale, 55 * scale);
+        expLight = new THREE.PointLight(isGreen ? 0x22ff44 : 0xff6622, 5.0 * scale, 55 * scale);
         expLight.position.copy(pos);
         scene.add(expLight);
       }
 
       flashCores.push({ mesh: flashMesh, light: expLight, life: 0.14, maxLife: 0.14 });
 
-      const ringMesh = new THREE.Mesh(shockRingGeo, isCyan ? shockRingCyanMat.clone() : shockRingMat.clone());
+      const ringMesh = new THREE.Mesh(shockRingGeo, isGreen ? shockRingGreenMat.clone() : shockRingMat.clone());
       ringMesh.position.copy(pos);
       ringMesh.rotation.set((Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8, Math.random() * Math.PI);
       scene.add(ringMesh);
       shockwaves.push({ mesh: ringMesh, life: 0.38, maxLife: 0.38, scaleSpeed: 28.0 * scale });
 
-      const currentDebrisMats = isCyan ? debrisMatsCyan : debrisMats;
+      const currentDebrisMats = isGreen ? debrisMatsGreen : debrisMats;
       const debrisCount = withLight ? 16 : 8;
       for (let i = 0; i < debrisCount; i++) {
         const mat = currentDebrisMats[i % currentDebrisMats.length];
@@ -751,22 +750,9 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     let bossSpawned = false;
     let bossCutsceneTimer = 0;
     let bossCutsceneCamPos = new THREE.Vector3();
-
-    const createFireParticleGroup = () => {
-      const pCount = 14;
-      const pGeo = new THREE.BufferGeometry();
-      const pos = new Float32Array(pCount * 3);
-      for (let i = 0; i < pCount * 3; i += 3) {
-        pos[i] = (Math.random() - 0.5) * 1.5;
-        pos[i + 1] = Math.random() * 2.5;
-        pos[i + 2] = (Math.random() - 0.5) * 1.5;
-      }
-      pGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      const pMat = new THREE.PointsMaterial({ color: 0xff6611, size: 0.8, transparent: true, opacity: 0.9 });
-      const pts = new THREE.Points(pGeo, pMat);
-      pts.visible = false;
-      return pts;
-    };
+    let bossHullHitCount = 0;
+    let nextExplosionThreshold = 8;
+    let isBossExecutingSpecial = false;
 
     const initBoss = () => {
       const grp = models.destroyer.clone();
@@ -777,12 +763,12 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       scene.add(grp);
 
       const candidatePositions = [
-        new THREE.Vector3(-18, 4, 20),
-        new THREE.Vector3(18, 4, 20),
-        new THREE.Vector3(-22, 6, -15),
-        new THREE.Vector3(22, 6, -15),
-        new THREE.Vector3(-8, 16, -5),
-        new THREE.Vector3(8, 16, -5)
+        new THREE.Vector3(-2.2, 0.6, 3.5),
+        new THREE.Vector3(2.2, 0.6, 3.5),
+        new THREE.Vector3(-1.8, 1.2, 0.5),
+        new THREE.Vector3(1.8, 1.2, 0.5),
+        new THREE.Vector3(0, 2.2, 1.0),
+        new THREE.Vector3(0, 1.6, 4.0)
       ];
 
       const shuffledIdx = [0, 1, 2, 3, 4, 5].sort(() => Math.random() - 0.5).slice(0, 3);
@@ -790,17 +776,12 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
       for (let i = 0; i < 3; i++) {
         const spot = candidatePositions[shuffledIdx[i]];
-        const fire = createFireParticleGroup();
-        fire.position.copy(spot);
-        grp.add(fire);
-
         generators.push({
           id: i,
           localPos: spot,
           hp: 16,
           maxHp: 16,
-          destroyed: false,
-          fireParticles: fire
+          destroyed: false
         });
       }
 
@@ -1176,9 +1157,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           if (hasGenerators) {
             for (const gen of bossData.generators) {
               if (!gen.destroyed) {
-                const worldGPos = new THREE.Vector3();
-                gen.localPos.clone().applyMatrix4(bossData.group.matrixWorld);
-                worldGPos.copy(gen.localPos).applyMatrix4(bossData.group.matrixWorld);
+                const worldGPos = gen.localPos.clone().applyMatrix4(bossData.group.matrixWorld);
                 const d = worldGPos.distanceTo(shipPos);
                 const angleDist = Math.hypot(worldGPos.x - shipPos.x, worldGPos.y - shipPos.y);
                 const score = d * 0.3 + angleDist * 4;
@@ -1300,28 +1279,92 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         }
         setGeneratorTargets(newTargetList);
 
-        bossData.zoneCooldown -= dt;
-        if (bossData.zoneCooldown <= 0 && !zoneAttack.active) {
-          bossData.zoneCooldown = 12.0 + Math.random() * 3.0;
-          const centerLane = (Math.random() - 0.5) * 12;
-          const widthZone = 8.5;
-          zoneAttack.active = true;
-          zoneAttack.timer = 0;
-          zoneAttack.duration = 1.6;
-          zoneAttack.xMin = centerLane - widthZone / 2;
-          zoneAttack.xMax = centerLane + widthZone / 2;
-          zoneAttack.fired = false;
+        const isSpecialBusy = zoneAttack.active || tractorBeam.active || isBossExecutingSpecial;
 
-          const screenAspect = window.innerWidth / window.innerHeight;
-          const currentXRange = Math.max(5.2, Math.min(16.0, 10.0 * screenAspect * 1.05));
-          const leftNorm = (zoneAttack.xMin + currentXRange) / (currentXRange * 2);
-          const widthNorm = widthZone / (currentXRange * 2);
+        if (!isSpecialBusy) {
+          bossData.zoneCooldown -= dt;
+          bossData.tractorCooldown -= dt;
+          bossData.squadCooldown -= dt;
+          bossData.bombardCooldown -= dt;
 
-          setZoneAttackUi({
-            visible: true,
-            leftPct: Math.max(0, Math.min(100, leftNorm * 100)),
-            widthPct: Math.max(5, Math.min(100, widthNorm * 100))
-          });
+          if (bossData.zoneCooldown <= 0) {
+            bossData.zoneCooldown = 14.0 + Math.random() * 4.0;
+            const centerLane = (Math.random() - 0.5) * 12;
+            const widthZone = 8.5;
+            zoneAttack.active = true;
+            zoneAttack.timer = 0;
+            zoneAttack.duration = 1.6;
+            zoneAttack.xMin = centerLane - widthZone / 2;
+            zoneAttack.xMax = centerLane + widthZone / 2;
+            zoneAttack.fired = false;
+
+            const screenAspect = window.innerWidth / window.innerHeight;
+            const currentXRange = Math.max(5.2, Math.min(16.0, 10.0 * screenAspect * 1.05));
+            const leftNorm = (zoneAttack.xMin + currentXRange) / (currentXRange * 2);
+            const widthNorm = widthZone / (currentXRange * 2);
+
+            setZoneAttackUi({
+              visible: true,
+              leftPct: Math.max(0, Math.min(100, leftNorm * 100)),
+              widthPct: Math.max(5, Math.min(100, widthNorm * 100))
+            });
+          } else if (bossData.tractorCooldown <= 0) {
+            bossData.tractorCooldown = 18.0 + Math.random() * 4.0;
+            const centerLane = (Math.random() - 0.5) * 8;
+            const widthTractor = 13.0;
+            tractorBeam.active = true;
+            tractorBeam.timer = 0;
+            tractorBeam.duration = 1.8;
+            tractorBeam.xMin = centerLane - widthTractor / 2;
+            tractorBeam.xMax = centerLane + widthTractor / 2;
+            tractorBeam.fired = false;
+
+            const screenAspect = window.innerWidth / window.innerHeight;
+            const currentXRange = Math.max(5.2, Math.min(16.0, 10.0 * screenAspect * 1.05));
+            const leftNorm = (tractorBeam.xMin + currentXRange) / (currentXRange * 2);
+            const widthNorm = widthTractor / (currentXRange * 2);
+
+            setTractorBeamUi({
+              visible: true,
+              leftPct: Math.max(0, Math.min(100, leftNorm * 100)),
+              widthPct: Math.max(5, Math.min(100, widthNorm * 100))
+            });
+          } else if (bossData.squadCooldown <= 0 && enemies.length === 0) {
+            bossData.squadCooldown = 18.0 + Math.random() * 4.0;
+            isBossExecutingSpecial = true;
+            const squadCount = Math.min(6, 4 + Math.floor(Math.random() * 3));
+            for (let k = 0; k < squadCount; k++) {
+              setTimeout(() => {
+                if (!isDisposed) {
+                  spawnEnemy(k % 2 === 0 ? -1 : 1);
+                }
+                if (k === squadCount - 1) {
+                  isBossExecutingSpecial = false;
+                }
+              }, k * 280);
+            }
+          } else if (bossData.bombardCooldown <= 0) {
+            bossData.bombardCooldown = 8.0;
+            isBossExecutingSpecial = true;
+            for (let b = 0; b < 4; b++) {
+              setTimeout(() => {
+                if (!isDisposed) {
+                  const bOrigin = bossData!.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 35, 8, 20));
+                  const bDir = new THREE.Vector3().subVectors(shipPos, bOrigin).normalize();
+                  const lMesh = new THREE.Mesh(greenLaserGeo, greenLaserMat);
+                  lMesh.position.copy(bOrigin);
+                  lMesh.scale.set(1.6, 1.6, 1.4);
+                  lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), bDir);
+                  scene.add(lMesh);
+                  lasers.push({ mesh: lMesh, vel: bDir.multiplyScalar(190), life: 2.2, isEnemy: true });
+                  shakeIntensity = Math.max(shakeIntensity, 0.4);
+                }
+                if (b === 3) {
+                  isBossExecutingSpecial = false;
+                }
+              }, b * 160);
+            }
+          }
         }
 
         if (zoneAttack.active) {
@@ -1360,30 +1403,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
               zoneAttack.active = false;
             }, 350);
           }
-        }
-
-        bossData.tractorCooldown -= dt;
-        if (bossData.tractorCooldown <= 0 && !tractorBeam.active) {
-          bossData.tractorCooldown = 16.0 + Math.random() * 4.0;
-          const centerLane = (Math.random() - 0.5) * 8;
-          const widthTractor = 13.0;
-          tractorBeam.active = true;
-          tractorBeam.timer = 0;
-          tractorBeam.duration = 1.8;
-          tractorBeam.xMin = centerLane - widthTractor / 2;
-          tractorBeam.xMax = centerLane + widthTractor / 2;
-          tractorBeam.fired = false;
-
-          const screenAspect = window.innerWidth / window.innerHeight;
-          const currentXRange = Math.max(5.2, Math.min(16.0, 10.0 * screenAspect * 1.05));
-          const leftNorm = (tractorBeam.xMin + currentXRange) / (currentXRange * 2);
-          const widthNorm = widthTractor / (currentXRange * 2);
-
-          setTractorBeamUi({
-            visible: true,
-            leftPct: Math.max(0, Math.min(100, leftNorm * 100)),
-            widthPct: Math.max(5, Math.min(100, widthNorm * 100))
-          });
         }
 
         if (tractorBeam.active) {
@@ -1425,41 +1444,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
             lasers.push({ mesh: lMesh, vel: bDir.multiplyScalar(170), life: 2.5, isEnemy: true });
           }
           playBuffer(audioBuffers.tieShot, 0.22, true);
-        }
-
-        bossData.squadCooldown -= dt;
-        if (bossData.squadCooldown <= 0) {
-          bossData.squadCooldown = 16.0 + Math.random() * 4.0;
-          if (enemies.length === 0) {
-            const squadCount = Math.min(6, 4 + Math.floor(Math.random() * 3));
-            for (let k = 0; k < squadCount; k++) {
-              setTimeout(() => {
-                if (!isDisposed) {
-                  spawnEnemy(k % 2 === 0 ? -1 : 1);
-                }
-              }, k * 280);
-            }
-          }
-        }
-
-        bossData.bombardCooldown -= dt;
-        if (bossData.bombardCooldown <= 0) {
-          bossData.bombardCooldown = 6.5;
-          for (let b = 0; b < 4; b++) {
-            setTimeout(() => {
-              if (!isDisposed) {
-                const bOrigin = bossData!.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 35, 8, 20));
-                const bDir = new THREE.Vector3().subVectors(shipPos, bOrigin).normalize();
-                const lMesh = new THREE.Mesh(greenLaserGeo, greenLaserMat);
-                lMesh.position.copy(bOrigin);
-                lMesh.scale.set(1.6, 1.6, 1.4);
-                lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), bDir);
-                scene.add(lMesh);
-                lasers.push({ mesh: lMesh, vel: bDir.multiplyScalar(190), life: 2.2, isEnemy: true });
-                shakeIntensity = Math.max(shakeIntensity, 0.4);
-              }
-            }, b * 160);
-          }
         }
       }
 
@@ -1634,7 +1618,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
                     if (gen.hp <= 0) {
                       gen.destroyed = true;
                       spawnRetroExplosion(worldGPos, 1.8);
-                      gen.fireParticles.visible = true;
                     }
                     break;
                   }
@@ -1649,7 +1632,13 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
                 l.life = 0;
                 hitAny = true;
                 bossData.hullHp -= 1;
-                spawnRetroExplosion(l.mesh.position, 0.5, false);
+
+                bossHullHitCount++;
+                if (bossHullHitCount >= nextExplosionThreshold) {
+                  bossHullHitCount = 0;
+                  nextExplosionThreshold = Math.floor(7 + Math.random() * 3);
+                  spawnRetroExplosion(l.mesh.position, 0.8, false);
+                }
 
                 if (bossData.hullHp <= 0) {
                   bossData.destroyed = true;
