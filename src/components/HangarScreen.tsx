@@ -24,39 +24,7 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     id: 'xwing',
     name: 'X-ВИНГ',
     description: 'Универсальный звездный истребитель T-65B Альянса повстанцев. Баланс скорости, огневой мощи и маневренности.',
-    scale: 0.52,
-    rot: [0, 0, 0]
-  },
-  {
-    id: 'bwing',
-    name: 'B-ВИНГ',
-    description: 'Тяжелый штурмовой истребитель A/SF-01. Обладает гироскопической кабиной и разрушительной огневой мощью.',
-    modelUrl: '/models/b-wing.glb',
-    scale: 0.48,
-    rot: [0.08, 0, 0]
-  },
-  {
-    id: 'slave1',
-    name: 'РАБ 1',
-    description: 'Грозный корабль типа «Огневержец-31». Оснащен мощным арсеналом, поворотной кабиной и тяжелой броней.',
-    modelUrl: '/models/slave-1.glb',
-    scale: 0.52,
-    rot: [0, 0, 0]
-  },
-  {
-    id: 'twing',
-    name: 'T-ВИНГ',
-    description: 'Маневренный перехватчик с клиновидным профилем корпуса для скоростных перехватов в открытом космосе.',
-    modelUrl: '/models/t-wing.glb',
-    scale: 0.52,
-    rot: [0.08, 0, 0]
-  },
-  {
-    id: 'uwing',
-    name: 'U-ВИНГ',
-    description: 'Ударный десантный корабль UT-60D с изменяемой геометрией крыла и усиленными защитными щитами.',
-    modelUrl: '/models/u-wing.glb',
-    scale: 0.52,
+    scale: 0.26,
     rot: [0, 0, 0]
   },
   {
@@ -64,38 +32,39 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     name: 'Y-ВИНГ',
     description: 'Надежный тяжелый истребитель-бомбардировщик BTL-A4. Превосходная прочность корпуса и выносливость в бою.',
     modelUrl: '/models/y-wing.glb',
-    scale: 0.52,
+    scale: 0.26,
     rot: [0, Math.PI, 0]
+  },
+  {
+    id: 'slave1',
+    name: 'РАБ 1',
+    description: 'Грозный корабль типа «Огневержец-31». Оснащен мощным арсеналом, поворотной кабиной и тяжелой броней.',
+    modelUrl: '/models/slave-1.glb',
+    scale: 0.26,
+    rot: [0, Math.PI, 0]
+  },
+  {
+    id: 'beatle',
+    name: 'БИТЛ',
+    description: 'Тяжелый штурмовой челнок с усиленным бронированным корпусом и спаренными орудийными системами.',
+    modelUrl: '/models/Beatle.glb',
+    scale: 0.26,
+    rot: [0, 0, 0]
   }
 ];
 
 const createFallbackProcedural = (id: string): THREE.Group => {
   const g = new THREE.Group();
-  if (id === 'bwing') {
-    const mainBody = new THREE.Mesh(new THREE.BoxGeometry(0.5, 3.8, 0.9), new THREE.MeshStandardMaterial({ color: 0x95a5a6 }));
-    const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 1.2, 10), new THREE.MeshStandardMaterial({ color: 0xe74c3c }));
-    pod.rotation.x = Math.PI / 2;
-    pod.position.set(0, 1.8, 0);
-    g.add(mainBody, pod);
-  } else if (id === 'slave1') {
+  if (id === 'slave1') {
     const base = new THREE.Mesh(new THREE.ConeGeometry(1.3, 3.2, 10), new THREE.MeshStandardMaterial({ color: 0x27ae60 }));
     base.rotation.x = Math.PI / 2;
     const skirt = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.7, 0.5, 12), new THREE.MeshStandardMaterial({ color: 0x8e44ad }));
     skirt.position.set(0, -0.4, 0.6);
     g.add(base, skirt);
-  } else if (id === 'twing') {
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.8, 3.2, 4), new THREE.MeshStandardMaterial({ color: 0x3498db }));
-    cone.rotation.x = -Math.PI / 2;
-    g.add(cone);
-  } else if (id === 'uwing') {
-    const fuselage = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.4, 3.6), new THREE.MeshStandardMaterial({ color: 0xecf0f1 }));
-    const wingL = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.08, 0.7), new THREE.MeshStandardMaterial({ color: 0xbdc3c7 }));
-    wingL.position.set(0, 0.1, -0.6);
-    g.add(fuselage, wingL);
   } else if (id === 'ywing') {
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.35, 3.2), new THREE.MeshStandardMaterial({ color: 0xecf0f1 }));
     const head = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.2, 5), new THREE.MeshStandardMaterial({ color: 0xf1c40f }));
-    head.rotation.x = Math.PI / 2;
+    head.rotation.x = -Math.PI / 2;
     head.position.set(0, 0, 1.8);
     const engL = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 3.6, 10), new THREE.MeshStandardMaterial({ color: 0x7f8c8d }));
     engL.rotation.x = Math.PI / 2;
@@ -103,6 +72,12 @@ const createFallbackProcedural = (id: string): THREE.Group => {
     const engR = engL.clone();
     engR.position.x = 1.1;
     g.add(body, head, engL, engR);
+  } else if (id === 'beatle') {
+    const shell = new THREE.Mesh(new THREE.SphereGeometry(1.2, 16, 12), new THREE.MeshStandardMaterial({ color: 0x34495e }));
+    shell.scale.set(1.4, 0.6, 1.8);
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.3, 0.8), new THREE.MeshStandardMaterial({ color: 0x3498db }));
+    cabin.position.set(0, 0.3, -0.6);
+    g.add(shell, cabin);
   } else {
     g.add(new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 2.6), new THREE.MeshStandardMaterial({ color: 0x7f8c8d })));
   }
@@ -145,8 +120,11 @@ export default function HangarScreen({ assets, selectedShipId, onSelectShip, onB
     const idx = HANGAR_SHIPS.findIndex((s) => s.id === selectedShipId);
     if (idx >= 0) {
       setCurrentIndex(idx);
+    } else {
+      setCurrentIndex(0);
+      onSelectShip(HANGAR_SHIPS[0].id);
     }
-  }, [selectedShipId]);
+  }, [selectedShipId, onSelectShip]);
 
   useEffect(() => {
     let animId: number;
@@ -237,23 +215,18 @@ export default function HangarScreen({ assets, selectedShipId, onSelectShip, onB
 
       const cloned = base.clone();
 
-      if (ship.id === 'twing') {
-        cloned.scale.setScalar(ship.scale);
-      } else {
-        const xBox = new THREE.Box3().setFromObject(assets.models.xwing);
-        const xSize = new THREE.Vector3();
-        xBox.getSize(xSize);
-        const xMax = Math.max(xSize.x, xSize.y, xSize.z) || 1;
+      const xBox = new THREE.Box3().setFromObject(assets.models.xwing);
+      const xSize = new THREE.Vector3();
+      xBox.getSize(xSize);
+      const xMax = Math.max(xSize.x, xSize.y, xSize.z) || 1;
 
-        const mBox = new THREE.Box3().setFromObject(cloned);
-        const mSize = new THREE.Vector3();
-        mBox.getSize(mSize);
-        const mMax = Math.max(mSize.x, mSize.y, mSize.z) || 1;
+      const mBox = new THREE.Box3().setFromObject(cloned);
+      const mSize = new THREE.Vector3();
+      mBox.getSize(mSize);
+      const mMax = Math.max(mSize.x, mSize.y, mSize.z) || 1;
 
-        const normalizedScale = (xMax / mMax) * 0.52;
-        cloned.scale.setScalar(normalizedScale);
-      }
-
+      const normalizedScale = (xMax / mMax) * 0.26;
+      cloned.scale.setScalar(normalizedScale);
       cloned.rotation.set(ship.rot[0], ship.rot[1], ship.rot[2]);
 
       if (!isCurrentActive) {
