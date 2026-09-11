@@ -4,6 +4,7 @@ import LoadingScreen from './components/LoadingScreen.tsx';
 import MainMenu from './components/MainMenu.tsx';
 import HangarScreen from './components/HangarScreen.tsx';
 import IntroCutscene from './cutscenes/IntroCutscene.tsx';
+import VictoryCutscene from './cutscenes/VictoryCutscene.tsx';
 import GameScreen from './game/GameScreen.tsx';
 
 export interface PreloadedModels {
@@ -22,7 +23,7 @@ export interface PreloadedAssets {
 }
 
 export default function App() {
-  const [stage, setStage] = useState<'loading' | 'menu' | 'hangar' | 'cutscene' | 'game'>('loading');
+  const [stage, setStage] = useState<'loading' | 'menu' | 'hangar' | 'cutscene' | 'victory_cutscene' | 'game'>('loading');
   const [assets, setAssets] = useState<PreloadedAssets | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [gameSessionId, setGameSessionId] = useState<number>(0);
@@ -72,6 +73,19 @@ export default function App() {
   const handleRestart = () => {
     setGameSessionId((prev) => prev + 1);
     setStage('cutscene');
+  };
+
+  const handleTriggerIntroCutscene = () => {
+    setStage('cutscene');
+  };
+
+  const handleTriggerVictoryCutscene = () => {
+    setStage('victory_cutscene');
+  };
+
+  const handleVictoryCutsceneComplete = () => {
+    setGameSessionId((prev) => prev + 1);
+    setStage('menu');
   };
 
   const handleAddCredits = (amount: number) => {
@@ -192,6 +206,14 @@ export default function App() {
         />
       )}
 
+      {stage === 'victory_cutscene' && assets && (
+        <VictoryCutscene
+          assets={assets}
+          selectedShipId={selectedShipId}
+          onComplete={handleVictoryCutsceneComplete}
+        />
+      )}
+
       {stage === 'game' && assets && (
         <GameScreen
           key={gameSessionId}
@@ -199,6 +221,8 @@ export default function App() {
           selectedShipId={selectedShipId}
           onAddCredits={handleAddCredits}
           onRestart={handleRestart}
+          onTriggerIntroCutscene={handleTriggerIntroCutscene}
+          onTriggerVictoryCutscene={handleTriggerVictoryCutscene}
           onExit={handleGameOver}
         />
       )}
