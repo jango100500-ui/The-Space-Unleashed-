@@ -12,6 +12,16 @@ interface HangarScreenProps {
   onBack: () => void;
 }
 
+export interface ShipAbility {
+  id: string;
+  name: string;
+  typeText: string;
+  description: string;
+  iconUrl: string;
+}
+
+export type ShipClassType = 'basic' | 'special' | 'unique' | 'bonus';
+
 export interface HangarShipData {
   id: string;
   name: string;
@@ -23,6 +33,10 @@ export interface HangarShipData {
   fireRate: number;
   shield: number;
   price: number;
+  shipClass: ShipClassType;
+  classLabel: string;
+  classBadge: string;
+  abilities: ShipAbility[];
 }
 
 export const HANGAR_SHIPS: HangarShipData[] = [
@@ -35,7 +49,26 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     damage: 25,
     fireRate: 40,
     shield: 0,
-    price: 0
+    price: 0,
+    shipClass: 'basic',
+    classLabel: 'БАЗОВЫЙ',
+    classBadge: 'B',
+    abilities: [
+      {
+        id: 'rapid_fire',
+        name: '«РА-ТА-ТА-ТА-ТА»',
+        typeText: 'БАЗОВАЯ СПОСОБНОСТЬ',
+        description: 'Дает эффект скорострельности на 6-9 секунд. Перезарядка: 15 секунд',
+        iconUrl: '/xwing1.png'
+      },
+      {
+        id: 'proton_torpedo',
+        name: '«ПРОТОННАЯ РАКЕТА»',
+        typeText: 'ОСОБАЯ СПОСОБНОСТЬ',
+        description: 'Запускает протонную ракету, которая автоматически наводится и наносит на 40% больше урона. Перезарядка: 20 секунд',
+        iconUrl: '/xwing2.png'
+      }
+    ]
   },
   {
     id: 'ywing',
@@ -47,7 +80,11 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     damage: 35,
     fireRate: 30,
     shield: 0,
-    price: 2500
+    price: 2500,
+    shipClass: 'special',
+    classLabel: 'ОСОБЫЙ',
+    classBadge: 'S',
+    abilities: []
   },
   {
     id: 'slave1',
@@ -59,7 +96,11 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     damage: 50,
     fireRate: 50,
     shield: 100,
-    price: 12000
+    price: 12000,
+    shipClass: 'unique',
+    classLabel: 'УНИКАЛЬНЫЙ',
+    classBadge: 'U',
+    abilities: []
   },
   {
     id: 'beatle',
@@ -71,7 +112,11 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     damage: 30,
     fireRate: 45,
     shield: 0,
-    price: 5000
+    price: 5000,
+    shipClass: 'bonus',
+    classLabel: 'БОНУСНЫЙ',
+    classBadge: 'B+',
+    abilities: []
   }
 ];
 
@@ -394,7 +439,8 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
           position: absolute;
           top: 50%;
           transform: translateY(-56%);
-          width: min(250px, 28vw);
+          width: min(330px, 33vw);
+          max-height: 74vh;
           background: #0a111a;
           border: 2px solid #5a738e;
           border-top: 2px solid #8fa9c4;
@@ -402,10 +448,11 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
           padding: 18px 20px;
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 14px;
           box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85);
           z-index: 25;
           pointer-events: auto;
+          box-sizing: border-box;
         }
         .tfu-side-left {
           left: clamp(14px, 3vw, 36px);
@@ -415,18 +462,62 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
         }
         .tfu-window-header {
           font-family: Arial, sans-serif;
-          font-size: clamp(13px, 1.5vw, 16px);
+          font-size: clamp(13px, 1.4vw, 16px);
           font-weight: 900;
           letter-spacing: 2px;
           color: #ffffff;
           text-transform: uppercase;
           border-bottom: 1px solid #233446;
           padding-bottom: 6px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .tfu-side-scroll {
+          overflow-y: auto;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+          padding-right: 2px;
+        }
+        .tfu-side-scroll::-webkit-scrollbar {
+          display: none;
+        }
+        .tfu-class-badge-container {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          background: rgba(13, 27, 42, 0.65);
+          border: 1px solid #233446;
+          padding: 6px 10px;
+        }
+        .tfu-class-square {
+          width: 24px;
+          height: 24px;
+          border: 1px solid #64b5f6;
+          color: #64b5f6;
+          font-family: Arial, sans-serif;
+          font-size: 11px;
+          font-weight: 900;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #09131d;
+        }
+        .tfu-class-title {
+          font-family: Arial, sans-serif;
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 1.5px;
+          color: #e6f2ff;
+          text-transform: uppercase;
         }
         .tfu-stats-list {
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 10px;
         }
         .tfu-stat-row {
           display: flex;
@@ -458,10 +549,83 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
           height: 100%;
           background: linear-gradient(90deg, #0284c7 0%, #38bdf8 100%);
         }
+        .tfu-abilities-section {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          border-top: 1px solid #233446;
+          padding-top: 10px;
+        }
+        .tfu-abilities-header {
+          font-family: Arial, sans-serif;
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 2px;
+          color: #8faec4;
+          text-transform: uppercase;
+        }
+        .tfu-abilities-list {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .tfu-ability-item {
+          display: flex;
+          gap: 10px;
+          align-items: flex-start;
+          background: rgba(8, 14, 22, 0.7);
+          border: 1px solid #1a2735;
+          padding: 8px;
+        }
+        .tfu-ability-icon-wrapper {
+          width: 44px;
+          height: 44px;
+          min-width: 44px;
+          border: 2px solid #cbd5e1;
+          box-shadow: 0 0 6px rgba(203, 213, 225, 0.45);
+          background: #0f172a;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+        }
+        .tfu-ability-icon {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+        .tfu-ability-content {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+        .tfu-ability-name {
+          font-family: Arial, sans-serif;
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 1px;
+          color: #ffffff;
+          text-transform: uppercase;
+        }
+        .tfu-ability-type {
+          font-family: Arial, sans-serif;
+          font-size: 9px;
+          font-weight: bold;
+          letter-spacing: 1px;
+          color: #64b5f6;
+          text-transform: uppercase;
+        }
+        .tfu-ability-desc {
+          font-family: Arial, sans-serif;
+          font-size: 10px;
+          line-height: 1.4;
+          color: #94a3b8;
+        }
         .tfu-info-desc {
           font-family: Arial, sans-serif;
           font-size: clamp(10px, 1vw, 12px);
-          line-height: 1.5;
+          line-height: 1.55;
           color: #a4b8cc;
           min-height: 65px;
         }
@@ -574,34 +738,68 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
 
       <div className="tfu-hangar-side-window tfu-side-left">
         <div className="tfu-window-header">ХАРАКТЕРИСТИКИ</div>
-        <div className="tfu-stats-list">
-          <div className="tfu-stat-row">
-            <div className="tfu-stat-info">
-              <span className="tfu-stat-name">УРОН</span>
-              <span className="tfu-stat-val">{currentShip.damage}</span>
+        <div className="tfu-side-scroll">
+          <div className="tfu-class-badge-container">
+            <div className="tfu-class-square">{currentShip.classBadge}</div>
+            <div className="tfu-class-title">КЛАСС: {currentShip.classLabel}</div>
+          </div>
+
+          <div className="tfu-stats-list">
+            <div className="tfu-stat-row">
+              <div className="tfu-stat-info">
+                <span className="tfu-stat-name">УРОН</span>
+                <span className="tfu-stat-val">{currentShip.damage}</span>
+              </div>
+              <div className="tfu-stat-track">
+                <div className="tfu-stat-fill" style={{ width: `${(currentShip.damage / 60) * 100}%` }} />
+              </div>
             </div>
-            <div className="tfu-stat-track">
-              <div className="tfu-stat-fill" style={{ width: `${(currentShip.damage / 60) * 100}%` }} />
+            <div className="tfu-stat-row">
+              <div className="tfu-stat-info">
+                <span className="tfu-stat-name">ТЕМП ОГНЯ</span>
+                <span className="tfu-stat-val">{currentShip.fireRate}</span>
+              </div>
+              <div className="tfu-stat-track">
+                <div className="tfu-stat-fill" style={{ width: `${(currentShip.fireRate / 60) * 100}%` }} />
+              </div>
+            </div>
+            <div className="tfu-stat-row">
+              <div className="tfu-stat-info">
+                <span className="tfu-stat-name">ЩИТЫ</span>
+                <span className="tfu-stat-val">{currentShip.shield}</span>
+              </div>
+              <div className="tfu-stat-track">
+                <div className="tfu-stat-fill" style={{ width: `${(currentShip.shield / 100) * 100}%`, background: currentShip.shield > 0 ? '#00e5ff' : '#334155' }} />
+              </div>
             </div>
           </div>
-          <div className="tfu-stat-row">
-            <div className="tfu-stat-info">
-              <span className="tfu-stat-name">ТЕМП ОГНЯ</span>
-              <span className="tfu-stat-val">{currentShip.fireRate}</span>
+
+          {currentShip.abilities.length > 0 && (
+            <div className="tfu-abilities-section">
+              <div className="tfu-abilities-header">СПОСОБНОСТИ</div>
+              <div className="tfu-abilities-list">
+                {currentShip.abilities.map((ab) => (
+                  <div key={ab.id} className="tfu-ability-item">
+                    <div className="tfu-ability-icon-wrapper">
+                      <img
+                        src={ab.iconUrl}
+                        alt={ab.name}
+                        className="tfu-ability-icon"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
+                    <div className="tfu-ability-content">
+                      <div className="tfu-ability-name">{ab.name}</div>
+                      <div className="tfu-ability-type">{ab.typeText}</div>
+                      <div className="tfu-ability-desc">{ab.description}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="tfu-stat-track">
-              <div className="tfu-stat-fill" style={{ width: `${(currentShip.fireRate / 60) * 100}%` }} />
-            </div>
-          </div>
-          <div className="tfu-stat-row">
-            <div className="tfu-stat-info">
-              <span className="tfu-stat-name">ЩИТЫ</span>
-              <span className="tfu-stat-val">{currentShip.shield}</span>
-            </div>
-            <div className="tfu-stat-track">
-              <div className="tfu-stat-fill" style={{ width: `${(currentShip.shield / 100) * 100}%`, background: currentShip.shield > 0 ? '#00e5ff' : '#334155' }} />
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
