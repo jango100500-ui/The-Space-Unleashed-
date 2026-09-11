@@ -356,7 +356,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   };
 
   const playUiSound = () => {
-    playBuffer(assets.audioBuffers.click, 0.35);
+    playBuffer(assets.audioBuffers.click, 0.4);
   };
 
   useEffect(() => {
@@ -512,6 +512,10 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     const greenLaserGeo = new THREE.CylinderGeometry(0.05, 0.05, 2.8, 4);
     greenLaserGeo.rotateX(Math.PI / 2);
     const greenLaserMat = new THREE.MeshBasicMaterial({ color: 0x22ff44 });
+
+    const cr90LaserGeo = new THREE.CylinderGeometry(0.12, 0.12, 9.0, 4);
+    cr90LaserGeo.rotateX(Math.PI / 2);
+    const cr90LaserMat = new THREE.MeshBasicMaterial({ color: 0xff3333 });
 
     const flashCoreGeo = new THREE.IcosahedronGeometry(1.8, 1);
     const flashCoreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -680,6 +684,8 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     let bossDeathExplosionCooldown = 0;
     let bossCutsceneCamPos = new THREE.Vector3();
 
+    const cr90Corvettes: THREE.Group[] = [];
+
     const initBoss = () => {
       const grp = models.destroyer.clone();
       grp.scale.setScalar(0.0001);
@@ -688,28 +694,41 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       tuneTextures(grp);
       scene.add(grp);
 
-      const genGeo = new THREE.SphereGeometry(1.4, 16, 12);
-      const genMat1 = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
-      const genMat2 = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
+      const genGeo = new THREE.SphereGeometry(1.6, 16, 12);
+      const genRingGeo = new THREE.TorusGeometry(2.0, 0.18, 8, 24);
 
-      const gen1Mesh = new THREE.Mesh(genGeo, genMat1);
-      const gen2Mesh = new THREE.Mesh(genGeo, genMat2);
+      const genMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
+      const genRingMat = new THREE.MeshBasicMaterial({ color: 0x70ffff });
 
-      const gen1Pos = new THREE.Vector3(-7.5, 28.5, -6);
-      const gen2Pos = new THREE.Vector3(7.5, 28.5, -6);
+      const gSpots = [
+        new THREE.Vector3(-16, 4, 15),
+        new THREE.Vector3(16, 4, 15),
+        new THREE.Vector3(0, 12, -10)
+      ];
 
-      gen1Mesh.position.copy(gen1Pos);
-      gen2Mesh.position.copy(gen2Pos);
+      const generators: ShieldGenerator[] = [];
 
-      grp.add(gen1Mesh);
-      grp.add(gen2Mesh);
+      for (let i = 0; i < 3; i++) {
+        const spot = gSpots[i];
+        const gMesh = new THREE.Mesh(genGeo, genMat);
+        const rMesh = new THREE.Mesh(genRingGeo, genRingMat);
+        rMesh.rotation.x = Math.PI / 2;
+        gMesh.add(rMesh);
+        gMesh.position.copy(spot);
+        grp.add(gMesh);
+
+        generators.push({
+          mesh: gMesh,
+          localPos: spot,
+          hp: 20,
+          maxHp: 20,
+          destroyed: false
+        });
+      }
 
       bossData = {
         group: grp,
-        generators: [
-          { mesh: gen1Mesh, localPos: gen1Pos, hp: 24, maxHp: 24, destroyed: false },
-          { mesh: gen2Mesh, localPos: gen2Pos, hp: 24, maxHp: 24, destroyed: false }
-        ],
+        generators,
         pos: new THREE.Vector3(0, 18, -380),
         shootCooldown: 1.2,
         squadCooldown: 16.0,
@@ -968,7 +987,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
             const growProgress = THREE.MathUtils.clamp((bossCutsceneTimer - 1.2) / 1.8, 0, 1);
             const easeScale = 1 - Math.pow(1 - growProgress, 3);
             bossData.group.scale.setScalar(0.0001 + easeScale * 8.0);
-            bossData.group.position.copy(bossData.pos);
           }
         }
 
@@ -981,10 +999,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           camera.position.copy(cameraBase);
 
           setBossActive(true);
-          setBiomeTitle('СЕКТОР: ЗВЕЗДНЫЙ РАЗРУШИТЕЛЬ');
-          inBiomeTransitionRef.current = true;
-          setInBiomeTransition(true);
-          transitionDuration = 0;
         }
 
         renderer.render(scene, camera);
@@ -995,42 +1009,65 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       if (bossVictoryActiveRef.current) {
         bossVictoryTimer += dt;
 
-        shipPos.z -= 150 * dt;
+        shipPos.z -= 65 * dt;
         playerShip.position.copy(shipPos);
 
-        if (bossVictoryTimer < 2.0) {
-          camera.position.set(shipPos.x + 24, shipPos.y + 3, shipPos.z + 10);
-          camera.lookAt(shipPos.x, shipPos.y, shipPos.z - 15);
-        } else {
-          camera.position.set(0, 36, shipPos.z + 28);
-          camera.lookAt(0, 0, shipPos.z - 90);
-        }
+        camera.position.set(shipPos.x - 14, shipPos.y + 3, shipPos.z - 18);
+        camera.lookAt(shipPos.x, shipPos.y + 1, shipPos.z + 180);
 
-        if (bossData) {
-          bossData.pos.z = shipPos.z - 280;
-          bossData.group.position.copy(bossData.pos);
-
-          bossDeathExplosionCooldown -= dt;
-          if (bossDeathExplosionCooldown <= 0) {
-            bossDeathExplosionCooldown = 0.35;
-            const expPos = bossData.group.position.clone().add(
-              new THREE.Vector3((Math.random() - 0.5) * 45, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 70)
-            );
-            spawnRetroExplosion(expPos, 1.4, false);
+        if (bossVictoryTimer >= 1.0 && cr90Corvettes.length === 0 && models.cr90) {
+          const offsets = [
+            new THREE.Vector3(-45, 18, shipPos.z + 120),
+            new THREE.Vector3(52, -8, shipPos.z + 160),
+            new THREE.Vector3(12, 32, shipPos.z + 200)
+          ];
+          for (let i = 0; i < 3; i++) {
+            const cr = models.cr90.clone();
+            cr.scale.setScalar(6.5);
+            cr.position.copy(offsets[i]);
+            tuneTextures(cr);
+            scene.add(cr);
+            cr90Corvettes.push(cr);
           }
         }
 
-        if (bossVictoryTimer >= 3.6 && !curtainVisible) {
+        for (let i = 0; i < cr90Corvettes.length; i++) {
+          const cr = cr90Corvettes[i];
+          cr.position.z -= 28 * dt;
+
+          if (Math.random() < 0.22) {
+            const lMesh = new THREE.Mesh(cr90LaserGeo, cr90LaserMat);
+            const muzzle = cr.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 4, -14));
+            lMesh.position.copy(muzzle);
+            const lDir = new THREE.Vector3((Math.random() - 0.5) * 0.08, (Math.random() - 0.5) * 0.08, -1).normalize();
+            lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), lDir);
+            scene.add(lMesh);
+            lasers.push({ mesh: lMesh, vel: lDir.multiplyScalar(380), life: 2.0, isEnemy: false });
+            playBuffer(audioBuffers.xwingShot, 0.35);
+          }
+        }
+
+        if (bossVictoryTimer >= 4.0 && !curtainVisible) {
           setCurtainVisible(true);
         }
 
-        if (bossVictoryTimer >= 4.2 && !showVictoryText) {
+        if (bossVictoryTimer >= 4.6 && !showVictoryText) {
           setShowVictoryText(true);
         }
 
-        if (bossVictoryTimer >= 6.8) {
+        if (bossVictoryTimer >= 6.4) {
           onExit();
           return;
+        }
+
+        for (let i = lasers.length - 1; i >= 0; i--) {
+          const l = lasers[i];
+          l.life -= dt;
+          l.mesh.position.addScaledVector(l.vel, dt);
+          if (l.life <= 0) {
+            scene.remove(l.mesh);
+            lasers.splice(i, 1);
+          }
         }
 
         renderer.render(scene, camera);
@@ -1128,8 +1165,8 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
               const worldGPos = new THREE.Vector3();
               gen.mesh.getWorldPosition(worldGPos);
               const d = worldGPos.distanceTo(shipPos);
-              const angleDist = Math.hypot(worldGPos.x - shipPos.x, worldGPos.y - (shipPos.y + 3));
-              const score = d * 0.35 + angleDist * 6;
+              const angleDist = Math.hypot(worldGPos.x - shipPos.x, worldGPos.y - (shipPos.y + 2));
+              const score = d * 0.3 + angleDist * 5;
               if (score < bestScore) {
                 bestScore = score;
                 autoTargetPos = worldGPos;
@@ -1659,6 +1696,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         scene.remove(f.mesh);
         if (f.light) scene.remove(f.light);
       });
+      cr90Corvettes.forEach((cr) => scene.remove(cr));
       if (bossData) {
         scene.remove(bossData.group);
       }
