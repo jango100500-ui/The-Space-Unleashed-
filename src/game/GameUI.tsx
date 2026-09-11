@@ -20,7 +20,6 @@ interface GameUIProps {
   joystickActive: boolean;
   joystickOffset: { x: number; y: number };
   ability1Cooldown: number;
-  ability1Active: boolean;
   ability2Cooldown: number;
   inBiomeTransition: boolean;
   biomeTitle: string;
@@ -64,7 +63,7 @@ export default function GameUI(props: GameUIProps) {
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', backgroundColor: '#000000' }}>
       <style>{`
-        .game-curtain { position: absolute; inset: 0; background-color: #000000; pointer-events: none; transition: opacity 0.5s ease-in-out; z-index: 50; }
+        .game-curtain { position: absolute; inset: 0; background-color: #000000; pointer-events: none; transition: opacity 0.4s ease-in-out; z-index: 50; }
         .curtain-black { opacity: 1; }
         .curtain-clear { opacity: 0; }
         .tfu-hud { position: absolute; inset: 0; pointer-events: none; z-index: 10; transition: opacity 0.4s ease; }
@@ -120,7 +119,6 @@ export default function GameUI(props: GameUIProps) {
         .tfu-pad-bottom { bottom: 0; left: 50%; transform: translateX(-50%); }
         .tfu-pad-bottom:active { transform: translateX(-50%) scale(0.94); }
         .tfu-pad-timer-text { font-family: monospace; font-size: 16px; font-weight: 900; color: #ffffff; }
-        .tfu-pad-active-flash { border-color: #64b5f6; background: rgba(100, 181, 246, 0.35); }
         .zone-attack-indicator { position: absolute; top: 0; bottom: 0; background: rgba(255, 30, 30, 0.2); border-left: 2px dashed rgba(255, 80, 80, 0.65); border-right: 2px dashed rgba(255, 80, 80, 0.65); pointer-events: none; z-index: 8; animation: zoneBlink 0.22s infinite alternate; }
         .tractor-beam-indicator { position: absolute; top: 0; bottom: 0; background: rgba(255, 10, 10, 0.28); border-left: 3px solid rgba(255, 60, 60, 0.85); border-right: 3px solid rgba(255, 60, 60, 0.85); pointer-events: none; z-index: 8; animation: tractorBlink 0.18s infinite alternate; }
         @keyframes zoneBlink { from { opacity: 0.15; } to { opacity: 0.55; } }
@@ -133,28 +131,28 @@ export default function GameUI(props: GameUIProps) {
         .letterbox-active.letterbox-top, .letterbox-active.letterbox-bottom { height: 18%; }
         .biome-banner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; pointer-events: none; z-index: 45; opacity: 0; transition: opacity 0.5s ease-in-out; }
         .biome-banner.show-banner { opacity: 1; }
-        .biome-text { font-family: Arial, sans-serif; font-size: clamp(20px, 4vw, 30px); font-weight: 800; letter-spacing: 6px; color: #ffffff; text-transform: uppercase; }
-        .biome-subtext { font-family: Arial, sans-serif; font-size: clamp(10px, 2vw, 13px); font-weight: bold; letter-spacing: 4px; color: #ff6b81; text-transform: uppercase; }
+        .biome-text { font-family: Arial, sans-serif; font-size: clamp(20px, 4vw, 30px); font-weight: 800; letter-spacing: 6px; color: #ffffff; text-transform: uppercase; text-align: center; }
+        .biome-subtext { font-family: Arial, sans-serif; font-size: clamp(10px, 2vw, 13px); font-weight: bold; letter-spacing: 4px; color: #ff6b81; text-transform: uppercase; text-align: center; }
         .no-signal-indicator { position: absolute; top: 48%; left: 50%; transform: translate(-50%, -50%); font-family: monospace; font-size: 16px; font-weight: 900; letter-spacing: 3px; color: #ff3838; pointer-events: none; z-index: 15; animation: blinkSignal 0.25s infinite alternate; }
         @keyframes blinkSignal { from { opacity: 0.3; } to { opacity: 1; } }
         .pause-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; z-index: 46; pointer-events: auto; }
-        .pause-title { font-family: Arial, sans-serif; font-size: clamp(22px, 4.5vw, 32px); font-weight: 900; letter-spacing: 5px; color: #ffffff; text-transform: uppercase; }
+        .pause-title { font-family: Arial, sans-serif; font-size: clamp(22px, 4.5vw, 32px); font-weight: 900; letter-spacing: 5px; color: #ffffff; text-transform: uppercase; text-align: center; }
         .pause-menu-list { display: flex; flex-direction: column; gap: 9px; width: min(340px, 75vw); }
         .pause-button { width: 100%; height: 38px; border-radius: 0px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-family: Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; }
         .pause-btn-primary { border: 2px solid #e2e8f0; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.3) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #d31820 0%, #ff3b30 45%, #b50e17 55%, #66050b 100%); color: #ffffff; }
         .pause-btn-secondary { border: 2px solid #b2c2d4; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #e4edf7 0%, #bdcfdf 45%, #768a9f 50%, #44566b 52%, #8ba0b7 100%); color: #0b141e; }
         .console-window { background: #0d151f; border: 2px solid #5a738e; border-top: 2px solid #8fa9c4; border-radius: 0px; padding: 20px 24px; display: flex; flex-direction: column; align-items: center; gap: 12px; width: min(380px, 80vw); }
-        .console-title { font-family: Arial, sans-serif; font-size: 18px; font-weight: 900; letter-spacing: 3px; color: #64b5f6; text-transform: uppercase; }
+        .console-title { font-family: Arial, sans-serif; font-size: 18px; font-weight: 900; letter-spacing: 3px; color: #ffffff; text-transform: uppercase; text-align: center; }
         .console-desc { font-family: Arial, sans-serif; font-size: 11px; letter-spacing: 1px; color: #8faec4; text-align: center; }
         .console-input { width: 100%; background: #060b10; border: 1px solid #3d586e; border-radius: 0px; color: #ffffff; padding: 9px 12px; font-family: monospace; font-size: 13px; letter-spacing: 2px; text-align: center; outline: none; }
-        .console-feedback { font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; letter-spacing: 1.5px; color: #ff4757; min-height: 14px; }
+        .console-feedback { font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; letter-spacing: 1.5px; color: #ff4757; min-height: 14px; text-align: center; }
         .end-modal-box { background: #0b141e; border: 2px solid #5a738e; border-top: 2px solid #8fa9c4; border-radius: 0px; padding: 24px 30px; width: min(380px, 85vw); display: flex; flex-direction: column; gap: 16px; box-shadow: 0 15px 40px rgba(0, 0, 0, 0.95); z-index: 90; }
-        .end-title-defeat { font-family: Arial, sans-serif; font-size: 24px; font-weight: 900; letter-spacing: 4px; color: #ff3838; text-transform: uppercase; text-align: center; border-bottom: 1px solid #3b141a; padding-bottom: 8px; }
-        .end-title-victory { font-family: Arial, sans-serif; font-size: 24px; font-weight: 900; letter-spacing: 4px; color: #00e5ff; text-transform: uppercase; text-align: center; border-bottom: 1px solid #14354b; padding-bottom: 8px; }
+        .end-title-defeat { font-family: Arial, sans-serif; font-size: 24px; font-weight: 900; letter-spacing: 4px; color: #ffffff; text-transform: uppercase; text-align: center; border-bottom: 1px solid #233446; padding-bottom: 8px; }
+        .end-title-victory { font-family: Arial, sans-serif; font-size: 24px; font-weight: 900; letter-spacing: 4px; color: #ffffff; text-transform: uppercase; text-align: center; border-bottom: 1px solid #233446; padding-bottom: 8px; }
         .end-stats-rows { display: flex; flex-direction: column; gap: 8px; }
-        .end-stat-line { display: flex; justify-content: space-between; font-family: Arial, sans-serif; font-size: 12px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: #8faec4; }
+        .end-stat-line { display: flex; justify-content: space-between; font-family: Arial, sans-serif; font-size: 12px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: #ffffff; }
         .end-stat-val { color: #ffffff; font-family: monospace; font-size: 14px; }
-        .end-stat-credits { color: #f1c40f; }
+        .end-stat-credits { color: #ffffff; }
         .end-actions-row { display: flex; gap: 10px; margin-top: 6px; }
       `}</style>
 
@@ -215,8 +213,8 @@ export default function GameUI(props: GameUIProps) {
                 <span>ПРОЙДЕНО ЭТАПОВ:</span>
                 <span className="end-stat-val">{props.stagesCompleted}</span>
               </div>
-              <div className="end-stat-line" style={{ borderTop: '1px dashed #233446', paddingTop: '6px' }}>
-                <span style={{ color: '#f1c40f' }}>ЗАРАБОТАНО КРЕДИТОВ:</span>
+              <div className="end-stat-line" style={{ borderTop: '1px solid #233446', paddingTop: '6px' }}>
+                <span>ЗАРАБОТАНО КРЕДИТОВ:</span>
                 <span className="end-stat-val end-stat-credits">+{props.creditsEarned}</span>
               </div>
             </div>
@@ -333,7 +331,7 @@ export default function GameUI(props: GameUIProps) {
         <div className="tfu-cluster-zone">
           <button
             type="button"
-            className={`tfu-pad-btn tfu-pad-top ${props.ability1Active ? 'tfu-pad-active-flash' : ''}`}
+            className="tfu-pad-btn tfu-pad-top"
             onPointerDown={(e) => { e.stopPropagation(); props.onTriggerAbility1(); }}
           >
             {props.ability1Cooldown > 0 ? (
