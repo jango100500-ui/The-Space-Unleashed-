@@ -14,25 +14,37 @@ import GameUI from './GameUI.tsx';
 interface GameScreenProps {
   assets: PreloadedAssets;
   selectedShipId?: string;
+  onAddCredits?: (amount: number) => void;
+  onRestart?: () => void;
   onExit: () => void;
 }
 
-export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }: GameScreenProps) {
+export default function GameScreen({
+  assets,
+  selectedShipId = 'xwing',
+  onAddCredits,
+  onRestart,
+  onExit
+}: GameScreenProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [curtainVisible, setCurtainVisible] = useState<boolean>(true);
   const [hp, setHp] = useState<number>(100);
-  const [maxShield] = useState<number>(() => {
-    const s = HANGAR_SHIPS.find((ship) => ship.id === selectedShipId);
-    return s ? s.shield : 0;
-  });
-  const [shieldHp, setShieldHp] = useState<number>(() => {
-    const s = HANGAR_SHIPS.find((ship) => ship.id === selectedShipId);
-    return s ? s.shield : 0;
-  });
+
+  const shipConf = HANGAR_SHIPS.find((s) => s.id === selectedShipId) || HANGAR_SHIPS[0];
+  const maxShield = shipConf.shield;
+  const [shieldHp, setShieldHp] = useState<number>(maxShield);
+
   const [healBonus, setHealBonus] = useState<number>(0);
   const [isFiring, setIsFiring] = useState<boolean>(false);
   const [joystickActive, setJoystickActive] = useState<boolean>(false);
   const [joystickOffset, setJoystickOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const [score, setScore] = useState<number>(0);
+  const [enemiesKilled, setEnemiesKilled] = useState<number>(0);
+  const [damageDealt, setDamageDealt] = useState<number>(0);
+  const [stagesCompleted, setStagesCompleted] = useState<number>(0);
+  const [creditsEarned, setCreditsEarned] = useState<number>(0);
+  const [endGameModal, setEndGameModal] = useState<'defeat' | 'victory' | null>(null);
 
   const [inBiomeTransition, setInBiomeTransition] = useState<boolean>(false);
   const [biomeTitle, setBiomeTitle] = useState<string>('');
@@ -78,22 +90,22 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
   const biomeRunRef = useRef<BiomeRunStep[]>(generateBiomeRun(availablePlanets));
 
   useEffect(() => {
-    isPausedRef.current = isPaused || showHallwayCutscene;
+    isPausedRef.current = isPaused || showHallwayCutscene || endGameModal !== null;
     inHallwayRef.current = showHallwayCutscene;
     if (xwingGainRef.current && tieEngineGainRef.current) {
-      if (isPaused || showHallwayCutscene) {
+      if (isPaused || showHallwayCutscene || endGameModal !== null) {
         xwingGainRef.current.gain.value = 0;
         tieEngineGainRef.current.gain.value = 0;
       }
     }
     if (bossSoundtrackSourceRef.current && assets.audioCtx) {
-      if (isPaused || showHallwayCutscene) {
+      if (isPaused || showHallwayCutscene || endGameModal !== null) {
         if (assets.audioCtx.state === 'running') assets.audioCtx.suspend();
       } else {
         if (assets.audioCtx.state === 'suspended') assets.audioCtx.resume();
       }
     }
-  }, [isPaused, showHallwayCutscene, assets.audioCtx]);
+  }, [isPaused, showHallwayCutscene, endGameModal, assets.audioCtx]);
 
   const playTone = (freq: number, endFreq: number, dur: number, vol = 0.15, type: OscillatorType = 'sawtooth') => {
     if (!assets.audioCtx || isPausedRef.current) return;
@@ -302,7 +314,6 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
     scene.add(shipHolder);
 
     const gltfLoader = new GLTFLoader();
-    const shipConf = HANGAR_SHIPS.find((s) => s.id === selectedShipId) || HANGAR_SHIPS[0];
 
     const applyCalculatedScaleAndRot = (targetObj: THREE.Group) => {
       const xBox = new THREE.Box3().setFromObject(models.xwing);
@@ -386,8 +397,8 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
       new THREE.MeshBasicMaterial({ color: 0xffffff })
     ];
 
-    const shieldSphereGeo = new THREE.SphereGeometry(1.4, 16, 12);
-    const shieldMat = new THREE.MeshBasicMaterial({ color: 0x40c4ff, transparent: true, opacity: 0.7, wireframe: true });
+    const shieldRippleGeo = new THREE.RingGeometry(0.4, 2.1, 24);
+    const shieldRippleMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
 
     const spaceDebrisGeoList = [
       new THREE.DodecahedronGeometry(1.4, 0),
@@ -414,11 +425,12 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
     const tractorBeam: BossTractorBeam = { active: false, timer: 0, duration: 1.8, xMin: -6, xMax: 6, fired: false };
 
     const spawnShieldImpact = (worldPos: THREE.Vector3) => {
-      const sMesh = new THREE.Mesh(shieldSphereGeo, shieldMat.clone());
+      const sMesh = new THREE.Mesh(shieldRippleGeo, shieldRippleMat.clone());
       sMesh.position.copy(worldPos);
-      sMesh.scale.setScalar(0.7);
+      sMesh.rotation.set((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, Math.random() * Math.PI);
+      sMesh.scale.setScalar(0.5);
       scene.add(sMesh);
-      shieldImpacts.push({ mesh: sMesh, life: 0.28, maxLife: 0.28 });
+      shieldImpacts.push({ mesh: sMesh, life: 0.24, maxLife: 0.24 });
     };
 
     const spawnRetroExplosion = (pos: THREE.Vector3, scale = 1.0, withLight = true, isGreen = false) => {
@@ -584,6 +596,11 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
     let currentHp = 100;
     let currentShield = shipConf.shield;
 
+    let currentScore = 0;
+    let currentKills = 0;
+    let currentDamage = 0;
+    let currentStagesDone = 0;
+
     let transitionDuration = 0;
 
     let lightningTimer = 0;
@@ -592,6 +609,19 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
     let playerStunDuration = 0;
     let activeLightningMesh: THREE.Line | null = null;
     let activeLightningLife = 0;
+
+    const triggerEndGame = (mode: 'defeat' | 'victory') => {
+      isPausedRef.current = true;
+      if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
+      if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
+
+      const earned = Math.floor(currentScore * 0.12 + currentKills * 35 + currentStagesDone * 150 + (mode === 'victory' ? 600 : 0));
+      setCreditsEarned(earned);
+      if (onAddCredits) {
+        onAddCredits(earned);
+      }
+      setEndGameModal(mode);
+    };
 
     const applyDamageToPlayer = (dmg: number) => {
       if (godModeRef.current) {
@@ -610,10 +640,7 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
         setHp(currentHp);
         shakeIntensity = Math.max(shakeIntensity, 0.55);
         if (currentHp <= 0) {
-          if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
-          if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
-          setCurtainVisible(true);
-          setTimeout(() => onExit(), 500);
+          triggerEndGame('defeat');
         }
       }
     };
@@ -797,6 +824,11 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
           setCurrentStage(stageIdx);
           setStageProgressPercent(0);
 
+          currentStagesDone += 1;
+          setStagesCompleted(currentStagesDone);
+          currentScore += 1000;
+          setScore(currentScore);
+
           if (stageIdx < 4) {
             applyStageHeal(15);
             inBiomeTransitionRef.current = true;
@@ -950,9 +982,9 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
             const d = e.pos.distanceTo(shipPos);
             if (d < 220) {
               const angleDist = Math.hypot(e.pos.x - shipPos.x, e.pos.y - shipPos.y);
-              const score = d + angleDist * 8;
-              if (score < bestScore) {
-                bestScore = score;
+              const curScore = d + angleDist * 8;
+              if (curScore < bestScore) {
+                bestScore = curScore;
                 autoTargetPos = e.pos;
               }
             }
@@ -969,9 +1001,9 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
                 const worldGPos = gen.localPos.clone().applyMatrix4(bossData.group.matrixWorld);
                 const d = worldGPos.distanceTo(shipPos);
                 const angleDist = Math.hypot(worldGPos.x - shipPos.x, worldGPos.y - shipPos.y);
-                const score = d * 0.3 + angleDist * 4;
-                if (score < bestScore) {
-                  bestScore = score;
+                const curScore = d * 0.3 + angleDist * 4;
+                if (curScore < bestScore) {
+                  bestScore = curScore;
                   autoTargetPos = worldGPos;
                 }
               }
@@ -1117,6 +1149,9 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
             bossData.raidCompleted = true;
             setBossBarMode('hull');
             setBossBarPercent(Math.floor((bossData.hullHp / bossData.maxHullHp) * 100));
+
+            currentScore += 2500;
+            setScore(currentScore);
 
             bossData.zoneCooldown = 12.0;
             bossData.tractorCooldown = 16.0;
@@ -1486,9 +1521,19 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
                 const dealt = shipConf.damage >= 45 ? 2 : 1;
                 e.hp -= dealt;
 
+                currentDamage += dealt * 25;
+                setDamageDealt(currentDamage);
+                currentScore += dealt * 30;
+                setScore(currentScore);
+
                 if (e.hp <= 0) {
                   spawnRetroExplosion(e.pos);
                   shakeIntensity = Math.max(shakeIntensity, 0.8);
+
+                  currentKills += 1;
+                  setEnemiesKilled(currentKills);
+                  currentScore += e.isRaid ? 250 : e.isElite ? 180 : 100;
+                  setScore(currentScore);
 
                   if (Math.random() < 0.0745) {
                     spawnDatapad(e.pos);
@@ -1513,11 +1558,19 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
                   if (l.mesh.position.distanceTo(worldGPos) < 14.0) {
                     l.life = 0;
                     hitAny = true;
-                    gen.hp -= (shipConf.damage >= 45 ? 2 : 1);
+                    const dealt = (shipConf.damage >= 45 ? 2 : 1);
+                    gen.hp -= dealt;
+
+                    currentDamage += dealt * 35;
+                    setDamageDealt(currentDamage);
+                    currentScore += dealt * 40;
+                    setScore(currentScore);
 
                     if (gen.hp <= 0) {
                       gen.destroyed = true;
                       spawnRetroExplosion(worldGPos, 1.8);
+                      currentScore += 500;
+                      setScore(currentScore);
                     }
                     break;
                   }
@@ -1531,7 +1584,13 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
               if (dx < 32 && dy < 16 && dz < 55) {
                 l.life = 0;
                 hitAny = true;
-                bossData.hullHp -= (shipConf.damage >= 45 ? 2 : 1);
+                const dealt = (shipConf.damage >= 45 ? 2 : 1);
+                bossData.hullHp -= dealt;
+
+                currentDamage += dealt * 40;
+                setDamageDealt(currentDamage);
+                currentScore += dealt * 50;
+                setScore(currentScore);
 
                 bossHullHitCount++;
                 if (bossHullHitCount >= nextExplosionThreshold) {
@@ -1542,13 +1601,10 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
 
                 if (bossData.hullHp <= 0) {
                   bossData.destroyed = true;
+                  currentScore += 5000;
+                  setScore(currentScore);
                   spawnRetroExplosion(bossData.pos, 3.5, true);
-                  setCurtainVisible(true);
-                  setTimeout(() => {
-                    if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
-                    if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
-                    onExit();
-                  }, 800);
+                  triggerEndGame('victory');
                 }
               }
             }
@@ -1591,10 +1647,11 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
           shipHolder.traverse((c) => {
             if ((c as THREE.Mesh).isMesh) {
               const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
-              if (m && m.color) {
-                const orig = m.color.getHex();
-                m.color.setHex(0xff7777);
-                setTimeout(() => m.color.setHex(orig), 180);
+              if (m && m.emissive) {
+                m.emissive.setHex(0x44ff44);
+                setTimeout(() => {
+                  if (m && m.emissive) m.emissive.setHex(0x000000);
+                }, 200);
               }
             }
           });
@@ -1611,8 +1668,8 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
         const si = shieldImpacts[i];
         si.life -= dt;
         const progress = 1 - si.life / si.maxLife;
-        si.mesh.scale.setScalar(0.7 + progress * 0.9);
-        (si.mesh.material as THREE.MeshBasicMaterial).opacity = (si.life / si.maxLife) * 0.85;
+        si.mesh.scale.setScalar(0.5 + progress * 1.1);
+        (si.mesh.material as THREE.MeshBasicMaterial).opacity = (si.life / si.maxLife) * 0.9;
         if (si.life <= 0) {
           scene.remove(si.mesh);
           si.mesh.geometry.dispose();
@@ -1731,10 +1788,10 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
       }
       renderer.dispose();
     };
-  }, [assets, selectedShipId, onExit]);
+  }, [assets, selectedShipId, onExit, onAddCredits]);
 
   const handleStickPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene) return;
+    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene || endGameModal !== null) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     stickTouchId.current = e.pointerId;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -1744,7 +1801,7 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
   };
 
   const handleStickMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene || stickTouchId.current !== e.pointerId) return;
+    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene || endGameModal !== null || stickTouchId.current !== e.pointerId) return;
     const dx = e.clientX - stickCenter.current.x;
     const dy = e.clientY - stickCenter.current.y;
     const maxRadius = 55;
@@ -1793,6 +1850,24 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
     setCurtainVisible(true);
     setTimeout(() => {
       onExit();
+    }, 450);
+  };
+
+  const handleRestartGame = () => {
+    playUiSound();
+    if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
+    if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
+    if (bossSoundtrackSourceRef.current) {
+      try { bossSoundtrackSourceRef.current.stop(); } catch {}
+      bossSoundtrackSourceRef.current = null;
+    }
+    setCurtainVisible(true);
+    setTimeout(() => {
+      if (onRestart) {
+        onRestart();
+      } else {
+        onExit();
+      }
     }, 450);
   };
 
@@ -1860,6 +1935,17 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
       setConsoleInput('');
       setConsoleFeedback('');
       setShowHallwayCutscene(true);
+    } else if (code === 'pqonfu$$shsji') {
+      if (onAddCredits) {
+        onAddCredits(999999);
+      }
+      setConsoleFeedback('ПОЛУЧЕНО 999999 КРЕДИТОВ');
+      setTimeout(() => {
+        setIsConsoleOpen(false);
+        setIsPaused(false);
+        setConsoleInput('');
+        setConsoleFeedback('');
+      }, 500);
     } else {
       setConsoleFeedback('НЕВЕРНЫЙ КОД');
     }
@@ -1878,6 +1964,12 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
       maxShield={maxShield}
       shieldHp={shieldHp}
       healBonus={healBonus}
+      score={score}
+      enemiesKilled={enemiesKilled}
+      damageDealt={damageDealt}
+      stagesCompleted={stagesCompleted}
+      creditsEarned={creditsEarned}
+      endGameModal={endGameModal}
       joystickActive={joystickActive}
       joystickOffset={joystickOffset}
       inBiomeTransition={inBiomeTransition}
@@ -1906,11 +1998,12 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
       onResume={handleResume}
       onOpenConsole={handleOpenConsole}
       onCloseConsole={handleCloseConsole}
+      onRestartGame={handleRestartGame}
       onQuit={handleQuit}
       onConsoleInputChange={setConsoleInput}
       onApplyCheat={handleApplyCheat}
       onFirePointerDown={() => {
-        if (!inBiomeTransition && !isPaused && !isConsoleOpen && !bossCutsceneActive && !playerStunned && !showHallwayCutscene) setIsFiring(true);
+        if (!inBiomeTransition && !isPaused && !isConsoleOpen && !bossCutsceneActive && !playerStunned && !showHallwayCutscene && endGameModal === null) setIsFiring(true);
       }}
       onFirePointerUp={() => setIsFiring(false)}
       onFirePointerCancel={() => setIsFiring(false)}
