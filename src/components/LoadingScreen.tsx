@@ -14,7 +14,8 @@ const SOUND_LIST = [
   { key: 'tieShot', url: '/sounds/tieshot.mp3' },
   { key: 'tieEngine', url: '/sounds/tieengine.mp3' },
   { key: 'click', url: '/sounds/click.mp3' },
-  { key: 'destroyerSoundtrack', url: '/sounds/destroyer_soundtrack.mp3' }
+  { key: 'destroyerSoundtrack', url: '/sounds/destroyer_soundtrack.mp3' },
+  { key: 'proton', url: '/sounds/proton.mp3' }
 ];
 
 export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
