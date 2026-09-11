@@ -8,6 +8,8 @@ interface GameUIProps {
   mountRef: React.RefObject<HTMLDivElement>;
   curtainVisible: boolean;
   hp: number;
+  maxShield: number;
+  shieldHp: number;
   healBonus: number;
   joystickActive: boolean;
   joystickOffset: { x: number; y: number };
@@ -55,10 +57,13 @@ export default function GameUI(props: GameUIProps) {
         .curtain-clear { opacity: 0; }
         .tfu-hud { position: absolute; inset: 0; pointer-events: none; z-index: 10; transition: opacity 0.4s ease; }
         .tfu-hud.hidden-hud { opacity: 0; }
-        .tfu-hp-container { position: absolute; top: 14px; left: 18px; display: flex; flex-direction: column; gap: 3px; }
+        .tfu-hp-container { position: absolute; top: 14px; left: 18px; display: flex; flex-direction: column; gap: 4px; }
         .tfu-hp-label { font-family: Arial, sans-serif; font-size: 10px; font-weight: 900; letter-spacing: 2px; color: #ff4757; text-shadow: 0 1px 3px #000; }
+        .tfu-shield-label { font-family: Arial, sans-serif; font-size: 10px; font-weight: 900; letter-spacing: 2px; color: #00e5ff; text-shadow: 0 1px 3px #000; margin-top: 2px; }
         .tfu-hp-frame { width: min(220px, 30vw); height: 13px; background-color: rgba(58, 5, 8, 0.75); border: 1px solid #ff4757; box-shadow: 0 0 0 1px #000; padding: 1px; clip-path: polygon(8px 0%, calc(100% - 8px) 0%, 100% 100%, 0% 100%); position: relative; }
+        .tfu-shield-frame { width: min(220px, 30vw); height: 9px; background-color: rgba(5, 30, 48, 0.75); border: 1px solid #00e5ff; box-shadow: 0 0 0 1px #000; padding: 1px; clip-path: polygon(6px 0%, calc(100% - 6px) 0%, 100% 100%, 0% 100%); position: relative; }
         .tfu-hp-fill { height: 100%; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.35) 0px, rgba(0,0,0,0.35) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #d31820 0%, #ff3b30 45%, #b50e17 55%, #66050b 100%); clip-path: polygon(6px 0%, calc(100% - 6px) 0%, 100% 100%, 0% 100%); transition: width 0.15s ease-out; }
+        .tfu-shield-fill { height: 100%; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.3) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #0284c7 0%, #00e5ff 50%, #0369a1 100%); clip-path: polygon(4px 0%, calc(100% - 4px) 0%, 100% 100%, 0% 100%); transition: width 0.15s ease-out; }
         .tfu-hp-heal-sector { position: absolute; top: 1px; bottom: 1px; background: #4cd137; opacity: 0.85; transition: all 0.2s ease-out; }
         .tfu-progress-tracker { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; }
         .tracker-node { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #5a738e; background: #09131d; transition: all 0.2s; }
@@ -195,6 +200,14 @@ export default function GameUI(props: GameUIProps) {
               <div className="tfu-hp-heal-sector" style={{ left: `${Math.max(0, props.hp - props.healBonus)}%`, width: `${props.healBonus}%` }} />
             )}
           </div>
+          {props.maxShield > 0 && (
+            <>
+              <div className="tfu-shield-label">SHIELD DEFENSE</div>
+              <div className="tfu-shield-frame">
+                <div className="tfu-shield-fill" style={{ width: `${(props.shieldHp / props.maxShield) * 100}%` }} />
+              </div>
+            </>
+          )}
         </div>
 
         {props.bossActive ? (
