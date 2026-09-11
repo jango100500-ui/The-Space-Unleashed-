@@ -296,9 +296,30 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
     const gltfLoader = new GLTFLoader();
     const shipConf = HANGAR_SHIPS.find((s) => s.id === selectedShipId) || HANGAR_SHIPS[0];
 
+    const applyCalculatedScaleAndRot = (targetObj: THREE.Group) => {
+      if (shipConf.id === 'twing') {
+        targetObj.scale.setScalar(0.48);
+      } else {
+        const xBox = new THREE.Box3().setFromObject(models.xwing);
+        const xSize = new THREE.Vector3();
+        xBox.getSize(xSize);
+        const xMax = Math.max(xSize.x, xSize.y, xSize.z) || 1;
+
+        const mBox = new THREE.Box3().setFromObject(targetObj);
+        const mSize = new THREE.Vector3();
+        mBox.getSize(mSize);
+        const mMax = Math.max(mSize.x, mSize.y, mSize.z) || 1;
+
+        const normalizedScale = (xMax / mMax) * 0.48;
+        targetObj.scale.setScalar(normalizedScale);
+      }
+      targetObj.rotation.set(shipConf.rot[0], shipConf.rot[1], shipConf.rot[2]);
+    };
+
     if (selectedShipId === 'xwing') {
       const xObj = models.xwing.clone();
       xObj.scale.setScalar(0.48);
+      xObj.rotation.set(shipConf.rot[0], shipConf.rot[1], shipConf.rot[2]);
       shipHolder.add(xObj);
     } else if (shipConf.modelUrl) {
       gltfLoader.load(
@@ -309,8 +330,7 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
             shipHolder.remove(shipHolder.children[0]);
           }
           const loaded = gltf.scene;
-          loaded.scale.setScalar(shipConf.scale);
-          loaded.rotation.set(shipConf.pitch, 0, 0);
+          applyCalculatedScaleAndRot(loaded);
           shipHolder.add(loaded);
         },
         undefined,
