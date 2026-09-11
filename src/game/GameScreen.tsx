@@ -1183,8 +1183,11 @@ export default function GameScreen({
         }
       }
 
+      const input = (isDeadRef.current || inBiomeTransitionRef.current || playerStunDuration > 0 || showHallwayCutscene)
+        ? { x: 0, y: 0, fire: false }
+        : inputRef.current;
+
       if (!isDeadRef.current) {
-        const input = inBiomeTransitionRef.current || playerStunDuration > 0 || showHallwayCutscene ? { x: 0, y: 0, fire: false } : inputRef.current;
         const aspect = window.innerWidth / window.innerHeight;
         const xRange = Math.max(5.2, Math.min(16.0, 10.0 * aspect * 1.05));
         const yRange = 8.5;
