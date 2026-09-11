@@ -39,8 +39,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   const [bossBarMode, setBossBarMode] = useState<'shield' | 'hull' | 'raid'>('shield');
   const [bossBarPercent, setBossBarPercent] = useState<number>(100);
   const [bossCutsceneActive, setBossCutsceneActive] = useState<boolean>(false);
-  const [bossVictoryActive, setBossVictoryActive] = useState<boolean>(false);
-  const [showVictoryText, setShowVictoryText] = useState<boolean>(false);
   const [playerStunned, setPlayerStunned] = useState<boolean>(false);
 
   const [generatorTargets, setGeneratorTargets] = useState<GeneratorScreenTarget[]>([]);
@@ -50,7 +48,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   const isPausedRef = useRef<boolean>(false);
   const inBiomeTransitionRef = useRef<boolean>(false);
   const bossCutsceneActiveRef = useRef<boolean>(false);
-  const bossVictoryActiveRef = useRef<boolean>(false);
   const inHallwayRef = useRef<boolean>(false);
 
   const inputRef = useRef<{ x: number; y: number; fire: boolean }>({ x: 0, y: 0, fire: false });
@@ -449,15 +446,11 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     let bossData: BossState | null = null;
     let bossSpawned = false;
     let bossCutsceneTimer = 0;
-    let bossVictoryTimer = 0;
     let bossCutsceneCamPos = new THREE.Vector3();
     let bossHullHitCount = 0;
     let nextExplosionThreshold = 8;
     let isBossExecutingSpecial = false;
-    let raidCountdown = 0;
-    let isRaidPreludeActive = false;
-
-    const cr90Corvettes: THREE.Group[] = [];
+    let raidTotalEnemies = 10;
 
     const initBoss = () => {
       const grp = models.destroyer.clone();
@@ -525,6 +518,13 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     let playerStunDuration = 0;
     let activeLightningMesh: THREE.Line | null = null;
     let activeLightningLife = 0;
+
+    const applyStageHeal = (amt: number) => {
+      currentHp = Math.min(100, currentHp + amt);
+      setHp(currentHp);
+      setHealBonus(amt);
+      setTimeout(() => setHealBonus(0), 1200);
+    };
 
     const triggerLightning = (forcePlayer = false) => {
       const startL = new THREE.Vector3((Math.random() - 0.5) * 120, 50 + Math.random() * 25, -120 - Math.random() * 150);
@@ -709,6 +709,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           setStageProgressPercent(0);
 
           if (stageIdx < 4) {
+            applyStageHeal(15);
             inBiomeTransitionRef.current = true;
             setInBiomeTransition(true);
             transitionDuration = 0;
@@ -728,6 +729,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           }
         }
       } else if (!bossSpawned && stageIdx >= 4 && !bossCutsceneActiveRef.current) {
+        applyStageHeal(25);
         bossSpawned = true;
         bossCutsceneActiveRef.current = true;
         setBossCutsceneActive(true);
@@ -778,65 +780,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           camera.position.copy(cameraBase);
 
           setBossActive(true);
-        }
-
-        renderer.render(scene, camera);
-        animId = requestAnimationFrame(gameLoop);
-        return;
-      }
-
-      if (bossVictoryActiveRef.current) {
-        bossVictoryTimer += dt;
-
-        shipPos.z -= 65 * dt;
-        playerShip.position.copy(shipPos);
-
-        camera.position.set(shipPos.x - 14, shipPos.y + 3, shipPos.z - 18);
-        camera.lookAt(shipPos.x, shipPos.y + 1, shipPos.z + 180);
-
-        if (bossVictoryTimer >= 1.0 && cr90Corvettes.length === 0 && models.cr90) {
-          const offsets = [
-            new THREE.Vector3(-45, 18, shipPos.z + 120),
-            new THREE.Vector3(52, -8, shipPos.z + 160),
-            new THREE.Vector3(12, 32, shipPos.z + 200)
-          ];
-          for (let i = 0; i < 3; i++) {
-            const cr = models.cr90.clone();
-            cr.scale.setScalar(6.5);
-            cr.position.copy(offsets[i]);
-            scene.add(cr);
-            cr90Corvettes.push(cr);
-          }
-        }
-
-        for (let i = 0; i < cr90Corvettes.length; i++) {
-          const cr = cr90Corvettes[i];
-          cr.position.z -= 28 * dt;
-        }
-
-        if (bossVictoryTimer >= 3.6 && !curtainVisible) {
-          setCurtainVisible(true);
-        }
-
-        if (bossVictoryTimer >= 4.2 && !showVictoryText) {
-          setShowVictoryText(true);
-        }
-
-        if (bossVictoryTimer >= 6.8) {
-          if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
-          if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
-          onExit();
-          return;
-        }
-
-        for (let i = lasers.length - 1; i >= 0; i--) {
-          const l = lasers[i];
-          l.life -= dt;
-          l.mesh.position.addScaledVector(l.vel, dt);
-          if (l.life <= 0) {
-            scene.remove(l.mesh);
-            lasers.splice(i, 1);
-          }
         }
 
         renderer.render(scene, camera);
@@ -1033,30 +976,17 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
         const activeGenHp = bossData.generators.reduce((acc, g) => acc + (g.destroyed ? 0 : g.hp), 0);
         const totalGenHp = bossData.generators.reduce((acc, g) => acc + g.maxHp, 0);
+        const isAbilityActive = zoneAttack.active || tractorBeam.active || isBossExecutingSpecial;
 
         if (activeGenHp > 0) {
           setBossShieldsDown(false);
           setBossBarMode('shield');
           setBossBarPercent(Math.floor((activeGenHp / totalGenHp) * 100));
         } else if (!bossData.phase2Active) {
-          bossData.phase2Active = true;
-          setBossShieldsDown(true);
-          inBiomeTransitionRef.current = true;
-          setInBiomeTransition(true);
-          setBiomeTitle('ЗВЕЗДНЫЙ РАЗРУШИТЕЛЬ');
-          setBiomeSubtext('ФАЗА II');
-          transitionDuration = 0;
-
-          isRaidPreludeActive = true;
-          raidCountdown = 5.0;
-          bossData.squadCooldown = 999;
-          bossData.zoneCooldown = 999;
-          bossData.tractorCooldown = 999;
-        } else if (isRaidPreludeActive) {
-          raidCountdown -= dt;
-          if (raidCountdown <= 0) {
-            isRaidPreludeActive = false;
+          if (!isAbilityActive) {
+            bossData.phase2Active = true;
             bossData.raidActive = true;
+            setBossShieldsDown(true);
             setBossBarMode('raid');
             setBossBarPercent(100);
 
@@ -1065,7 +995,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
                 const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
                 if (m) {
                   m.transparent = true;
-                  m.opacity = 0.32;
+                  m.opacity = 0.3;
                   m.needsUpdate = true;
                 }
               }
@@ -1074,28 +1004,36 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
             for (let k = 0; k < 7; k++) {
               setTimeout(() => {
                 if (!isDisposed) spawnEnemy(k % 2 === 0 ? -1 : 1, false);
-              }, k * 220);
+              }, k * 180);
             }
 
             for (let k = 0; k < 3; k++) {
               setTimeout(() => {
                 if (!isDisposed) spawnEnemy(k % 2 === 0 ? 1 : -1, true);
-              }, 1600 + k * 350);
+              }, 1300 + k * 260);
             }
+          } else {
+            setBossShieldsDown(false);
+            setBossBarMode('shield');
+            setBossBarPercent(0);
           }
         } else if (bossData.raidActive) {
           setBossShieldsDown(true);
           setBossBarMode('raid');
-          const remainingRaid = enemies.filter((e) => e.isRaid).length;
-          setBossBarPercent(Math.floor((remainingRaid / 3) * 100));
+          const remainingEnemies = enemies.length;
+          setBossBarPercent(Math.floor(Math.min(100, Math.max(0, (remainingEnemies / raidTotalEnemies) * 100))));
 
-          if (remainingRaid === 0 && !bossData.raidCompleted) {
+          if (remainingEnemies === 0 && !bossData.raidCompleted) {
             bossData.raidActive = false;
             bossData.raidCompleted = true;
             setBossBarMode('hull');
-            bossData.squadCooldown = 16.0;
+            setBossBarPercent(Math.floor((bossData.hullHp / bossData.maxHullHp) * 100));
+
             bossData.zoneCooldown = 12.0;
             bossData.tractorCooldown = 16.0;
+            bossData.squadCooldown = 16.0;
+            bossData.bombardCooldown = 8.0;
+            bossData.shootCooldown = 1.4;
 
             bossData.group.traverse((c) => {
               if ((c as THREE.Mesh).isMesh) {
@@ -1130,7 +1068,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         }
         setGeneratorTargets(newTargetList);
 
-        if (!bossData.raidActive && !isRaidPreludeActive && !bossCutsceneActiveRef.current && !inBiomeTransitionRef.current) {
+        if (!bossData.raidActive && !bossCutsceneActiveRef.current && !inBiomeTransitionRef.current) {
           const isSpecialBusy = zoneAttack.active || tractorBeam.active || isBossExecutingSpecial;
 
           if (!isSpecialBusy) {
@@ -1187,7 +1125,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
               const squadCount = Math.min(6, 4 + Math.floor(Math.random() * 3));
               for (let k = 0; k < squadCount; k++) {
                 setTimeout(() => {
-                  if (!isDisposed && !bossVictoryActiveRef.current) {
+                  if (!isDisposed) {
                     spawnEnemy(k % 2 === 0 ? -1 : 1);
                   }
                   if (k === squadCount - 1) {
@@ -1200,7 +1138,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
               isBossExecutingSpecial = true;
               for (let b = 0; b < 4; b++) {
                 setTimeout(() => {
-                  if (!isDisposed && !bossVictoryActiveRef.current) {
+                  if (!isDisposed) {
                     const bOrigin = bossData!.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 35, 8, 20));
                     const bDir = new THREE.Vector3().subVectors(shipPos, bOrigin).normalize();
                     const lMesh = new THREE.Mesh(greenLaserGeo, greenLaserMat);
@@ -1232,7 +1170,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
               const yPoints = [10, 2, -6];
               yPoints.forEach((yPos, idx) => {
                 setTimeout(() => {
-                  if (!isDisposed && !bossVictoryActiveRef.current) {
+                  if (!isDisposed) {
                     spawnRetroExplosion(new THREE.Vector3(laneCenter, yPos, blastZ), 1.6, false, true);
                   }
                 }, idx * 75);
@@ -1523,10 +1461,13 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
                 if (bossData.hullHp <= 0) {
                   bossData.destroyed = true;
-                  spawnRetroExplosion(bossData.pos, 3.0, true);
-                  bossVictoryActiveRef.current = true;
-                  setBossVictoryActive(true);
-                  bossVictoryTimer = 0;
+                  spawnRetroExplosion(bossData.pos, 3.5, true);
+                  setCurtainVisible(true);
+                  setTimeout(() => {
+                    if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
+                    if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
+                    onExit();
+                  }, 800);
                 }
               }
             }
@@ -1544,13 +1485,15 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         dp.mesh.rotation.x += dp.rotSpeed.x * dt;
         dp.mesh.rotation.y += dp.rotSpeed.y * dt;
 
-        const dToPlayer = dp.pos.distanceTo(shipPos);
-        if (dToPlayer < 24) {
-          dp.pos.lerp(shipPos, dt * 7.5);
-          dp.mesh.position.copy(dp.pos);
-        }
+        dp.pos.z += 90 * dt;
 
-        if (dToPlayer < 2.2) {
+        const dToPlayer = dp.pos.distanceTo(shipPos);
+        if (dToPlayer < 75) {
+          dp.pos.lerp(shipPos, dt * 9.0);
+        }
+        dp.mesh.position.copy(dp.pos);
+
+        if (dToPlayer < 2.8) {
           currentHp = Math.min(100, currentHp + dp.healPercent);
           setHp(currentHp);
           setHealBonus(dp.healPercent);
@@ -1567,6 +1510,9 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
             }
           });
 
+          scene.remove(dp.mesh);
+          datapads.splice(i, 1);
+        } else if (dp.pos.z > camera.position.z + 15) {
           scene.remove(dp.mesh);
           datapads.splice(i, 1);
         }
@@ -1675,7 +1621,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         scene.remove(f.mesh);
         if (f.light) scene.remove(f.light);
       });
-      cr90Corvettes.forEach((cr) => scene.remove(cr));
       if (bossData) {
         scene.remove(bossData.group);
       }
@@ -1845,8 +1790,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       bossBarMode={bossBarMode}
       bossBarPercent={bossBarPercent}
       bossCutsceneActive={bossCutsceneActive}
-      bossVictoryActive={bossVictoryActive}
-      showVictoryText={showVictoryText}
       playerStunned={playerStunned}
       zoneAttackUi={zoneAttackUi}
       tractorBeamUi={tractorBeamUi}
