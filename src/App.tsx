@@ -26,14 +26,8 @@ export default function App() {
   const [assets, setAssets] = useState<PreloadedAssets | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [gameSessionId, setGameSessionId] = useState<number>(0);
-  const [selectedShipId, setSelectedShipId] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem('tsu_selected_ship');
-      return saved || 'xwing';
-    } catch {
-      return 'xwing';
-    }
-  });
+  const [credits, setCredits] = useState<number>(0);
+  const [selectedShipId, setSelectedShipId] = useState<string>('xwing');
 
   const handleLoadingComplete = (loaded: PreloadedAssets) => {
     setAssets(loaded);
@@ -58,9 +52,6 @@ export default function App() {
 
   const handleSelectShip = (id: string) => {
     setSelectedShipId(id);
-    try {
-      localStorage.setItem('tsu_selected_ship', id);
-    } catch {}
   };
 
   const handleCutsceneError = (err: string) => {
@@ -76,6 +67,15 @@ export default function App() {
   const handleGameOver = () => {
     setGameSessionId((prev) => prev + 1);
     setStage('menu');
+  };
+
+  const handleRestart = () => {
+    setGameSessionId((prev) => prev + 1);
+    setStage('cutscene');
+  };
+
+  const handleAddCredits = (amount: number) => {
+    setCredits((prev) => prev + amount);
   };
 
   return (
@@ -166,7 +166,9 @@ export default function App() {
               <HangarScreen
                 assets={assets}
                 selectedShipId={selectedShipId}
+                credits={credits}
                 onSelectShip={handleSelectShip}
+                onAddCredits={handleAddCredits}
                 onBack={handleBackFromHangar}
               />
             )}
@@ -177,6 +179,7 @@ export default function App() {
       {stage === 'cutscene' && assets && (
         <IntroCutscene
           assets={assets}
+          selectedShipId={selectedShipId}
           onComplete={handleCutsceneComplete}
           onError={handleCutsceneError}
         />
@@ -187,6 +190,8 @@ export default function App() {
           key={gameSessionId}
           assets={assets}
           selectedShipId={selectedShipId}
+          onAddCredits={handleAddCredits}
+          onRestart={handleRestart}
           onExit={handleGameOver}
         />
       )}
