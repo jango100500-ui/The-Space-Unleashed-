@@ -20,12 +20,12 @@ interface ProtonBomb {
   life: number;
 }
 
-interface WingmanState {
+interface WingmanFlyer {
   mesh: THREE.Group;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  side: number;
   life: number;
-  state: 'entering' | 'escorting' | 'exiting';
-  fireCooldown: number;
-  droppedBomb: boolean;
 }
 
 interface GameScreenProps {
@@ -64,13 +64,12 @@ export default function GameScreen({
   const [endGameModal, setEndGameModal] = useState<'defeat' | 'victory' | null>(null);
 
   const [ability1Cooldown, setAbility1Cooldown] = useState<number>(0);
-  const [ability1Active, setAbility1Active] = useState<boolean>(false);
   const [ability2Cooldown, setAbility2Cooldown] = useState<number>(0);
 
   const ability1CooldownRef = useRef<number>(0);
   const ability2CooldownRef = useRef<number>(0);
   const triggerBombRef = useRef<boolean>(false);
-  const triggerWingmanRef = useRef<boolean>(false);
+  const triggerBrotherHelpRef = useRef<boolean>(false);
 
   const [inBiomeTransition, setInBiomeTransition] = useState<boolean>(false);
   const [biomeTitle, setBiomeTitle] = useState<string>('');
@@ -200,11 +199,9 @@ export default function GameScreen({
   const handleTriggerAbility1 = () => {
     if (isPausedRef.current || playerStunned || ability1CooldownRef.current > 0) return;
     if (selectedShipId !== 'xwing') return;
-    playTone(600, 920, 0.25, 0.35, 'sine');
-    ability1CooldownRef.current = 45.0;
-    setAbility1Cooldown(45);
-    setAbility1Active(true);
-    triggerWingmanRef.current = true;
+    ability1CooldownRef.current = 25.0;
+    setAbility1Cooldown(25);
+    triggerBrotherHelpRef.current = true;
   };
 
   const handleTriggerAbility2 = () => {
@@ -420,8 +417,8 @@ export default function GameScreen({
     greenLaserGeo.rotateX(Math.PI / 2);
     const greenLaserMat = new THREE.MeshBasicMaterial({ color: 0x22ff44 });
 
-    const bombGeo = new THREE.SphereGeometry(0.32, 16, 16);
-    const bombMat = new THREE.MeshBasicMaterial({ color: 0xff2a8d });
+    const bombGeo = new THREE.SphereGeometry(0.35, 16, 16);
+    const bombMat = new THREE.MeshBasicMaterial({ color: 0xff3388 });
 
     const flashCoreGeo = new THREE.IcosahedronGeometry(1.8, 1);
     const flashCoreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -438,7 +435,7 @@ export default function GameScreen({
       new THREE.MeshBasicMaterial({ color: 0x8a9ba8 })
     ];
     const debrisMatsPink = [
-      new THREE.MeshBasicMaterial({ color: 0xff2a8d }),
+      new THREE.MeshBasicMaterial({ color: 0xff3388 }),
       new THREE.MeshBasicMaterial({ color: 0xff7722 }),
       new THREE.MeshBasicMaterial({ color: 0xffffff }),
       new THREE.MeshBasicMaterial({ color: 0xec4899 })
@@ -461,6 +458,7 @@ export default function GameScreen({
 
     const lasers: Laser[] = [];
     const protonBombs: ProtonBomb[] = [];
+    const wingmanFlyers: WingmanFlyer[] = [];
     const enemies: Enemy[] = [];
     const debrisList: ExplosionPart[] = [];
     const shockwaves: ShockwaveRing[] = [];
@@ -468,8 +466,6 @@ export default function GameScreen({
     const shieldImpacts: ShieldImpactEffect[] = [];
     const datapads: DatapadItem[] = [];
     const bossSpaceDebris: BossDebris[] = [];
-
-    let wingman: WingmanState | null = null;
 
     const zoneAttack: BossZoneAttack = { active: false, timer: 0, duration: 1.6, xMin: -4, xMax: 4, fired: false };
     const tractorBeam: BossTractorBeam = { active: false, timer: 0, duration: 1.8, xMin: -6, xMax: 6, fired: false };
@@ -491,7 +487,7 @@ export default function GameScreen({
 
       let expLight: THREE.PointLight | undefined = undefined;
       if (withLight) {
-        expLight = new THREE.PointLight(isPink ? 0xff2a8d : 0xff6622, 5.0 * scale, 55 * scale);
+        expLight = new THREE.PointLight(isPink ? 0xff3388 : 0xff6622, 5.0 * scale, 55 * scale);
         expLight.position.copy(pos);
         scene.add(expLight);
       }
@@ -520,34 +516,30 @@ export default function GameScreen({
       playBuffer(audioBuffers.explode, 0.42, true);
     };
 
-    const spawnProtonBomb = (origin: THREE.Vector3, forcedTargetPos?: THREE.Vector3, forcedTargetRef?: Enemy | null) => {
-      let chosenTargetPos = forcedTargetPos ? forcedTargetPos.clone() : null;
-      let chosenTargetRef = forcedTargetRef !== undefined ? forcedTargetRef : null;
+    const spawnProtonBomb = (origin: THREE.Vector3) => {
+      let chosenTargetPos: THREE.Vector3 | null = null;
+      let chosenTargetRef: Enemy | null = null;
 
-      if (!chosenTargetPos) {
-        if (enemies.length > 0) {
-          const live = enemies.filter((e) => e.state === 'attacking' && e.pos.z < shipPos.z - 4);
-          if (live.length > 0) {
-            live.sort((a, b) => a.pos.distanceTo(origin) - b.pos.distanceTo(origin));
-            const candidatePool = live.slice(0, Math.min(3, live.length));
-            const pick = candidatePool[Math.floor(Math.random() * candidatePool.length)];
-            chosenTargetRef = pick;
-            chosenTargetPos = pick.pos.clone();
-          }
-        }
-        if (!chosenTargetPos && bossData && !bossData.destroyed && !bossData.raidActive) {
-          const liveGens = bossData.generators.filter((g) => !g.destroyed);
-          if (liveGens.length > 0) {
-            const gPick = liveGens[Math.floor(Math.random() * liveGens.length)];
-            chosenTargetPos = gPick.localPos.clone().applyMatrix4(bossData.group.matrixWorld);
-          } else {
-            chosenTargetPos = bossData.pos.clone().add(new THREE.Vector3(0, 4, 30));
-          }
+      const live = enemies.filter((e) => e.state === 'attacking' && e.pos.z < shipPos.z - 4);
+      if (live.length > 0) {
+        live.sort((a, b) => a.pos.distanceTo(origin) - b.pos.distanceTo(origin));
+        const nearestDist = live[0].pos.distanceTo(origin);
+        const candidates = live.filter((e) => Math.abs(e.pos.distanceTo(origin) - nearestDist) < 14);
+        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+        chosenTargetRef = pick;
+        chosenTargetPos = pick.pos.clone();
+      } else if (bossData && !bossData.destroyed && !bossData.raidActive) {
+        const liveGens = bossData.generators.filter((g) => !g.destroyed);
+        if (liveGens.length > 0) {
+          const gPick = liveGens[Math.floor(Math.random() * liveGens.length)];
+          chosenTargetPos = gPick.localPos.clone().applyMatrix4(bossData.group.matrixWorld);
+        } else {
+          chosenTargetPos = bossData.pos.clone().add(new THREE.Vector3(0, 4, 30));
         }
       }
 
       if (!chosenTargetPos) {
-        chosenTargetPos = origin.clone().add(new THREE.Vector3(0, 0, -180));
+        chosenTargetPos = origin.clone().add(new THREE.Vector3(0, 0, -220));
       }
 
       const bMesh = new THREE.Mesh(bombGeo, bombMat);
@@ -558,18 +550,84 @@ export default function GameScreen({
 
       protonBombs.push({
         mesh: bMesh,
-        vel: initDir.multiplyScalar(35),
+        vel: initDir.multiplyScalar(28),
         targetPos: chosenTargetPos,
         targetRef: chosenTargetRef,
-        speed: 35,
-        life: 5.0
+        speed: 28,
+        life: 5.5
       });
 
       if (audioBuffers.proton) {
         playBuffer(audioBuffers.proton, 0.45);
       } else {
-        playTone(320, 160, 0.4, 0.35, 'sawtooth');
+        playTone(300, 150, 0.4, 0.35, 'sawtooth');
       }
+    };
+
+    const triggerBrotherHelpAttack = () => {
+      const activeTargets: THREE.Vector3[] = [];
+      const live = enemies.filter((e) => e.state === 'attacking' && e.pos.z < shipPos.z - 6);
+
+      if (live.length > 0) {
+        live.sort((a, b) => a.pos.distanceTo(shipPos) - b.pos.distanceTo(shipPos));
+        activeTargets.push(live[0].pos);
+        if (live.length > 1) {
+          activeTargets.push(live[1].pos);
+        }
+      } else if (bossData && !bossData.destroyed && !bossData.raidActive) {
+        const liveGens = bossData.generators.filter((g) => !g.destroyed);
+        if (liveGens.length > 0) {
+          activeTargets.push(liveGens[0].localPos.clone().applyMatrix4(bossData.group.matrixWorld));
+        } else {
+          activeTargets.push(bossData.pos.clone().add(new THREE.Vector3(0, 4, 30)));
+        }
+      }
+
+      if (activeTargets.length === 0) {
+        activeTargets.push(shipPos.clone().add(new THREE.Vector3(-4, 0, -180)));
+        activeTargets.push(shipPos.clone().add(new THREE.Vector3(4, 0, -180)));
+      }
+
+      for (let s = 0; s < 6; s++) {
+        setTimeout(() => {
+          if (isDisposed) return;
+          const target = activeTargets[s % activeTargets.length];
+          const origin = new THREE.Vector3(
+            shipPos.x + (s % 2 === 0 ? -7 : 7) + (Math.random() - 0.5) * 2,
+            shipPos.y + 6 + (Math.random() - 0.5) * 1.5,
+            shipPos.z + 18
+          );
+          const dir = new THREE.Vector3().subVectors(target, origin).normalize();
+          const lMesh = new THREE.Mesh(redLaserGeo, redLaserMat);
+          lMesh.position.copy(origin);
+          lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), dir);
+          scene.add(lMesh);
+          lasers.push({ mesh: lMesh, vel: dir.multiplyScalar(780), life: 1.1, isEnemy: false });
+          playBuffer(audioBuffers.xwingShot, 0.24);
+        }, s * 110);
+      }
+
+      setTimeout(() => {
+        if (isDisposed) return;
+        const createFlyer = (side: number) => {
+          const w = models.xwing.clone();
+          w.scale.setScalar(0.46);
+          const start = new THREE.Vector3(shipPos.x + side * 7.5, shipPos.y + 5.5, shipPos.z + 24);
+          w.position.copy(start);
+          w.rotation.set(-0.04, 0, side * 0.05);
+          scene.add(w);
+          wingmanFlyers.push({
+            mesh: w,
+            pos: start,
+            vel: new THREE.Vector3(0, 0, -320),
+            side,
+            life: 1.8
+          });
+        };
+        createFlyer(-1);
+        createFlyer(1);
+        playBuffer(audioBuffers.xwingEngine, 0.32);
+      }, 950);
     };
 
     const spawnDatapad = (dropPos: THREE.Vector3) => {
@@ -1168,70 +1226,28 @@ export default function GameScreen({
         spawnProtonBomb(shipPos.clone().add(new THREE.Vector3(0, -0.3, -0.6)));
       }
 
-      if (triggerWingmanRef.current) {
-        triggerWingmanRef.current = false;
-        const wMesh = models.xwing.clone();
-        wMesh.scale.setScalar(0.48);
-        wMesh.position.set(shipPos.x - 18, shipPos.y - 4, shipPos.z + 28);
-        scene.add(wMesh);
-        wingman = {
-          mesh: wMesh,
-          life: 7.0,
-          state: 'entering',
-          fireCooldown: 0.2,
-          droppedBomb: false
-        };
+      if (triggerBrotherHelpRef.current) {
+        triggerBrotherHelpRef.current = false;
+        triggerBrotherHelpAttack();
       }
 
-      if (wingman) {
-        wingman.life -= dt;
-        const targetFormationPos = new THREE.Vector3(shipPos.x - 3.4, shipPos.y + 0.1, shipPos.z + 0.4);
+      for (let wIdx = wingmanFlyers.length - 1; wIdx >= 0; wIdx--) {
+        const wf = wingmanFlyers[wIdx];
+        wf.life -= dt;
 
-        if (wingman.life <= 0) {
-          scene.remove(wingman.mesh);
-          wingman = null;
-          setAbility1Active(false);
-        } else if (wingman.life <= 1.4) {
-          wingman.state = 'exiting';
-          wingman.mesh.position.x -= 22 * dt;
-          wingman.mesh.position.y += 12 * dt;
-          wingman.mesh.position.z -= 180 * dt;
-          wingman.mesh.rotation.z = 0.45;
-          wingman.mesh.rotation.x = -0.2;
-        } else if (wingman.state === 'entering') {
-          wingman.mesh.position.lerp(targetFormationPos, dt * 4.8);
-          wingman.mesh.rotation.set(shipPitch, 0, shipBank);
-          if (wingman.mesh.position.distanceTo(targetFormationPos) < 1.2) {
-            wingman.state = 'escorting';
-          }
-        } else {
-          wingman.mesh.position.lerp(targetFormationPos, dt * 7.5);
-          wingman.mesh.rotation.set(shipPitch, 0, shipBank);
+        wf.pos.z += wf.vel.z * dt;
+        if (wf.life < 0.8) {
+          wf.pos.x += wf.side * 48 * dt;
+          wf.pos.y += 18 * dt;
+          wf.mesh.rotation.z = THREE.MathUtils.lerp(wf.mesh.rotation.z, -wf.side * 0.55, dt * 6.0);
+          wf.mesh.rotation.x = THREE.MathUtils.lerp(wf.mesh.rotation.x, -0.22, dt * 6.0);
+        }
 
-          wingman.fireCooldown -= dt;
-          if (wingman.fireCooldown <= 0) {
-            wingman.fireCooldown = 0.22;
-            const wLeft = wingman.mesh.position.clone().add(new THREE.Vector3(-0.4, 0, -0.3));
-            const wRight = wingman.mesh.position.clone().add(new THREE.Vector3(0.4, 0, -0.3));
-            const wDir = bulletAimTarget ? new THREE.Vector3().subVectors(bulletAimTarget, wingman.mesh.position).normalize() : shipForward;
+        wf.mesh.position.copy(wf.pos);
 
-            const l1 = new THREE.Mesh(redLaserGeo, redLaserMat);
-            l1.position.copy(wLeft);
-            l1.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), wDir);
-            scene.add(l1);
-            lasers.push({ mesh: l1, vel: wDir.clone().multiplyScalar(640), life: 1.0, isEnemy: false });
-
-            const l2 = new THREE.Mesh(redLaserGeo, redLaserMat);
-            l2.position.copy(wRight);
-            l2.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), wDir);
-            scene.add(l2);
-            lasers.push({ mesh: l2, vel: wDir.clone().multiplyScalar(640), life: 1.0, isEnemy: false });
-          }
-
-          if (wingman.life <= 2.2 && !wingman.droppedBomb) {
-            wingman.droppedBomb = true;
-            spawnProtonBomb(wingman.mesh.position.clone().add(new THREE.Vector3(0, -0.2, -0.5)));
-          }
+        if (wf.life <= 0) {
+          scene.remove(wf.mesh);
+          wingmanFlyers.splice(wIdx, 1);
         }
       }
 
@@ -1246,9 +1262,9 @@ export default function GameScreen({
         const toTarget = new THREE.Vector3().subVectors(bomb.targetPos, bomb.mesh.position);
         const distToTarget = toTarget.length();
 
-        bomb.speed = THREE.MathUtils.lerp(bomb.speed, 360, dt * 3.8);
+        bomb.speed = THREE.MathUtils.lerp(bomb.speed, 380, dt * 3.6);
 
-        const trackDamp = THREE.MathUtils.clamp(dt * (14.0 + (1.0 / Math.max(0.2, distToTarget)) * 45.0), 0, 1);
+        const trackDamp = THREE.MathUtils.clamp(dt * (15.0 + (1.0 / Math.max(0.2, distToTarget)) * 50.0), 0, 1);
         const desiredDir = toTarget.normalize();
         bomb.vel.lerp(desiredDir.multiplyScalar(bomb.speed), trackDamp);
 
@@ -1260,6 +1276,8 @@ export default function GameScreen({
           if (bomb.mesh.position.distanceTo(bomb.targetRef.pos) < 4.8) {
             bombHit = true;
             const victim = bomb.targetRef;
+            victim.state = 'disabled';
+            victim.disabledTimer = 0.45;
             victim.hp = 0;
             currentDamage += 120;
             setDamageDealt(currentDamage);
@@ -1268,22 +1286,17 @@ export default function GameScreen({
             currentKills += 1;
             setEnemiesKilled(currentKills);
 
-            spawnRetroExplosion(victim.pos, 2.6, true, true);
-
-            if (Math.random() < 0.25) {
-              spawnDatapad(victim.pos);
-            }
-            scene.remove(victim.mesh);
-            const vIdx = enemies.indexOf(victim);
-            if (vIdx >= 0) enemies.splice(vIdx, 1);
+            spawnRetroExplosion(bomb.mesh.position, 1.8, true, true);
           }
         }
 
         if (!bombHit) {
           for (let j = enemies.length - 1; j >= 0; j--) {
             const e = enemies[j];
-            if (bomb.mesh.position.distanceTo(e.pos) < 4.5) {
+            if (e.state === 'attacking' && bomb.mesh.position.distanceTo(e.pos) < 4.5) {
               bombHit = true;
+              e.state = 'disabled';
+              e.disabledTimer = 0.45;
               e.hp = 0;
               currentDamage += 120;
               setDamageDealt(currentDamage);
@@ -1292,13 +1305,7 @@ export default function GameScreen({
               currentKills += 1;
               setEnemiesKilled(currentKills);
 
-              spawnRetroExplosion(e.pos, 2.6, true, true);
-
-              if (Math.random() < 0.25) {
-                spawnDatapad(e.pos);
-              }
-              scene.remove(e.mesh);
-              enemies.splice(j, 1);
+              spawnRetroExplosion(bomb.mesh.position, 1.8, true, true);
               break;
             }
           }
@@ -1686,7 +1693,10 @@ export default function GameScreen({
           if (e.disabledTimer !== undefined) {
             e.disabledTimer -= dt;
             if (e.disabledTimer <= 0) {
-              spawnRetroExplosion(e.pos);
+              spawnRetroExplosion(e.pos, 2.5, true, true);
+              if (Math.random() < 0.25) {
+                spawnDatapad(e.pos);
+              }
               scene.remove(e.mesh);
               enemies.splice(i, 1);
               continue;
@@ -1713,7 +1723,7 @@ export default function GameScreen({
 
           e.shootCooldown -= dt;
           if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 18 && e.pos.z > -160) {
-            e.shootCooldown = e.isRaid ? 1.6 : e.isElite ? 0.8 + Math.random() * 0.5 : 1.1 + Math.random() * 0.7;
+            e.shootCooldown = e.isRaid ? 0.9 : e.isElite ? 0.8 + Math.random() * 0.5 : 1.1 + Math.random() * 0.7;
             const spreadX = (Math.random() - 0.5) * (e.isElite ? 3.0 : 4.5);
             const spreadY = (Math.random() - 0.5) * (e.isElite ? 2.0 : 3.0);
             const targetWithSpread = shipPos.clone().add(new THREE.Vector3(spreadX, spreadY, 0));
@@ -2071,6 +2081,7 @@ export default function GameScreen({
       window.removeEventListener('resize', handleResize);
       lasers.forEach((l) => scene.remove(l.mesh));
       protonBombs.forEach((b) => scene.remove(b.mesh));
+      wingmanFlyers.forEach((w) => scene.remove(w.mesh));
       enemies.forEach((e) => scene.remove(e.mesh));
       planetMeshes.forEach((pl) => scene.remove(pl));
       debrisList.forEach((d) => scene.remove(d.mesh));
@@ -2078,9 +2089,6 @@ export default function GameScreen({
       datapads.forEach((dp) => scene.remove(dp.mesh));
       shieldImpacts.forEach((si) => scene.remove(si.mesh));
       bossSpaceDebris.forEach((deb) => scene.remove(deb.mesh));
-      if (wingman) {
-        scene.remove(wingman.mesh);
-      }
       scene.remove(crosshairTex);
       crosshairGeo.dispose();
       crosshairMat.dispose();
@@ -2294,7 +2302,7 @@ export default function GameScreen({
       joystickActive={joystickActive}
       joystickOffset={joystickOffset}
       ability1Cooldown={ability1Cooldown}
-      ability1Active={ability1Active}
+      ability1Active={false}
       ability2Cooldown={ability2Cooldown}
       inBiomeTransition={inBiomeTransition}
       biomeTitle={biomeTitle}
