@@ -75,7 +75,7 @@ export default function MainMenu({ onStart }: MainMenuProps) {
           inset: 0;
           background-color: #030408;
           background-image: 
-            radial-gradient(ellipse at 50% 32%, rgba(65, 30, 95, 0.45) 0%, transparent 60%),
+            radial-gradient(ellipse at 50% 38%, rgba(65, 30, 95, 0.45) 0%, transparent 60%),
             radial-gradient(1.5px 1.5px at 15% 20%, #ffffff, transparent),
             radial-gradient(1px 1px at 35% 65%, #ddddff, transparent),
             radial-gradient(2px 2px at 70% 25%, #ffffff, transparent),
@@ -86,8 +86,8 @@ export default function MainMenu({ onStart }: MainMenuProps) {
           display: flex;
           flex-direction: column;
           align-items: center;
-          justify-content: space-between;
-          padding: 10px 18px 10px;
+          justify-content: center;
+          padding: 20px;
           overflow: hidden;
         }
         .tfu-fade-curtain {
@@ -104,11 +104,13 @@ export default function MainMenu({ onStart }: MainMenuProps) {
           pointer-events: auto;
         }
         .tfu-top-triggers {
-          width: 100%;
+          position: absolute;
+          top: 14px;
+          left: 18px;
+          right: 18px;
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 0 4px;
           z-index: 5;
         }
         .tfu-trigger {
@@ -135,7 +137,8 @@ export default function MainMenu({ onStart }: MainMenuProps) {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 14px;
+          gap: 16px;
+          margin-top: 6px;
         }
         .tfu-logo-wrapper {
           position: relative;
@@ -200,12 +203,12 @@ export default function MainMenu({ onStart }: MainMenuProps) {
         }
         .tfu-alpha-badge {
           position: absolute;
-          right: 16px;
+          right: 18px;
           bottom: 12px;
           font-family: monospace;
           font-size: 11px;
           letter-spacing: 1.5px;
-          color: rgba(255, 255, 255, 0.32);
+          color: rgba(255, 255, 255, 0.35);
           pointer-events: none;
           z-index: 5;
         }
