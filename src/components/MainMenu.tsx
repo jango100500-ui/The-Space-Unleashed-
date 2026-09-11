@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import WelcomeModal from './WelcomeModal.tsx';
 
 interface MainMenuProps {
   onStart?: () => void;
@@ -8,6 +9,7 @@ export default function MainMenu({ onStart }: MainMenuProps) {
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
+  const [showWelcome, setShowWelcome] = useState<boolean>(true);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
@@ -125,8 +127,8 @@ export default function MainMenu({ onStart }: MainMenuProps) {
           filter: brightness(1.2);
         }
         .tfu-trigger svg {
-          width: 15px;
-          height: 15px;
+          width: 14px;
+          height: 14px;
           fill: currentColor;
         }
         .tfu-center-block {
@@ -184,25 +186,41 @@ export default function MainMenu({ onStart }: MainMenuProps) {
         }
         .tfu-bar-selected {
           border: 2px solid #e2e8f0;
-          box-shadow: 0 0 0 1px #200000, 0 4px 10px rgba(0, 0, 0, 0.9);
           background: 
             repeating-linear-gradient(0deg, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.3) 1px, transparent 1px, transparent 2px),
             linear-gradient(180deg, #d31820 0%, #ff3b30 45%, #b50e17 55%, #66050b 100%);
           color: #ffffff;
-          text-shadow: 0 1px 3px #000000;
         }
         .tfu-bar-unselected {
           border: 2px solid #b2c2d4;
-          box-shadow: 0 0 0 1px #111a24, 0 3px 8px rgba(0, 0, 0, 0.75);
           background: 
             repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 2px),
             linear-gradient(180deg, #e4edf7 0%, #bdcfdf 45%, #768a9f 50%, #44566b 52%, #8ba0b7 100%);
           color: #0b141e;
-          text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+        }
+        .tfu-alpha-badge {
+          position: absolute;
+          right: 16px;
+          bottom: 12px;
+          font-family: monospace;
+          font-size: 11px;
+          letter-spacing: 1.5px;
+          color: rgba(255, 255, 255, 0.32);
+          pointer-events: none;
+          z-index: 5;
         }
       `}</style>
 
       <div className={`tfu-fade-curtain ${isTransitioning ? 'active' : ''}`} />
+
+      {showWelcome && (
+        <WelcomeModal
+          onClose={() => {
+            playClickSound();
+            setShowWelcome(false);
+          }}
+        />
+      )}
 
       <div className="tfu-top-triggers">
         <button type="button" className="tfu-trigger">
@@ -247,7 +265,7 @@ export default function MainMenu({ onStart }: MainMenuProps) {
         </div>
       </div>
 
-      <div style={{ height: '4px' }} />
+      <div className="tfu-alpha-badge">ALPHA v0.1.5</div>
     </div>
   );
 }
