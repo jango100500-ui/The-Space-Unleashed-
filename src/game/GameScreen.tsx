@@ -37,7 +37,6 @@ interface Enemy {
   hp: number;
   isElite: boolean;
   isRaid: boolean;
-  burstCount?: number;
   disabledTimer?: number;
 }
 
@@ -81,14 +80,7 @@ interface DatapadItem {
   pos: THREE.Vector3;
   rotSpeed: THREE.Vector3;
   healPercent: number;
-}
-
-interface BossDebris {
-  mesh: THREE.Mesh;
-  pos: THREE.Vector3;
-  vel: THREE.Vector3;
-  rotSpeed: THREE.Vector3;
-  radius: number;
+  speed: number;
 }
 
 interface BossZoneAttack {
@@ -124,7 +116,6 @@ interface BossState {
   phase2Active: boolean;
   raidActive: boolean;
   raidCompleted: boolean;
-  raidTiesCount: number;
 }
 
 interface PlanetItem {
@@ -316,7 +307,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   const xwingGainRef = useRef<GainNode | null>(null);
   const tieEngineGainRef = useRef<GainNode | null>(null);
   const spaceMuffleFilterRef = useRef<BiquadFilterNode | null>(null);
-  const bossSoundtrackSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const soundtrackAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const stickTouchId = useRef<number | null>(null);
   const stickCenter = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -326,10 +317,19 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   useEffect(() => {
     isPausedRef.current = isPaused || showHallwayCutscene;
     inHallwayRef.current = showHallwayCutscene;
+
     if (xwingGainRef.current && tieEngineGainRef.current) {
       if (isPaused || showHallwayCutscene) {
         xwingGainRef.current.gain.value = 0;
         tieEngineGainRef.current.gain.value = 0;
+      }
+    }
+
+    if (soundtrackAudioRef.current) {
+      if (isPaused || showHallwayCutscene) {
+        soundtrackAudioRef.current.pause();
+      } else {
+        soundtrackAudioRef.current.play().catch(() => {});
       }
     }
   }, [isPaused, showHallwayCutscene]);
@@ -373,10 +373,9 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     return () => {
       if (xwingSource) xwingSource.stop();
       if (tieSource) tieSource.stop();
-      if (bossSoundtrackSourceRef.current) {
-        try {
-          bossSoundtrackSourceRef.current.stop();
-        } catch {}
+      if (soundtrackAudioRef.current) {
+        soundtrackAudioRef.current.pause();
+        soundtrackAudioRef.current = null;
       }
     };
   }, [assets]);
@@ -628,18 +627,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       wireframe: true
     });
 
-    const spaceDebrisGeoList = [
-      new THREE.DodecahedronGeometry(1.4, 0),
-      new THREE.IcosahedronGeometry(1.2, 0),
-      new THREE.DodecahedronGeometry(1.7, 0)
-    ];
-    const spaceDebrisMats = [
-      new THREE.MeshLambertMaterial({ color: 0x4a4f56 }),
-      new THREE.MeshLambertMaterial({ color: 0x5c524b }),
-      new THREE.MeshLambertMaterial({ color: 0x383e44 }),
-      new THREE.MeshLambertMaterial({ color: 0x635b54 })
-    ];
-
     const lasers: Laser[] = [];
     const enemies: Enemy[] = [];
     const debrisList: ExplosionPart[] = [];
@@ -647,7 +634,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     const flashCores: FlashCore[] = [];
     const shieldImpacts: ShieldImpactEffect[] = [];
     const datapads: DatapadItem[] = [];
-    const bossSpaceDebris: BossDebris[] = [];
 
     const zoneAttack: BossZoneAttack = {
       active: false,
@@ -729,9 +715,9 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         dModel = models.datapad.clone();
       } else {
         dModel = new THREE.Group();
-        dModel.add(new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.06, 0.5), new THREE.MeshStandardMaterial({ color: 0x3399ff, emissive: 0x113355 })));
+        dModel.add(new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.03, 0.25), new THREE.MeshStandardMaterial({ color: 0x3399ff, emissive: 0x113355 })));
       }
-      dModel.scale.setScalar(0.45);
+      dModel.scale.setScalar(0.22);
       dModel.position.copy(dropPos);
       scene.add(dModel);
 
@@ -741,29 +727,8 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         mesh: dModel,
         pos: dropPos.clone(),
         rotSpeed: new THREE.Vector3(0.5 + Math.random() * 0.5, 1.2 + Math.random() * 0.8, 0.4),
-        healPercent: healAmt
-      });
-    };
-
-    const spawnSpaceDebrisChunk = () => {
-      if (!bossData) return;
-      const geo = spaceDebrisGeoList[Math.floor(Math.random() * spaceDebrisGeoList.length)];
-      const mat = spaceDebrisMats[Math.floor(Math.random() * spaceDebrisMats.length)];
-      const mesh = new THREE.Mesh(geo, mat);
-
-      const startX = (Math.random() - 0.5) * 26;
-      const startY = -4 + (Math.random() - 0.5) * 12;
-      const startZ = bossData.pos.z + 40;
-
-      mesh.position.set(startX, startY, startZ);
-      scene.add(mesh);
-
-      bossSpaceDebris.push({
-        mesh,
-        pos: mesh.position,
-        vel: new THREE.Vector3((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 4, 130 + Math.random() * 30),
-        rotSpeed: new THREE.Vector3((Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3),
-        radius: 1.4
+        healPercent: healAmt,
+        speed: 65
       });
     };
 
@@ -794,7 +759,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         targetX: lateralLane,
         targetY: vertLane,
         speed: 40 + stageRef.current * 2 + Math.random() * 6,
-        shootCooldown: isRaid ? 0.9 : isElite ? 0.7 + Math.random() * 0.5 : 1.0 + Math.random() * 0.7,
+        shootCooldown: isRaid ? 1.0 : isElite ? 0.7 + Math.random() * 0.5 : 1.0 + Math.random() * 0.7,
         side,
         loopProgress: 0,
         seed: Math.random() * 10,
@@ -811,7 +776,8 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     let bossHullHitCount = 0;
     let nextExplosionThreshold = 8;
     let isBossExecutingSpecial = false;
-    let debrisSpawnTimer = 0;
+    let raidCountdown = 0;
+    let isRaidPreludeActive = false;
 
     const initBoss = () => {
       const grp = models.destroyer.clone();
@@ -858,8 +824,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         destroyed: false,
         phase2Active: false,
         raidActive: false,
-        raidCompleted: false,
-        raidTiesCount: 0
+        raidCompleted: false
       };
     };
 
@@ -1098,20 +1063,12 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         initBoss();
         bossCutsceneTimer = 0;
 
-        if (assets.audioBuffers.destroyerSoundtrack && !bossSoundtrackSourceRef.current) {
-          try {
-            const { audioCtx } = assets;
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            const src = audioCtx.createBufferSource();
-            src.buffer = assets.audioBuffers.destroyerSoundtrack;
-            src.loop = false;
-            const gain = audioCtx.createGain();
-            gain.gain.value = 0.35;
-            src.connect(gain);
-            gain.connect(audioCtx.destination);
-            src.start(0);
-            bossSoundtrackSourceRef.current = src;
-          } catch {}
+        if (!soundtrackAudioRef.current) {
+          const audio = new Audio('/sounds/destroyer_soundtrack.mp3');
+          audio.volume = 0.6;
+          audio.loop = false;
+          audio.play().catch(() => {});
+          soundtrackAudioRef.current = audio;
         }
       }
 
@@ -1142,10 +1099,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
           setBossActive(true);
         }
-
-        renderer.render(scene, camera);
-        animId = requestAnimationFrame(gameLoop);
-        return;
       }
 
       if (inBiomeTransitionRef.current) {
@@ -1180,7 +1133,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         }
       }
 
-      const input = inBiomeTransitionRef.current || playerStunDuration > 0 ? { x: 0, y: 0, fire: false } : inputRef.current;
+      const input = inBiomeTransitionRef.current || playerStunDuration > 0 || bossCutsceneActiveRef.current ? { x: 0, y: 0, fire: false } : inputRef.current;
       const aspect = window.innerWidth / window.innerHeight;
       const xRange = Math.max(5.2, Math.min(16.0, 10.0 * aspect * 1.05));
       const yRange = 8.5;
@@ -1200,7 +1153,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
       playerShip.position.copy(shipPos);
 
-      if (playerStunDuration <= 0) {
+      if (playerStunDuration <= 0 && !bossCutsceneActiveRef.current) {
         const bankTarget = Math.max(-0.65, Math.min(0.65, -shipVx * 0.038));
         const pitchTarget = Math.max(-0.4, Math.min(0.4, -shipVy * 0.024));
 
@@ -1210,13 +1163,15 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         playerShip.rotation.set(shipPitch, 0, shipBank);
       }
 
-      camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.32, 1 - Math.exp(-6.0 * dt));
-      camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.32, 1 - Math.exp(-6.0 * dt));
+      if (!bossCutsceneActiveRef.current) {
+        camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.32, 1 - Math.exp(-6.0 * dt));
+        camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.32, 1 - Math.exp(-6.0 * dt));
+      }
 
       let autoTargetPos: THREE.Vector3 | null = null;
       let bestScore = 9999;
 
-      if (playerStunDuration <= 0) {
+      if (playerStunDuration <= 0 && !bossCutsceneActiveRef.current) {
         for (const e of enemies) {
           if (e.state === 'attacking' && e.pos.z < shipPos.z - 2) {
             const d = e.pos.distanceTo(shipPos);
@@ -1263,7 +1218,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       const defaultAimDistance = 140;
       let bulletAimTarget = shipPos.clone().addScaledVector(shipForward, defaultAimDistance);
 
-      if (playerStunDuration > 0) {
+      if (playerStunDuration > 0 || bossCutsceneActiveRef.current) {
         crosshairTex.visible = false;
       } else {
         crosshairTex.visible = true;
@@ -1291,7 +1246,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
       fireCooldown -= dt;
 
-      if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0) {
+      if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0 && !bossCutsceneActiveRef.current) {
         fireCooldown = 0.25;
 
         const leftOffset = new THREE.Vector3(-0.46, 0, -0.3).applyQuaternion(playerShip.quaternion);
@@ -1320,7 +1275,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
 
       const maxSimultaneousEnemies = Math.min(6, 2 + stageIdx);
 
-      if (!inBiomeTransitionRef.current && !bossData) {
+      if (!inBiomeTransitionRef.current && !bossData && !bossCutsceneActiveRef.current) {
         spawnTimer += dt;
         if (spawnTimer > Math.max(2.4, 4.5 - stageIdx * 0.45)) {
           spawnTimer = 0;
@@ -1351,28 +1306,41 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           setBiomeSubtext('ФАЗА II');
           transitionDuration = 0;
 
-          bossData.raidActive = true;
-          bossData.raidTiesCount = 3;
-          setBossBarMode('raid');
-          setBossBarPercent(100);
+          isRaidPreludeActive = true;
+          raidCountdown = 5.0;
+          bossData.squadCooldown = 999;
+          bossData.zoneCooldown = 999;
+          bossData.tractorCooldown = 999;
+        } else if (isRaidPreludeActive) {
+          raidCountdown -= dt;
+          if (raidCountdown <= 0) {
+            isRaidPreludeActive = false;
+            bossData.raidActive = true;
+            setBossBarMode('raid');
+            setBossBarPercent(100);
 
-          bossData.group.traverse((c) => {
-            if ((c as THREE.Mesh).isMesh) {
-              const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
-              if (m) {
-                m.transparent = true;
-                m.opacity = 0.32;
-                m.needsUpdate = true;
+            bossData.group.traverse((c) => {
+              if ((c as THREE.Mesh).isMesh) {
+                const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
+                if (m) {
+                  m.transparent = true;
+                  m.opacity = 0.32;
+                  m.needsUpdate = true;
+                }
               }
+            });
+
+            for (let k = 0; k < 7; k++) {
+              setTimeout(() => {
+                if (!isDisposed) spawnEnemy(k % 2 === 0 ? -1 : 1, false);
+              }, k * 220);
             }
-          });
 
-          for (let k = 0; k < 3; k++) {
-            setTimeout(() => {
-              if (!isDisposed) {
-                spawnEnemy(k % 2 === 0 ? -1 : 1, true);
-              }
-            }, k * 450);
+            for (let k = 0; k < 3; k++) {
+              setTimeout(() => {
+                if (!isDisposed) spawnEnemy(k % 2 === 0 ? 1 : -1, true);
+              }, 1600 + k * 350);
+            }
           }
         } else if (bossData.raidActive) {
           setBossShieldsDown(true);
@@ -1384,6 +1352,9 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
             bossData.raidActive = false;
             bossData.raidCompleted = true;
             setBossBarMode('hull');
+            bossData.squadCooldown = 16.0;
+            bossData.zoneCooldown = 12.0;
+            bossData.tractorCooldown = 16.0;
 
             bossData.group.traverse((c) => {
               if ((c as THREE.Mesh).isMesh) {
@@ -1402,14 +1373,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           setBossBarPercent(Math.floor((bossData.hullHp / bossData.maxHullHp) * 100));
         }
 
-        if (bossData.raidActive) {
-          debrisSpawnTimer += dt;
-          if (debrisSpawnTimer >= 0.35) {
-            debrisSpawnTimer = 0;
-            spawnSpaceDebrisChunk();
-          }
-        }
-
         const newTargetList: GeneratorScreenTarget[] = [];
         if (!bossData.phase2Active) {
           for (const gen of bossData.generators) {
@@ -1426,7 +1389,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         }
         setGeneratorTargets(newTargetList);
 
-        if (!bossData.raidActive && !bossCutsceneActiveRef.current && !inBiomeTransitionRef.current) {
+        if (!bossData.raidActive && !isRaidPreludeActive && !bossCutsceneActiveRef.current && !inBiomeTransitionRef.current) {
           const isSpecialBusy = zoneAttack.active || tractorBeam.active || isBossExecutingSpecial;
 
           if (!isSpecialBusy) {
@@ -1596,37 +1559,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         }
       }
 
-      for (let i = bossSpaceDebris.length - 1; i >= 0; i--) {
-        const d = bossSpaceDebris[i];
-        d.pos.addScaledVector(d.vel, dt);
-        d.mesh.position.copy(d.pos);
-        d.mesh.rotation.x += d.rotSpeed.x * dt;
-        d.mesh.rotation.y += d.rotSpeed.y * dt;
-
-        if (d.pos.distanceTo(shipPos) < 2.0) {
-          if (!godModeRef.current) {
-            const dmg = 1 + Math.floor(Math.random() * 3);
-            currentHp = Math.max(0, currentHp - dmg);
-            setHp(currentHp);
-            shakeIntensity = Math.max(shakeIntensity, 0.4);
-            if (currentHp <= 0) {
-              setCurtainVisible(true);
-              setTimeout(() => onExit(), 500);
-            }
-          }
-          scene.remove(d.mesh);
-          d.mesh.geometry.dispose();
-          bossSpaceDebris.splice(i, 1);
-          continue;
-        }
-
-        if (d.pos.z > camera.position.z + 15) {
-          scene.remove(d.mesh);
-          d.mesh.geometry.dispose();
-          bossSpaceDebris.splice(i, 1);
-        }
-      }
-
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
         const jitterX = Math.sin(timestamp * 0.015 + e.seed) * 0.12;
@@ -1668,38 +1600,40 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
             shakeIntensity = Math.max(shakeIntensity, flybyFactor * 0.7);
           }
 
-          e.shootCooldown -= dt;
-          if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 18 && e.pos.z > -160) {
-            e.shootCooldown = e.isRaid ? 1.6 : e.isElite ? 0.8 + Math.random() * 0.5 : 1.1 + Math.random() * 0.7;
-            const spreadX = (Math.random() - 0.5) * (e.isElite ? 3.0 : 4.5);
-            const spreadY = (Math.random() - 0.5) * (e.isElite ? 2.0 : 3.0);
-            const targetWithSpread = shipPos.clone().add(new THREE.Vector3(spreadX, spreadY, 0));
+          if (!bossCutsceneActiveRef.current) {
+            e.shootCooldown -= dt;
+            if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 18 && e.pos.z > -160) {
+              e.shootCooldown = e.isRaid ? 1.6 : e.isElite ? 0.8 + Math.random() * 0.5 : 1.1 + Math.random() * 0.7;
+              const spreadX = (Math.random() - 0.5) * (e.isRaid ? 1.6 : e.isElite ? 3.0 : 4.5);
+              const spreadY = (Math.random() - 0.5) * (e.isRaid ? 1.2 : e.isElite ? 2.0 : 3.0);
+              const targetWithSpread = shipPos.clone().add(new THREE.Vector3(spreadX, spreadY, 0));
 
-            const baseLaserDir = new THREE.Vector3().subVectors(targetWithSpread, e.pos).normalize();
+              const baseLaserDir = new THREE.Vector3().subVectors(targetWithSpread, e.pos).normalize();
 
-            const fireSalvo = (offsetZ = 0) => {
-              for (const s of [-0.32, 0.32]) {
-                const lMesh = new THREE.Mesh(greenLaserGeo, greenLaserMat);
-                lMesh.position.set(e.pos.x + s, e.pos.y - 0.05, e.pos.z + 0.8 + offsetZ);
-                lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), baseLaserDir);
-                scene.add(lMesh);
-                lasers.push({ mesh: lMesh, vel: baseLaserDir.clone().multiplyScalar(155), life: 2.2, isEnemy: true });
-              }
-            };
-
-            fireSalvo(0);
-
-            if (e.isRaid) {
-              setTimeout(() => {
-                if (!isDisposed && e.hp > 0) {
-                  fireSalvo(-0.5);
+              const fireSalvo = (offsetZ = 0) => {
+                for (const s of [-0.32, 0.32]) {
+                  const lMesh = new THREE.Mesh(greenLaserGeo, greenLaserMat);
+                  lMesh.position.set(e.pos.x + s, e.pos.y - 0.05, e.pos.z + 0.8 + offsetZ);
+                  lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), baseLaserDir);
+                  scene.add(lMesh);
+                  lasers.push({ mesh: lMesh, vel: baseLaserDir.clone().multiplyScalar(155), life: 2.2, isEnemy: true });
                 }
-              }, 110);
-            }
+              };
 
-            const distVolume = Math.max(0, Math.min(0.25, (1 - distToCam / 135) * 0.25));
-            if (distVolume > 0.02) {
-              playBuffer(audioBuffers.tieShot, distVolume, true);
+              fireSalvo(0);
+
+              if (e.isRaid) {
+                setTimeout(() => {
+                  if (!isDisposed && e.hp > 0 && !bossCutsceneActiveRef.current) {
+                    fireSalvo(-0.5);
+                  }
+                }, 110);
+              }
+
+              const distVolume = Math.max(0, Math.min(0.25, (1 - distToCam / 135) * 0.25));
+              if (distVolume > 0.02) {
+                playBuffer(audioBuffers.tieShot, distVolume, true);
+              }
             }
           }
 
@@ -1772,39 +1706,25 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         } else {
           let hitAny = false;
 
-          for (let dIdx = bossSpaceDebris.length - 1; dIdx >= 0; dIdx--) {
-            const deb = bossSpaceDebris[dIdx];
-            if (l.mesh.position.distanceTo(deb.pos) < deb.radius + 1.2) {
+          for (let j = enemies.length - 1; j >= 0; j--) {
+            const e = enemies[j];
+            if (l.mesh.position.distanceTo(e.pos) < 3.8) {
               l.life = 0;
               hitAny = true;
-              scene.remove(deb.mesh);
-              deb.mesh.geometry.dispose();
-              bossSpaceDebris.splice(dIdx, 1);
-              break;
-            }
-          }
+              e.hp -= 1;
 
-          if (!hitAny) {
-            for (let j = enemies.length - 1; j >= 0; j--) {
-              const e = enemies[j];
-              if (l.mesh.position.distanceTo(e.pos) < 3.8) {
-                l.life = 0;
-                hitAny = true;
-                e.hp -= 1;
+              if (e.hp <= 0) {
+                spawnRetroExplosion(e.pos);
+                shakeIntensity = Math.max(shakeIntensity, 0.8);
 
-                if (e.hp <= 0) {
-                  spawnRetroExplosion(e.pos);
-                  shakeIntensity = Math.max(shakeIntensity, 0.8);
-
-                  if (Math.random() < 0.0745) {
-                    spawnDatapad(e.pos);
-                  }
-
-                  scene.remove(e.mesh);
-                  enemies.splice(j, 1);
+                if (Math.random() < 0.035) {
+                  spawnDatapad(e.pos);
                 }
-                break;
+
+                scene.remove(e.mesh);
+                enemies.splice(j, 1);
               }
+              break;
             }
           }
 
@@ -1870,12 +1790,12 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         dp.mesh.rotation.x += dp.rotSpeed.x * dt;
         dp.mesh.rotation.y += dp.rotSpeed.y * dt;
 
-        const dToPlayer = dp.pos.distanceTo(shipPos);
-        if (dToPlayer < 24) {
-          dp.pos.lerp(shipPos, dt * 7.5);
-          dp.mesh.position.copy(dp.pos);
-        }
+        dp.speed += dt * 55;
+        const toPlayer = new THREE.Vector3().subVectors(shipPos, dp.pos).normalize();
+        dp.pos.addScaledVector(toPlayer, dp.speed * dt);
+        dp.mesh.position.copy(dp.pos);
 
+        const dToPlayer = dp.pos.distanceTo(shipPos);
         if (dToPlayer < 2.2) {
           currentHp = Math.min(100, currentHp + dp.healPercent);
           setHp(currentHp);
@@ -1965,8 +1885,10 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         camera.position.z = cameraBase.z;
       }
 
-      camera.lookAt(shipPos.x * 0.18, shipPos.y * 0.18 + 0.3, -45);
-      camera.rotateZ(-shipBank * 0.1);
+      if (!bossCutsceneActiveRef.current) {
+        camera.lookAt(shipPos.x * 0.18, shipPos.y * 0.18 + 0.3, -45);
+        camera.rotateZ(-shipBank * 0.1);
+      }
 
       renderer.render(scene, camera);
       animId = requestAnimationFrame(gameLoop);
@@ -1993,7 +1915,6 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       shockwaves.forEach((s) => scene.remove(s.mesh));
       datapads.forEach((dp) => scene.remove(dp.mesh));
       shieldImpacts.forEach((si) => scene.remove(si.mesh));
-      bossSpaceDebris.forEach((deb) => scene.remove(deb.mesh));
       flashCores.forEach((f) => {
         scene.remove(f.mesh);
         if (f.light) scene.remove(f.light);
