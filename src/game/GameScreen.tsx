@@ -11,6 +11,13 @@ import {
 import { HANGAR_SHIPS } from '../components/HangarScreen.tsx';
 import GameUI from './GameUI.tsx';
 
+interface Torpedo {
+  mesh: THREE.Mesh;
+  vel: THREE.Vector3;
+  targetPos: THREE.Vector3 | null;
+  life: number;
+}
+
 interface GameScreenProps {
   assets: PreloadedAssets;
   selectedShipId?: string;
@@ -45,6 +52,15 @@ export default function GameScreen({
   const [stagesCompleted, setStagesCompleted] = useState<number>(0);
   const [creditsEarned, setCreditsEarned] = useState<number>(0);
   const [endGameModal, setEndGameModal] = useState<'defeat' | 'victory' | null>(null);
+
+  const [ability1Cooldown, setAbility1Cooldown] = useState<number>(0);
+  const [ability1Active, setAbility1Active] = useState<boolean>(false);
+  const [ability2Cooldown, setAbility2Cooldown] = useState<number>(0);
+
+  const ability1CooldownRef = useRef<number>(0);
+  const ability1ActiveTimerRef = useRef<number>(0);
+  const ability2CooldownRef = useRef<number>(0);
+  const triggerTorpedoRef = useRef<boolean>(false);
 
   const [inBiomeTransition, setInBiomeTransition] = useState<boolean>(false);
   const [biomeTitle, setBiomeTitle] = useState<string>('');
@@ -170,6 +186,25 @@ export default function GameScreen({
   useEffect(() => {
     inputRef.current.fire = isFiring;
   }, [isFiring]);
+
+  const handleTriggerAbility1 = () => {
+    if (isPausedRef.current || playerStunned || ability1CooldownRef.current > 0) return;
+    if (selectedShipId !== 'xwing') return;
+    playTone(480, 780, 0.2, 0.25, 'triangle');
+    ability1CooldownRef.current = 15.0;
+    ability1ActiveTimerRef.current = 7.5;
+    setAbility1Cooldown(15);
+    setAbility1Active(true);
+  };
+
+  const handleTriggerAbility2 = () => {
+    if (isPausedRef.current || playerStunned || ability2CooldownRef.current > 0) return;
+    if (selectedShipId !== 'xwing') return;
+    playTone(320, 180, 0.35, 0.3, 'sawtooth');
+    ability2CooldownRef.current = 20.0;
+    setAbility2Cooldown(20);
+    triggerTorpedoRef.current = true;
+  };
 
   useEffect(() => {
     let animId: number;
@@ -376,6 +411,10 @@ export default function GameScreen({
     greenLaserGeo.rotateX(Math.PI / 2);
     const greenLaserMat = new THREE.MeshBasicMaterial({ color: 0x22ff44 });
 
+    const torpedoGeo = new THREE.CylinderGeometry(0.12, 0.12, 1.6, 8);
+    torpedoGeo.rotateX(Math.PI / 2);
+    const torpedoMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff });
+
     const flashCoreGeo = new THREE.IcosahedronGeometry(1.8, 1);
     const flashCoreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
@@ -413,6 +452,7 @@ export default function GameScreen({
     ];
 
     const lasers: Laser[] = [];
+    const torpedoes: Torpedo[] = [];
     const enemies: Enemy[] = [];
     const debrisList: ExplosionPart[] = [];
     const shockwaves: ShockwaveRing[] = [];
@@ -730,6 +770,22 @@ export default function GameScreen({
       }
 
       const dt = realDt;
+
+      if (ability1CooldownRef.current > 0) {
+        ability1CooldownRef.current = Math.max(0, ability1CooldownRef.current - dt);
+        setAbility1Cooldown(Math.ceil(ability1CooldownRef.current));
+      }
+      if (ability1ActiveTimerRef.current > 0) {
+        ability1ActiveTimerRef.current = Math.max(0, ability1ActiveTimerRef.current - dt);
+        if (ability1ActiveTimerRef.current <= 0) {
+          setAbility1Active(false);
+        }
+      }
+
+      if (ability2CooldownRef.current > 0) {
+        ability2CooldownRef.current = Math.max(0, ability2CooldownRef.current - dt);
+        setAbility2Cooldown(Math.ceil(ability2CooldownRef.current));
+      }
 
       if (skipToStage4Ref.current) {
         skipToStage4Ref.current = false;
@@ -1049,10 +1105,122 @@ export default function GameScreen({
         }
       }
 
+      if (triggerTorpedoRef.current) {
+        triggerTorpedoRef.current = false;
+        const tMesh = new THREE.Mesh(torpedoGeo, torpedoMat);
+        tMesh.position.copy(shipPos).add(new THREE.Vector3(0, -0.2, -0.6));
+        tMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), shipForward);
+        scene.add(tMesh);
+        torpedoes.push({
+          mesh: tMesh,
+          vel: shipForward.clone().multiplyScalar(260),
+          targetPos: autoTargetPos ? autoTargetPos.clone() : null,
+          life: 3.5
+        });
+      }
+
+      for (let tIdx = torpedoes.length - 1; tIdx >= 0; tIdx--) {
+        const torp = torpedoes[tIdx];
+        torp.life -= dt;
+
+        if (torp.targetPos) {
+          const desiredDir = new THREE.Vector3().subVectors(torp.targetPos, torp.mesh.position).normalize();
+          torp.vel.lerp(desiredDir.multiplyScalar(320), dt * 6.5);
+          torp.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), torp.vel.clone().normalize());
+        }
+
+        torp.mesh.position.addScaledVector(torp.vel, dt);
+
+        let torpHit = false;
+        for (let j = enemies.length - 1; j >= 0; j--) {
+          const e = enemies[j];
+          if (torp.mesh.position.distanceTo(e.pos) < 4.2) {
+            torpHit = true;
+            const dealt = Math.floor((shipConf.damage >= 45 ? 4 : 3) * 1.4);
+            e.hp -= dealt;
+            currentDamage += dealt * 35;
+            setDamageDealt(currentDamage);
+            currentScore += dealt * 40;
+            setScore(currentScore);
+
+            spawnRetroExplosion(torp.mesh.position, 2.2, true, false);
+
+            if (e.hp <= 0) {
+              currentKills += 1;
+              setEnemiesKilled(currentKills);
+              currentScore += e.isRaid ? 250 : e.isElite ? 180 : 100;
+              setScore(currentScore);
+
+              if (Math.random() < 0.15) {
+                spawnDatapad(e.pos);
+              }
+              scene.remove(e.mesh);
+              enemies.splice(j, 1);
+            }
+            break;
+          }
+        }
+
+        if (!torpHit && bossData && !bossData.destroyed && !bossData.raidActive && !bossCutsceneActiveRef.current) {
+          const hasGenerators = bossData.generators.some((g) => !g.destroyed);
+          if (hasGenerators) {
+            for (const gen of bossData.generators) {
+              if (!gen.destroyed) {
+                const worldGPos = gen.localPos.clone().applyMatrix4(bossData.group.matrixWorld);
+                if (torp.mesh.position.distanceTo(worldGPos) < 14.0) {
+                  torpHit = true;
+                  const dealt = Math.floor((shipConf.damage >= 45 ? 4 : 3) * 1.4);
+                  gen.hp -= dealt;
+                  currentDamage += dealt * 45;
+                  setDamageDealt(currentDamage);
+                  spawnRetroExplosion(torp.mesh.position, 2.4, true, false);
+
+                  if (gen.hp <= 0) {
+                    gen.destroyed = true;
+                    spawnRetroExplosion(worldGPos, 2.0);
+                    currentScore += 500;
+                    setScore(currentScore);
+                  }
+                  break;
+                }
+              }
+            }
+          } else {
+            const dx = Math.abs(torp.mesh.position.x - bossData.pos.x);
+            const dy = Math.abs(torp.mesh.position.y - bossData.pos.y);
+            const dz = Math.abs(torp.mesh.position.z - bossData.pos.z);
+            if (dx < 32 && dy < 16 && dz < 55) {
+              torpHit = true;
+              const dealt = Math.floor((shipConf.damage >= 45 ? 5 : 4) * 1.4);
+              bossData.hullHp -= dealt;
+              currentDamage += dealt * 50;
+              setDamageDealt(currentDamage);
+              spawnRetroExplosion(torp.mesh.position, 2.4, true, false);
+
+              if (bossData.hullHp <= 0) {
+                bossData.destroyed = true;
+                currentScore += 5000;
+                setScore(currentScore);
+                spawnRetroExplosion(bossData.pos, 3.5, true);
+                triggerEndGame('victory');
+              }
+            }
+          }
+        }
+
+        if (torpHit || torp.life <= 0) {
+          scene.remove(torp.mesh);
+          torpedoes.splice(tIdx, 1);
+        }
+      }
+
       fireCooldown -= dt;
 
+      const baseCooldown = THREE.MathUtils.clamp(0.35 - (shipConf.fireRate / 60) * 0.18, 0.14, 0.32);
+      const activeCooldown = ability1ActiveTimerRef.current > 0 ? 0.085 : baseCooldown;
+
       if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0) {
-        fireCooldown = THREE.MathUtils.clamp(0.35 - (shipConf.fireRate / 60) * 0.18, 0.14, 0.32);
+        fireCooldown = activeCooldown;
 
         const leftOffset = new THREE.Vector3(-0.46, 0, -0.3).applyQuaternion(shipHolder.quaternion);
         const rightOffset = new THREE.Vector3(0.46, 0, -0.3).applyQuaternion(shipHolder.quaternion);
@@ -1063,19 +1231,21 @@ export default function GameScreen({
         const leftDir = new THREE.Vector3().subVectors(bulletAimTarget, leftPos).normalize();
         const rightDir = new THREE.Vector3().subVectors(bulletAimTarget, rightPos).normalize();
 
+        const laserSpeedVal = ability1ActiveTimerRef.current > 0 ? 760 : 640;
+
         const lMesh1 = new THREE.Mesh(redLaserGeo, redLaserMat);
         lMesh1.position.copy(leftPos);
         lMesh1.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), leftDir);
         scene.add(lMesh1);
-        lasers.push({ mesh: lMesh1, vel: leftDir.multiplyScalar(640), life: 1.0, isEnemy: false });
+        lasers.push({ mesh: lMesh1, vel: leftDir.multiplyScalar(laserSpeedVal), life: 1.0, isEnemy: false });
 
         const lMesh2 = new THREE.Mesh(redLaserGeo, redLaserMat);
         lMesh2.position.copy(rightPos);
         lMesh2.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), rightDir);
         scene.add(lMesh2);
-        lasers.push({ mesh: lMesh2, vel: rightDir.multiplyScalar(640), life: 1.0, isEnemy: false });
+        lasers.push({ mesh: lMesh2, vel: rightDir.multiplyScalar(laserSpeedVal), life: 1.0, isEnemy: false });
 
-        playBuffer(audioBuffers.xwingShot, 0.28);
+        playBuffer(audioBuffers.xwingShot, ability1ActiveTimerRef.current > 0 ? 0.22 : 0.28);
       }
 
       const maxSimultaneousEnemies = Math.min(6, 2 + stageIdx);
@@ -1753,6 +1923,7 @@ export default function GameScreen({
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
       lasers.forEach((l) => scene.remove(l.mesh));
+      torpedoes.forEach((t) => scene.remove(t.mesh));
       enemies.forEach((e) => scene.remove(e.mesh));
       planetMeshes.forEach((pl) => scene.remove(pl));
       debrisList.forEach((d) => scene.remove(d.mesh));
@@ -1972,6 +2143,9 @@ export default function GameScreen({
       endGameModal={endGameModal}
       joystickActive={joystickActive}
       joystickOffset={joystickOffset}
+      ability1Cooldown={ability1Cooldown}
+      ability1Active={ability1Active}
+      ability2Cooldown={ability2Cooldown}
       inBiomeTransition={inBiomeTransition}
       biomeTitle={biomeTitle}
       biomeSubtext={biomeSubtext}
@@ -2007,6 +2181,8 @@ export default function GameScreen({
       }}
       onFirePointerUp={() => setIsFiring(false)}
       onFirePointerCancel={() => setIsFiring(false)}
+      onTriggerAbility1={handleTriggerAbility1}
+      onTriggerAbility2={handleTriggerAbility2}
       onHallwayComplete={handleHallwayComplete}
     />
   );
