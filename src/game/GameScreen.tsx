@@ -35,6 +35,8 @@ interface GameScreenProps {
   selectedShipId?: string;
   onAddCredits?: (amount: number) => void;
   onRestart?: () => void;
+  onTriggerIntroCutscene?: () => void;
+  onTriggerVictoryCutscene?: () => void;
   onExit: () => void;
 }
 
@@ -43,6 +45,8 @@ export default function GameScreen({
   selectedShipId = 'xwing',
   onAddCredits,
   onRestart,
+  onTriggerIntroCutscene,
+  onTriggerVictoryCutscene,
   onExit
 }: GameScreenProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -120,16 +124,16 @@ export default function GameScreen({
   const biomeRunRef = useRef<BiomeRunStep[]>(generateBiomeRun(availablePlanets));
 
   useEffect(() => {
-    isPausedRef.current = isPaused || showHallwayCutscene || endGameModal !== null;
+    isPausedRef.current = isPaused;
     inHallwayRef.current = showHallwayCutscene;
     if (xwingGainRef.current && tieEngineGainRef.current) {
-      if (isPaused || showHallwayCutscene || endGameModal !== null) {
+      if (isPaused || endGameModal !== null) {
         xwingGainRef.current.gain.value = 0;
         tieEngineGainRef.current.gain.value = 0;
       }
     }
     if (bossSoundtrackSourceRef.current && assets.audioCtx) {
-      if (isPaused || showHallwayCutscene || endGameModal !== null) {
+      if (isPaused || endGameModal !== null) {
         if (assets.audioCtx.state === 'running') assets.audioCtx.suspend();
       } else {
         if (assets.audioCtx.state === 'suspended') assets.audioCtx.resume();
@@ -849,7 +853,6 @@ export default function GameScreen({
         setCurtainVisible(true);
         setTimeout(() => {
           if (isDisposed) return;
-          isPausedRef.current = true;
           if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
           if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
           setEndGameModal(mode);
@@ -1365,7 +1368,7 @@ export default function GameScreen({
             bombHit = true;
             const victim = bomb.targetRef;
             victim.state = 'disabled';
-            victim.disabledTimer = 0.45;
+            victim.disabledTimer = 0.55;
             victim.hp = 0;
             currentDamage += 120;
             setDamageDealt(currentDamage);
@@ -1384,7 +1387,7 @@ export default function GameScreen({
             if (e.state === 'attacking' && bomb.mesh.position.distanceTo(e.pos) < 4.5) {
               bombHit = true;
               e.state = 'disabled';
-              e.disabledTimer = 0.45;
+              e.disabledTimer = 0.55;
               e.hp = 0;
               currentDamage += 120;
               setDamageDealt(currentDamage);
@@ -1444,7 +1447,12 @@ export default function GameScreen({
                 currentScore += 5000;
                 setScore(currentScore);
                 spawnRetroExplosion(bossData.pos, 3.8, true, false);
-                triggerEndGame('victory');
+
+                if (onTriggerVictoryCutscene) {
+                  onTriggerVictoryCutscene();
+                } else {
+                  triggerEndGame('victory');
+                }
               }
             }
           }
@@ -2014,7 +2022,12 @@ export default function GameScreen({
                   currentScore += 5000;
                   setScore(currentScore);
                   spawnRetroExplosion(bossData.pos, 3.5, true);
-                  triggerEndGame('victory');
+
+                  if (onTriggerVictoryCutscene) {
+                    onTriggerVictoryCutscene();
+                  } else {
+                    triggerEndGame('victory');
+                  }
                 }
               }
             }
@@ -2205,7 +2218,7 @@ export default function GameScreen({
       }
       renderer.dispose();
     };
-  }, [assets, selectedShipId, onExit, onAddCredits]);
+  }, [assets, selectedShipId, onExit, onAddCredits, onTriggerVictoryCutscene]);
 
   const handleStickPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene || endGameModal !== null || isDeadRef.current) return;
@@ -2352,6 +2365,22 @@ export default function GameScreen({
       setConsoleInput('');
       setConsoleFeedback('');
       setShowHallwayCutscene(true);
+    } else if (code === 'jekkepq392sjjsppp') {
+      setIsConsoleOpen(false);
+      setIsPaused(false);
+      setConsoleInput('');
+      setConsoleFeedback('');
+      if (onTriggerIntroCutscene) {
+        onTriggerIntroCutscene();
+      }
+    } else if (code === 'njsjaowp6659sjjp') {
+      setIsConsoleOpen(false);
+      setIsPaused(false);
+      setConsoleInput('');
+      setConsoleFeedback('');
+      if (onTriggerVictoryCutscene) {
+        onTriggerVictoryCutscene();
+      }
     } else if (code === 'pqonfu$$shsji') {
       if (onAddCredits) {
         onAddCredits(999999);
