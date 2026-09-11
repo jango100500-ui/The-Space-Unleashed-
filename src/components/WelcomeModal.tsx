@@ -20,7 +20,7 @@ export default function WelcomeModal({ onClose }: WelcomeModalProps) {
           background: #0d1520;
           border: 2px solid #5a738e;
           border-top: 2px solid #8fa9c4;
-          clip-path: polygon(14px 0%, 100% 0%, calc(100% - 14px) 100%, 0% 100%);
+          border-radius: 0px;
           width: min(520px, 92vw);
           max-height: 86vh;
           display: flex;
@@ -86,7 +86,7 @@ export default function WelcomeModal({ onClose }: WelcomeModalProps) {
           letter-spacing: 2px;
           text-transform: uppercase;
           cursor: pointer;
-          border-radius: 3px;
+          border-radius: 0px;
         }
         .tfu-welcome-btn:active {
           transform: scale(0.98);
