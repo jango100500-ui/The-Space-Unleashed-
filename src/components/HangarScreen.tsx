@@ -6,7 +6,9 @@ import type { PreloadedAssets } from '../App.tsx';
 interface HangarScreenProps {
   assets: PreloadedAssets;
   selectedShipId: string;
+  credits: number;
   onSelectShip: (id: string) => void;
+  onAddCredits: (amount: number) => void;
   onBack: () => void;
 }
 
@@ -20,6 +22,7 @@ export interface HangarShipData {
   damage: number;
   fireRate: number;
   shield: number;
+  price: number;
 }
 
 export const HANGAR_SHIPS: HangarShipData[] = [
@@ -31,7 +34,8 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     rot: [0, 0, 0],
     damage: 25,
     fireRate: 40,
-    shield: 0
+    shield: 0,
+    price: 0
   },
   {
     id: 'ywing',
@@ -42,7 +46,8 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     rot: [0, Math.PI / 2, 0],
     damage: 35,
     fireRate: 30,
-    shield: 0
+    shield: 0,
+    price: 2500
   },
   {
     id: 'slave1',
@@ -53,7 +58,8 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     rot: [0, Math.PI, 0],
     damage: 50,
     fireRate: 50,
-    shield: 100
+    shield: 100,
+    price: 12000
   },
   {
     id: 'beatle',
@@ -64,7 +70,8 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     rot: [0, Math.PI, 0],
     damage: 30,
     fireRate: 45,
-    shield: 0
+    shield: 0,
+    price: 5000
   }
 ];
 
@@ -99,17 +106,10 @@ const createFallbackProcedural = (id: string): THREE.Group => {
   return g;
 };
 
-export default function HangarScreen({ assets, selectedShipId, onSelectShip, onBack }: HangarScreenProps) {
+export default function HangarScreen({ assets, selectedShipId, credits, onSelectShip, onAddCredits, onBack }: HangarScreenProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
-  const [ownedShips, setOwnedShips] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('tsu_owned_ships');
-      return saved ? JSON.parse(saved) : ['xwing'];
-    } catch {
-      return ['xwing'];
-    }
-  });
+  const [ownedShips, setOwnedShips] = useState<string[]>(['xwing']);
 
   const customCache = useRef<Record<string, THREE.Group>>({});
   const rotatingHolderRef = useRef<THREE.Group | null>(null);
@@ -307,12 +307,11 @@ export default function HangarScreen({ assets, selectedShipId, onSelectShip, onB
   };
 
   const handleBuy = () => {
+    if (credits < currentShip.price) return;
     playClick();
+    onAddCredits(-currentShip.price);
     const updated = [...ownedShips, currentShip.id];
     setOwnedShips(updated);
-    try {
-      localStorage.setItem('tsu_owned_ships', JSON.stringify(updated));
-    } catch {}
   };
 
   const handleSelect = () => {
@@ -373,6 +372,18 @@ export default function HangarScreen({ assets, selectedShipId, onSelectShip, onB
           letter-spacing: 4px;
           color: #64b5f6;
           text-transform: uppercase;
+        }
+        .tfu-hangar-balance-box {
+          background: linear-gradient(180deg, #2a3d52 0%, #0d151f 100%);
+          border: 1px solid #64b5f6;
+          color: #e6f2ff;
+          padding: 4px 16px;
+          font-family: Arial, sans-serif;
+          font-size: 12px;
+          font-weight: 900;
+          letter-spacing: 2px;
+          text-transform: uppercase;
+          box-shadow: 0 0 10px rgba(100, 181, 246, 0.25);
         }
         .tfu-hangar-canvas {
           position: absolute;
@@ -479,6 +490,12 @@ export default function HangarScreen({ assets, selectedShipId, onSelectShip, onB
             linear-gradient(180deg, #d31820 0%, #ff3b30 45%, #b50e17 55%, #66050b 100%);
           color: #ffffff;
         }
+        .tfu-btn-buy.disabled {
+          background: #1e293b;
+          border-color: #475569;
+          color: #94a3b8;
+          cursor: not-allowed;
+        }
         .tfu-btn-select {
           border: 2px solid #64b5f6;
           background: 
@@ -550,6 +567,7 @@ export default function HangarScreen({ assets, selectedShipId, onSelectShip, onB
           <span>« НАЗАД</span>
         </button>
         <div className="tfu-hangar-title">АНГАР ФЛОТА</div>
+        <div className="tfu-hangar-balance-box">КРЕДИТЫ: {credits}</div>
       </div>
 
       <div ref={mountRef} className="tfu-hangar-canvas" />
@@ -592,8 +610,12 @@ export default function HangarScreen({ assets, selectedShipId, onSelectShip, onB
         <div className="tfu-info-desc">{currentShip.description}</div>
 
         {!isOwned ? (
-          <button type="button" className="tfu-hangar-action-btn tfu-btn-buy" onClick={handleBuy}>
-            КУПИТЬ ЗА 0
+          <button
+            type="button"
+            className={`tfu-hangar-action-btn tfu-btn-buy ${credits < currentShip.price ? 'disabled' : ''}`}
+            onClick={handleBuy}
+          >
+            КУПИТЬ ЗА {currentShip.price}
           </button>
         ) : isSelected ? (
           <button type="button" className="tfu-hangar-action-btn tfu-btn-selected">
