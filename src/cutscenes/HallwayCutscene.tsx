@@ -11,6 +11,11 @@ interface HallwayCutsceneProps {
 export default function HallwayCutscene({ assets, onComplete }: HallwayCutsceneProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [curtainVisible, setCurtainVisible] = useState<boolean>(true);
+  const onCompleteRef = useRef(onComplete);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   useEffect(() => {
     let animId: number;
@@ -22,8 +27,8 @@ export default function HallwayCutscene({ assets, onComplete }: HallwayCutsceneP
     const scene = new THREE.Scene();
 
     const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 5000);
-    camera.position.set(-1.2, 1.35, 4.2);
-    camera.rotation.set(-0.06, 0.42, 0.02);
+    camera.position.set(-1.0, 2.6, 4.8);
+    camera.rotation.set(-0.05, 0.45, 0.02);
 
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
@@ -91,15 +96,15 @@ export default function HallwayCutscene({ assets, onComplete }: HallwayCutsceneP
       }
     };
 
-    const hallwayLight = new THREE.PointLight(0x7090b0, 2.5, 30);
-    hallwayLight.position.set(0, 3.2, 0);
+    const hallwayLight = new THREE.PointLight(0x7090b0, 3.0, 40);
+    hallwayLight.position.set(0, 4.0, 0);
     scene.add(hallwayLight);
 
-    const hallwayAmbient = new THREE.AmbientLight(0x1a222e, 1.8);
+    const hallwayAmbient = new THREE.AmbientLight(0x283444, 2.2);
     scene.add(hallwayAmbient);
 
-    const redEmergency = new THREE.PointLight(0xcc2222, 1.2, 18);
-    redEmergency.position.set(4, 2.8, -1);
+    const redEmergency = new THREE.PointLight(0xcc2222, 1.5, 25);
+    redEmergency.position.set(4, 3.2, -1);
     scene.add(redEmergency);
 
     const createProceduralCorridor = () => {
@@ -115,22 +120,22 @@ export default function HallwayCutscene({ assets, onComplete }: HallwayCutsceneP
 
       const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(16, 30), wallMat);
       ceiling.rotation.x = Math.PI / 2;
-      ceiling.position.set(0, 3.6, 0);
+      ceiling.position.set(0, 4.2, 0);
       g.add(ceiling);
 
-      const backWall = new THREE.Mesh(new THREE.PlaneGeometry(30, 4), wallMat);
+      const backWall = new THREE.Mesh(new THREE.PlaneGeometry(30, 5), wallMat);
       backWall.rotation.y = Math.PI / 2;
-      backWall.position.set(-5, 1.8, 0);
+      backWall.position.set(-5, 2.1, 0);
       g.add(backWall);
 
-      const frontWall = new THREE.Mesh(new THREE.PlaneGeometry(30, 4), wallMat);
+      const frontWall = new THREE.Mesh(new THREE.PlaneGeometry(30, 5), wallMat);
       frontWall.rotation.y = -Math.PI / 2;
-      frontWall.position.set(5, 1.8, 0);
+      frontWall.position.set(5, 2.1, 0);
       g.add(frontWall);
 
       for (let i = -4; i <= 4; i++) {
         const strip = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.08, 1.8), lightStripMat);
-        strip.position.set(0, 3.55, i * 3.2);
+        strip.position.set(0, 4.15, i * 3.2);
         g.add(strip);
       }
       return g;
@@ -214,7 +219,7 @@ export default function HallwayCutscene({ assets, onComplete }: HallwayCutsceneP
     const sparkVels: THREE.Vector3[] = [];
     for (let i = 0; i < sparkCount; i++) {
       sparkPos[i * 3] = 2.8;
-      sparkPos[i * 3 + 1] = 3.2;
+      sparkPos[i * 3 + 1] = 3.6;
       sparkPos[i * 3 + 2] = 0.5;
       sparkVels.push(new THREE.Vector3());
     }
@@ -225,13 +230,14 @@ export default function HallwayCutscene({ assets, onComplete }: HallwayCutsceneP
     scene.add(sparks);
 
     let sparkTimer = 0;
+    let baseCamPos = new THREE.Vector3(-1.0, 2.6, 4.8);
 
-    const triggerSparks = () => {
+    const triggerSparks = (roofY: number) => {
       sparks.visible = true;
       const positions = sparkGeo.attributes.position.array as Float32Array;
       for (let i = 0; i < sparkCount; i++) {
         positions[i * 3] = 1.8 + (Math.random() - 0.5) * 0.4;
-        positions[i * 3 + 1] = 3.2;
+        positions[i * 3 + 1] = roofY - 0.2;
         positions[i * 3 + 2] = (Math.random() - 0.5) * 0.8;
         sparkVels[i].set((Math.random() - 0.5) * 1.5, -Math.random() * 4 - 2, (Math.random() - 0.5) * 1.5);
       }
@@ -242,6 +248,9 @@ export default function HallwayCutscene({ assets, onComplete }: HallwayCutsceneP
     let didExplode = false;
     let sceneSwitched = false;
     let didHyperspace = false;
+    let hasCurtainedOff = false;
+    let floorY = 0;
+    let ceilingY = 3.8;
 
     Promise.all([
       loadModel('/models/hallway.glb', createProceduralCorridor),
@@ -250,21 +259,27 @@ export default function HallwayCutscene({ assets, onComplete }: HallwayCutsceneP
       if (isDisposed) return;
 
       hallwayGroup = hallway;
-      hallwayGroup.position.set(0, 0, 0);
       scene.add(hallwayGroup);
 
+      const bbox = new THREE.Box3().setFromObject(hallwayGroup);
+      floorY = bbox.min.y;
+      ceilingY = bbox.max.y;
+      const hHeight = Math.max(2.5, ceilingY - floorY);
+      const camY = floorY + hHeight * 0.58;
+
+      baseCamPos.set(-1.2, camY, Math.min(6.5, Math.max(3.8, bbox.max.z * 0.65)));
+      camera.position.copy(baseCamPos);
+      camera.lookAt(bbox.max.x * 0.35 || 4.5, camY - 0.25, 0);
+
       droidGroup = droid;
-      droidGroup.scale.setScalar(1.1);
-      droidGroup.position.set(7.5, 0, 0.4);
+      droidGroup.scale.setScalar(1.0);
+      droidGroup.position.set(bbox.max.x * 0.75 || 7.5, floorY, 0.4);
       droidGroup.rotation.set(0, -Math.PI / 2, 0);
       scene.add(droidGroup);
 
-      setTimeout(() => {
-        if (isDisposed) return;
-        setCurtainVisible(false);
-        startTime = performance.now();
-        requestAnimationFrame(renderLoop);
-      }, 100);
+      setCurtainVisible(false);
+      startTime = performance.now();
+      requestAnimationFrame(renderLoop);
     });
 
     const renderLoop = (timestamp: number) => {
@@ -287,7 +302,7 @@ export default function HallwayCutscene({ assets, onComplete }: HallwayCutsceneP
         sparkTimer += 0.016;
         if (sparkTimer >= 2.4) {
           sparkTimer = 0;
-          triggerSparks();
+          triggerSparks(ceilingY);
         }
 
         if (sparks.visible) {
@@ -297,7 +312,7 @@ export default function HallwayCutscene({ assets, onComplete }: HallwayCutsceneP
             positions[i * 3] += sparkVels[i].x * 0.016;
             positions[i * 3 + 1] += sparkVels[i].y * 0.016;
             positions[i * 3 + 2] += sparkVels[i].z * 0.016;
-            if (positions[i * 3 + 1] > 0.05) anyAlive = true;
+            if (positions[i * 3 + 1] > floorY + 0.05) anyAlive = true;
           }
           sparkGeo.attributes.position.needsUpdate = true;
           if (!anyAlive) sparks.visible = false;
@@ -308,14 +323,14 @@ export default function HallwayCutscene({ assets, onComplete }: HallwayCutsceneP
           playMuffledExplosion();
         }
 
-        if (elapsed >= 1.0 && elapsed <= 1.6) {
-          shake = (1.6 - elapsed) * 0.12;
+        if (elapsed >= 1.0 && elapsed <= 1.45) {
+          shake = (1.45 - elapsed) * 0.22;
         }
 
         camera.position.set(
-          -1.2 + (Math.random() - 0.5) * shake,
-          1.35 + (Math.random() - 0.5) * shake,
-          4.2 + (Math.random() - 0.5) * shake
+          baseCamPos.x + (Math.random() - 0.5) * shake,
+          baseCamPos.y + (Math.random() - 0.5) * shake,
+          baseCamPos.z + (Math.random() - 0.5) * shake
         );
       } else {
         if (!sceneSwitched) {
@@ -378,12 +393,13 @@ export default function HallwayCutscene({ assets, onComplete }: HallwayCutsceneP
           tieFighters[2].rotation.z = 0.05;
         }
 
-        if (elapsed >= 10.6 && !curtainVisible) {
+        if (elapsed >= 10.6 && !hasCurtainedOff) {
+          hasCurtainedOff = true;
           setCurtainVisible(true);
         }
 
         if (elapsed >= 11.4) {
-          onComplete();
+          onCompleteRef.current();
           return;
         }
       }
@@ -403,7 +419,7 @@ export default function HallwayCutscene({ assets, onComplete }: HallwayCutsceneP
       }
       renderer.dispose();
     };
-  }, [assets, onComplete]);
+  }, [assets]);
 
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', backgroundColor: '#000000', zIndex: 60 }}>
