@@ -72,32 +72,46 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
       let loadedTie: THREE.Group | null = null;
       let loadedDestroyer: THREE.Group | null = null;
       let loadedDatapad: THREE.Group | null = null;
+      let loadedCr90: THREE.Group | null = null;
       const audioBuffers: Record<string, AudioBuffer> = {};
 
       try {
         setStatusText('ЗАГРУЗКА T-65B X-WING...');
         setProgress(10);
         loadedXwing = await loadModel('/models/x-wing.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(10 + p * 15));
+          if (!isDisposed) setProgress(Math.floor(10 + p * 12));
         });
 
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА СИД-ИСТРЕБИТЕЛЕЙ...');
-        setProgress(25);
+        setProgress(22);
         loadedTie = await loadModel('/models/tie.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(25 + p * 15));
+          if (!isDisposed) setProgress(Math.floor(22 + p * 12));
         });
 
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА ЗВЁЗДНОГО РАЗРУШИТЕЛЯ...');
-        setProgress(40);
+        setProgress(34);
         loadedDestroyer = await loadModel('/models/star-destroyer.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(40 + p * 20));
+          if (!isDisposed) setProgress(Math.floor(34 + p * 16));
         });
 
         if (isDisposed) return;
+        setStatusText('ЗАГРУЗКА КОРВЕТА CR90...');
+        setProgress(50);
+        try {
+          loadedCr90 = await loadModel('/models/cr90.glb', (p) => {
+            if (!isDisposed) setProgress(Math.floor(50 + p * 12));
+          });
+        } catch {
+          const g = new THREE.Group();
+          g.add(new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 14, 8), new THREE.MeshStandardMaterial({ color: 0xcccccc })));
+          loadedCr90 = g;
+        }
+
+        if (isDisposed) return;
         setStatusText('ЗАГРУЗКА ДАТАПАДОВ...');
-        setProgress(60);
+        setProgress(65);
         try {
           loadedDatapad = await loadModel('/models/datapad.glb', () => {});
         } catch {
@@ -108,7 +122,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
 
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА АУДИОСИСТЕМ...');
-        setProgress(70);
+        setProgress(75);
 
         for (let i = 0; i < SOUND_LIST.length; i++) {
           const item = SOUND_LIST[i];
@@ -119,7 +133,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
             audioBuffers[item.key] = dummyBuf;
           }
           if (isDisposed) return;
-          setProgress(Math.floor(70 + ((i + 1) / SOUND_LIST.length) * 25));
+          setProgress(Math.floor(75 + ((i + 1) / SOUND_LIST.length) * 20));
         }
 
         if (isDisposed) return;
@@ -134,7 +148,13 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
         setTimeout(() => {
           if (!isDisposed && loadedXwing && loadedTie && loadedDestroyer) {
             onComplete({
-              models: { xwing: loadedXwing, tie: loadedTie, destroyer: loadedDestroyer, datapad: loadedDatapad || undefined },
+              models: {
+                xwing: loadedXwing,
+                tie: loadedTie,
+                destroyer: loadedDestroyer,
+                datapad: loadedDatapad || undefined,
+                cr90: loadedCr90 || undefined
+              },
               audioBuffers,
               audioCtx
             });
@@ -151,6 +171,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
         const fbTie = loadedTie || createBox(2, 2, 1.8, 0x475569);
         const fbDestroyer = loadedDestroyer || createBox(40, 10, 70, 0x7f8c8d);
         const fbDatapad = loadedDatapad || createBox(0.35, 0.06, 0.5, 0x3399ff);
+        const fbCr90 = loadedCr90 || createBox(4, 3, 24, 0xdddddd);
 
         setProgress(100);
         setStatusText('РЕЗЕРВНЫЙ СТАРТ');
@@ -159,7 +180,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
         setTimeout(() => {
           if (!isDisposed) {
             onComplete({
-              models: { xwing: fbXwing, tie: fbTie, destroyer: fbDestroyer, datapad: fbDatapad },
+              models: { xwing: fbXwing, tie: fbTie, destroyer: fbDestroyer, datapad: fbDatapad, cr90: fbCr90 },
               audioBuffers,
               audioCtx
             });
