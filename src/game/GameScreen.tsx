@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import type { PreloadedAssets } from '../App.tsx';
 import HallwayCutscene from '../cutscenes/HallwayCutscene.tsx';
@@ -264,6 +264,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   const inBiomeTransitionRef = useRef<boolean>(false);
   const bossCutsceneActiveRef = useRef<boolean>(false);
   const bossVictoryActiveRef = useRef<boolean>(false);
+  const inHallwayRef = useRef<boolean>(false);
 
   const inputRef = useRef<{ x: number; y: number; fire: boolean }>({ x: 0, y: 0, fire: false });
   const godModeRef = useRef<boolean>(false);
@@ -281,14 +282,15 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   const biomeRunRef = useRef<BiomeRunStep[]>(generateBiomeRun(availablePlanets));
 
   useEffect(() => {
-    isPausedRef.current = isPaused;
+    isPausedRef.current = isPaused || showHallwayCutscene;
+    inHallwayRef.current = showHallwayCutscene;
     if (xwingGainRef.current && tieEngineGainRef.current) {
-      if (isPaused) {
+      if (isPaused || showHallwayCutscene) {
         xwingGainRef.current.gain.value = 0;
         tieEngineGainRef.current.gain.value = 0;
       }
     }
-  }, [isPaused]);
+  }, [isPaused, showHallwayCutscene]);
 
   useEffect(() => {
     const { audioCtx, audioBuffers } = assets;
@@ -840,7 +842,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       const realDt = Math.min((timestamp - lastTime) / 1000, 0.045);
       lastTime = timestamp;
 
-      if (isPausedRef.current) {
+      if (isPausedRef.current || inHallwayRef.current) {
         renderer.render(scene, camera);
         animId = requestAnimationFrame(gameLoop);
         return;
@@ -1049,15 +1051,15 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           }
         }
 
-        if (bossVictoryTimer >= 4.0 && !curtainVisible) {
+        if (bossVictoryTimer >= 3.6 && !curtainVisible) {
           setCurtainVisible(true);
         }
 
-        if (bossVictoryTimer >= 4.6 && !showVictoryText) {
+        if (bossVictoryTimer >= 4.2 && !showVictoryText) {
           setShowVictoryText(true);
         }
 
-        if (bossVictoryTimer >= 6.4) {
+        if (bossVictoryTimer >= 6.8) {
           onExit();
           return;
         }
@@ -1713,7 +1715,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   }, [assets, onExit]);
 
   const handleStickPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (inBiomeTransition || isPaused || isConsoleOpen || bossCutsceneActive || bossVictoryActive || playerStunned) return;
+    if (inBiomeTransition || isPaused || isConsoleOpen || bossCutsceneActive || bossVictoryActive || playerStunned || showHallwayCutscene) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     stickTouchId.current = e.pointerId;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -1723,7 +1725,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   };
 
   const handleStickMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (inBiomeTransition || isPaused || isConsoleOpen || bossCutsceneActive || bossVictoryActive || playerStunned || stickTouchId.current !== e.pointerId) return;
+    if (inBiomeTransition || isPaused || isConsoleOpen || bossCutsceneActive || bossVictoryActive || playerStunned || showHallwayCutscene || stickTouchId.current !== e.pointerId) return;
     const dx = e.clientX - stickCenter.current.x;
     const dy = e.clientY - stickCenter.current.y;
     const maxRadius = 55;
@@ -1837,6 +1839,10 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       setConsoleFeedback('НЕВЕРНЫЙ КОД');
     }
   };
+
+  const handleHallwayComplete = useCallback(() => {
+    setShowHallwayCutscene(false);
+  }, []);
 
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', backgroundColor: '#000000' }}>
@@ -2310,9 +2316,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       {showHallwayCutscene && (
         <HallwayCutscene
           assets={assets}
-          onComplete={() => {
-            setShowHallwayCutscene(false);
-          }}
+          onComplete={handleHallwayComplete}
         />
       )}
 
@@ -2459,7 +2463,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           type="button"
           className="tfu-fire-btn"
           onPointerDown={() => {
-            if (!inBiomeTransition && !isPaused && !isConsoleOpen && !bossCutsceneActive && !bossVictoryActive && !playerStunned) setIsFiring(true);
+            if (!inBiomeTransition && !isPaused && !isConsoleOpen && !bossCutsceneActive && !bossVictoryActive && !playerStunned && !showHallwayCutscene) setIsFiring(true);
           }}
           onPointerUp={() => setIsFiring(false)}
           onPointerCancel={() => setIsFiring(false)}
