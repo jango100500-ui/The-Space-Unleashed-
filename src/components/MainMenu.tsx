@@ -14,7 +14,7 @@ export default function MainMenu({ onStart }: MainMenuProps) {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
 
-  const menuItems = ['НАЧАТЬ', 'АНГАР', 'НАСТРОЙКИ'];
+  const menuItems = ['НАЧАТЬ', 'АНГАР', 'ЛИДЕРЫ'];
 
   useEffect(() => {
     const initAudio = async () => {
