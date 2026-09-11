@@ -80,7 +80,6 @@ interface DatapadItem {
   pos: THREE.Vector3;
   rotSpeed: THREE.Vector3;
   healPercent: number;
-  speed: number;
 }
 
 interface BossZoneAttack {
@@ -715,9 +714,9 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         dModel = models.datapad.clone();
       } else {
         dModel = new THREE.Group();
-        dModel.add(new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.03, 0.25), new THREE.MeshStandardMaterial({ color: 0x3399ff, emissive: 0x113355 })));
+        dModel.add(new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.06, 0.5), new THREE.MeshStandardMaterial({ color: 0x3399ff, emissive: 0x113355 })));
       }
-      dModel.scale.setScalar(0.22);
+      dModel.scale.setScalar(0.45);
       dModel.position.copy(dropPos);
       scene.add(dModel);
 
@@ -727,8 +726,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         mesh: dModel,
         pos: dropPos.clone(),
         rotSpeed: new THREE.Vector3(0.5 + Math.random() * 0.5, 1.2 + Math.random() * 0.8, 0.4),
-        healPercent: healAmt,
-        speed: 65
+        healPercent: healAmt
       });
     };
 
@@ -1717,7 +1715,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
                 spawnRetroExplosion(e.pos);
                 shakeIntensity = Math.max(shakeIntensity, 0.8);
 
-                if (Math.random() < 0.035) {
+                if (Math.random() < 0.0745) {
                   spawnDatapad(e.pos);
                 }
 
@@ -1728,7 +1726,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
             }
           }
 
-          if (!hitAny && bossData && !bossData.destroyed && !bossData.raidActive) {
+          if (!hitAny && bossData && !bossData.destroyed && !bossData.raidActive && !bossCutsceneActiveRef.current) {
             bossData.group.updateMatrixWorld(true);
             const hasGenerators = bossData.generators.some((g) => !g.destroyed);
 
@@ -1790,12 +1788,12 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         dp.mesh.rotation.x += dp.rotSpeed.x * dt;
         dp.mesh.rotation.y += dp.rotSpeed.y * dt;
 
-        dp.speed += dt * 55;
-        const toPlayer = new THREE.Vector3().subVectors(shipPos, dp.pos).normalize();
-        dp.pos.addScaledVector(toPlayer, dp.speed * dt);
-        dp.mesh.position.copy(dp.pos);
-
         const dToPlayer = dp.pos.distanceTo(shipPos);
+        if (dToPlayer < 24) {
+          dp.pos.lerp(shipPos, dt * 7.5);
+          dp.mesh.position.copy(dp.pos);
+        }
+
         if (dToPlayer < 2.2) {
           currentHp = Math.min(100, currentHp + dp.healPercent);
           setHp(currentHp);
