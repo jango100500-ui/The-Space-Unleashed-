@@ -10,6 +10,7 @@ export interface PreloadedModels {
   tie: THREE.Group;
   destroyer: THREE.Group;
   datapad?: THREE.Group;
+  cr90?: THREE.Group;
 }
 
 export interface PreloadedAssets {
