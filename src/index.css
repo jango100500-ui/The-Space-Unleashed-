@@ -23,17 +23,78 @@ html, body, #root {
   left: 0;
   width: 100vw;
   height: 100vh;
+  width: 100dvw;
+  height: 100dvh;
   overflow: hidden;
   background-color: #000000;
+  padding: 0;
+  margin: 0;
+}
+
+.portrait-rotate-warning {
+  display: none;
 }
 
 @media (orientation: portrait) {
   .game-wrapper {
     width: 100vh;
     height: 100vw;
+    width: 100dvh;
+    height: 100dvw;
     left: 100%;
     top: 0;
     transform: rotate(90deg);
     transform-origin: top left;
   }
+
+  .portrait-rotate-warning {
+    position: fixed;
+    inset: 0;
+    background-color: #000000;
+    z-index: 999999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 24px;
+    text-align: center;
+  }
+
+  .portrait-rotate-icon {
+    width: 48px;
+    height: 48px;
+    border: 2px solid #ffffff;
+    border-radius: 8px;
+    position: relative;
+    animation: rotatePhoneAnim 1.8s infinite ease-in-out;
+  }
+
+  .portrait-rotate-icon::after {
+    content: '';
+    position: absolute;
+    bottom: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ffffff;
+  }
+
+  .portrait-rotate-text {
+    font-family: Arial, sans-serif;
+    font-size: 16px;
+    font-weight: 900;
+    letter-spacing: 3px;
+    color: #ffffff;
+    text-transform: uppercase;
+  }
+}
+
+@keyframes rotatePhoneAnim {
+  0% { transform: rotate(0deg); }
+  35% { transform: rotate(-90deg); }
+  65% { transform: rotate(-90deg); }
+  100% { transform: rotate(0deg); }
 }
