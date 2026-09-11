@@ -103,14 +103,14 @@ export default function GameUI(props: GameUIProps) {
         .tfu-pause-btn { background: linear-gradient(180deg, #3d586e 0%, #15202b 100%); border: 1px solid #6e8fa8; color: #8faec4; padding: 4px 22px; clip-path: polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%); display: flex; align-items: center; justify-content: center; cursor: pointer; height: 28px; }
         .tfu-pause-btn:active { filter: brightness(1.2); }
         .tfu-pause-btn svg { width: 14px; height: 14px; fill: currentColor; }
-        .tfu-score-display { font-family: monospace; font-size: 13px; font-weight: 900; letter-spacing: 2px; color: #ffffff; text-shadow: 0 0 6px rgba(100, 181, 246, 0.7); background: rgba(5, 12, 20, 0.75); border: 1px solid #3d586e; border-radius: 0px; padding: 3px 10px; }
+        .tfu-score-display { font-family: monospace; font-size: 12px; font-weight: 900; letter-spacing: 2px; color: #8faec4; background: linear-gradient(180deg, #3d586e 0%, #15202b 100%); border: 1px solid #6e8fa8; border-radius: 0px; padding: 4px 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
         .tfu-joystick-zone { position: absolute; left: 25px; bottom: 20px; width: 120px; height: 120px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(255, 255, 255, 0.22); display: flex; align-items: center; justify-content: center; pointer-events: auto; touch-action: none; transition: background 0.15s, border-color 0.15s; }
         .tfu-joystick-zone.active { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.45); }
         .tfu-joystick-knob { width: 46px; height: 46px; border-radius: 50%; background: rgba(255, 255, 255, 0.28); border: 2px solid rgba(255, 255, 255, 0.5); pointer-events: none; }
-        .tfu-cluster-zone { position: absolute; right: 30px; bottom: 35px; width: 144px; height: 144px; pointer-events: auto; }
-        .tfu-pad-btn { position: absolute; width: 46px; height: 46px; border-radius: 50%; background: rgba(255, 255, 255, 0.18); border: 2px solid rgba(255, 255, 255, 0.35); display: flex; align-items: center; justify-content: center; cursor: pointer; touch-action: none; user-select: none; color: rgba(255, 255, 255, 0.9); }
+        .tfu-cluster-zone { position: absolute; right: 26px; bottom: 38px; width: 168px; height: 168px; pointer-events: auto; }
+        .tfu-pad-btn { position: absolute; width: 54px; height: 54px; border-radius: 50%; background: rgba(255, 255, 255, 0.18); border: 2px solid rgba(255, 255, 255, 0.35); display: flex; align-items: center; justify-content: center; cursor: pointer; touch-action: none; user-select: none; color: rgba(255, 255, 255, 0.9); }
         .tfu-pad-btn:active { background: rgba(255, 255, 255, 0.38); transform: scale(0.94); }
-        .tfu-pad-btn svg { width: 22px; height: 22px; pointer-events: none; }
+        .tfu-pad-btn svg { width: 26px; height: 26px; pointer-events: none; }
         .tfu-pad-top { top: 0; left: 50%; transform: translateX(-50%); }
         .tfu-pad-top:active { transform: translateX(-50%) scale(0.94); }
         .tfu-pad-left { top: 50%; left: 0; transform: translateY(-50%); }
@@ -119,7 +119,7 @@ export default function GameUI(props: GameUIProps) {
         .tfu-pad-right:active { transform: translateY(-50%) scale(0.94); }
         .tfu-pad-bottom { bottom: 0; left: 50%; transform: translateX(-50%); }
         .tfu-pad-bottom:active { transform: translateX(-50%) scale(0.94); }
-        .tfu-pad-timer-text { font-family: monospace; font-size: 15px; font-weight: 900; color: #ffffff; }
+        .tfu-pad-timer-text { font-family: monospace; font-size: 16px; font-weight: 900; color: #ffffff; }
         .tfu-pad-active-flash { border-color: #64b5f6; background: rgba(100, 181, 246, 0.35); }
         .zone-attack-indicator { position: absolute; top: 0; bottom: 0; background: rgba(255, 30, 30, 0.2); border-left: 2px dashed rgba(255, 80, 80, 0.65); border-right: 2px dashed rgba(255, 80, 80, 0.65); pointer-events: none; z-index: 8; animation: zoneBlink 0.22s infinite alternate; }
         .tractor-beam-indicator { position: absolute; top: 0; bottom: 0; background: rgba(255, 10, 10, 0.28); border-left: 3px solid rgba(255, 60, 60, 0.85); border-right: 3px solid rgba(255, 60, 60, 0.85); pointer-events: none; z-index: 8; animation: tractorBlink 0.18s infinite alternate; }
@@ -334,7 +334,7 @@ export default function GameUI(props: GameUIProps) {
           <button
             type="button"
             className={`tfu-pad-btn tfu-pad-top ${props.ability1Active ? 'tfu-pad-active-flash' : ''}`}
-            onClick={props.onTriggerAbility1}
+            onPointerDown={(e) => { e.stopPropagation(); props.onTriggerAbility1(); }}
           >
             {props.ability1Cooldown > 0 ? (
               <span className="tfu-pad-timer-text">{props.ability1Cooldown}</span>
@@ -346,6 +346,7 @@ export default function GameUI(props: GameUIProps) {
           <button
             type="button"
             className="tfu-pad-btn tfu-pad-left"
+            onPointerDown={(e) => { e.stopPropagation(); }}
           >
             <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" /></svg>
           </button>
@@ -353,7 +354,7 @@ export default function GameUI(props: GameUIProps) {
           <button
             type="button"
             className="tfu-pad-btn tfu-pad-right"
-            onClick={props.onTriggerAbility2}
+            onPointerDown={(e) => { e.stopPropagation(); props.onTriggerAbility2(); }}
           >
             {props.ability2Cooldown > 0 ? (
               <span className="tfu-pad-timer-text">{props.ability2Cooldown}</span>
@@ -365,9 +366,9 @@ export default function GameUI(props: GameUIProps) {
           <button
             type="button"
             className="tfu-pad-btn tfu-pad-bottom"
-            onPointerDown={props.onFirePointerDown}
-            onPointerUp={props.onFirePointerUp}
-            onPointerCancel={props.onFirePointerCancel}
+            onPointerDown={(e) => { e.stopPropagation(); props.onFirePointerDown(); }}
+            onPointerUp={(e) => { e.stopPropagation(); props.onFirePointerUp(); }}
+            onPointerCancel={(e) => { e.stopPropagation(); props.onFirePointerCancel(); }}
           >
             <svg viewBox="0 0 24 24"><path d="M6 6L18 18M18 6L6 18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" /></svg>
           </button>
