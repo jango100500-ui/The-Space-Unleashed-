@@ -72,8 +72,14 @@ export interface DatapadItem {
   pos: THREE.Vector3;
   rotSpeed: THREE.Vector3;
   healPercent: number;
-  locked: boolean;
-  searchTimer: number;
+}
+
+export interface BossDebris {
+  mesh: THREE.Mesh;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  rotSpeed: THREE.Vector3;
+  radius: number;
 }
 
 export interface BossZoneAttack {
@@ -124,6 +130,30 @@ export interface BiomeRunStep {
   fogColor: number;
   planet?: PlanetItem;
 }
+
+export const globPlanetFiles = import.meta.glob<string>(
+  ['/public/planets/*.{png,PNG,jpg,jpeg,webp}', '../../public/planets/*.{png,PNG,jpg,jpeg,webp}'],
+  { eager: true, query: '?url', import: 'default' }
+);
+
+export const discoveredPlanets: PlanetItem[] = Object.entries(globPlanetFiles).map(([filePath, assetUrl]) => {
+  const file = filePath.split('/').pop() || '';
+  const name = file.replace(/\.[^/.]+$/, '');
+  return {
+    name,
+    url: typeof assetUrl === 'string' ? assetUrl : `/planets/${file}`
+  };
+});
+
+export const defaultPlanets: PlanetItem[] = [
+  { name: 'ТАРИС', url: '/planets/taris.png' },
+  { name: 'КОРУСАНТ', url: '/planets/coruscant.png' },
+  { name: 'ТАТУИН', url: '/planets/tatooine.png' },
+  { name: 'МУСТАФАР', url: '/planets/mustafar.png' },
+  { name: 'ЭНДОР', url: '/planets/endor.png' }
+];
+
+export const availablePlanets: PlanetItem[] = discoveredPlanets.length > 0 ? discoveredPlanets : defaultPlanets;
 
 export function generateBiomeRun(planets: PlanetItem[]): BiomeRunStep[] {
   const shuffledPlanets = [...planets].sort(() => Math.random() - 0.5);
