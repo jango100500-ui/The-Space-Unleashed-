@@ -1,10 +1,11 @@
 import React from 'react';
 import HallwayCutscene from '../cutscenes/HallwayCutscene.tsx';
-import type { GeneratorScreenTarget } from './GameData.ts';
 import type { PreloadedAssets } from '../App.tsx';
+import type { GeneratorScreenTarget } from './GameData.ts';
 
 interface GameUIProps {
   assets: PreloadedAssets;
+  mountRef: React.RefObject<HTMLDivElement>;
   curtainVisible: boolean;
   hp: number;
   healBonus: number;
@@ -43,12 +44,13 @@ interface GameUIProps {
   onApplyCheat: () => void;
   onFirePointerDown: () => void;
   onFirePointerUp: () => void;
+  onFirePointerCancel: () => void;
   onHallwayComplete: () => void;
 }
 
 export default function GameUI(props: GameUIProps) {
   return (
-    <>
+    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', backgroundColor: '#000000' }}>
       <style>{`
         .game-curtain { position: absolute; inset: 0; background-color: #000000; pointer-events: none; transition: opacity 0.5s ease-in-out; z-index: 50; }
         .curtain-black { opacity: 1; }
@@ -223,7 +225,7 @@ export default function GameUI(props: GameUIProps) {
             <div className="tracker-line">
               <div className="tracker-line-fill" style={{ width: `${props.currentStage > 2 ? 100 : props.currentStage === 2 ? props.stageProgressPercent : 0}%` }} />
             </div>
-            <div className={`tracker-node ${currentStage >= 3 ? 'active' : ''}`} />
+            <div className={`tracker-node ${props.currentStage >= 3 ? 'active' : ''}`} />
             <div className="tracker-line">
               <div className="tracker-line-fill" style={{ width: `${props.currentStage > 3 ? 100 : props.currentStage === 3 ? props.stageProgressPercent : 0}%` }} />
             </div>
@@ -250,7 +252,7 @@ export default function GameUI(props: GameUIProps) {
           className="tfu-fire-btn"
           onPointerDown={props.onFirePointerDown}
           onPointerUp={props.onFirePointerUp}
-          onPointerCancel={props.onFirePointerUp}
+          onPointerCancel={props.onFirePointerCancel}
         >
           <svg viewBox="0 0 24 24"><path d="M12 2C9.5 2 7.5 4 7.5 6.5v9l4.5 4.5 4.5-4.5v-9C16.5 4 14.5 2 12 2zm0 3c.8 0 1.5.7 1.5 1.5v6h-3v-6c0-.8.7-1.5 1.5-1.5z" /></svg>
         </button>
