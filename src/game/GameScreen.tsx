@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { PreloadedAssets } from '../App.tsx';
 import {
   Enemy, Laser, ExplosionPart, ShockwaveRing, FlashCore, ShieldImpactEffect,
@@ -7,14 +8,16 @@ import {
   PlanetItem, BiomeRunStep, generateBiomeRun, createProceduralPlanetTexture,
   availablePlanets, BiomeType, GeneratorScreenTarget, BossDebris
 } from './GameData.ts';
+import { HANGAR_SHIPS } from '../components/HangarScreen.tsx';
 import GameUI from './GameUI.tsx';
 
 interface GameScreenProps {
   assets: PreloadedAssets;
+  selectedShipId?: string;
   onExit: () => void;
 }
 
-export default function GameScreen({ assets, onExit }: GameScreenProps) {
+export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }: GameScreenProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [curtainVisible, setCurtainVisible] = useState<boolean>(true);
   const [hp, setHp] = useState<number>(100);
@@ -286,11 +289,43 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     let shipBank = 0;
     let shipPitch = 0;
 
-    const playerShip = models.xwing.clone();
-    playerShip.scale.setScalar(0.48);
-    playerShip.position.copy(shipPos);
-    playerShip.rotation.set(0, 0, 0);
-    scene.add(playerShip);
+    const shipHolder = new THREE.Group();
+    shipHolder.position.copy(shipPos);
+    scene.add(shipHolder);
+
+    const gltfLoader = new GLTFLoader();
+    const shipConf = HANGAR_SHIPS.find((s) => s.id === selectedShipId) || HANGAR_SHIPS[0];
+
+    if (selectedShipId === 'xwing') {
+      const xObj = models.xwing.clone();
+      xObj.scale.setScalar(0.48);
+      shipHolder.add(xObj);
+    } else if (shipConf.modelUrl) {
+      gltfLoader.load(
+        shipConf.modelUrl,
+        (gltf) => {
+          if (isDisposed) return;
+          while (shipHolder.children.length > 0) {
+            shipHolder.remove(shipHolder.children[0]);
+          }
+          const loaded = gltf.scene;
+          loaded.scale.setScalar(shipConf.scale);
+          loaded.rotation.set(shipConf.pitch, 0, 0);
+          shipHolder.add(loaded);
+        },
+        undefined,
+        () => {
+          if (isDisposed) return;
+          const fb = models.xwing.clone();
+          fb.scale.setScalar(0.48);
+          shipHolder.add(fb);
+        }
+      );
+    } else {
+      const fb = models.xwing.clone();
+      fb.scale.setScalar(0.48);
+      shipHolder.add(fb);
+    }
 
     const crosshairGeo = new THREE.RingGeometry(0.55, 0.7, 16);
     const crosshairMat = new THREE.MeshBasicMaterial({ color: 0x64b5f6, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
@@ -682,7 +717,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         playerStunDuration -= dt;
         shipPitch += dt * 1.2;
         shipBank += dt * 1.5;
-        playerShip.rotation.set(shipPitch, 0, shipBank);
+        shipHolder.rotation.set(shipPitch, 0, shipBank);
         if (playerStunDuration <= 0) {
           setPlayerStunned(false);
         }
@@ -771,10 +806,10 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         bossCutsceneTimer += dt;
 
         shipPos.z -= 45 * dt;
-        playerShip.position.copy(shipPos);
+        shipHolder.position.copy(shipPos);
 
         camera.position.copy(bossCutsceneCamPos);
-        camera.lookAt(playerShip.position.x, playerShip.position.y, playerShip.position.z - 20);
+        camera.lookAt(shipHolder.position.x, shipHolder.position.y, shipHolder.position.z - 20);
 
         if (bossData) {
           if (bossCutsceneTimer >= 1.5) {
@@ -789,7 +824,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           setBossCutsceneActive(false);
 
           shipPos.set(0, -1.2, 0);
-          playerShip.position.copy(shipPos);
+          shipHolder.position.copy(shipPos);
           camera.position.copy(cameraBase);
 
           setBossActive(true);
@@ -850,7 +885,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       shipPos.x = nextX;
       shipPos.y = nextY;
 
-      playerShip.position.copy(shipPos);
+      shipHolder.position.copy(shipPos);
 
       if (playerStunDuration <= 0) {
         const bankTarget = Math.max(-0.65, Math.min(0.65, -shipVx * 0.038));
@@ -859,7 +894,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         shipBank = THREE.MathUtils.lerp(shipBank, bankTarget, 1 - Math.exp(-6.5 * dt));
         shipPitch = THREE.MathUtils.lerp(shipPitch, pitchTarget, 1 - Math.exp(-6.5 * dt));
 
-        playerShip.rotation.set(shipPitch, 0, shipBank);
+        shipHolder.rotation.set(shipPitch, 0, shipBank);
       }
 
       camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.32, 1 - Math.exp(-6.0 * dt));
@@ -911,7 +946,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         }
       }
 
-      const shipForward = new THREE.Vector3(0, 0, -1).applyEuler(playerShip.rotation).normalize();
+      const shipForward = new THREE.Vector3(0, 0, -1).applyEuler(shipHolder.rotation).normalize();
       const defaultAimDistance = 140;
       let bulletAimTarget = shipPos.clone().addScaledVector(shipForward, defaultAimDistance);
 
@@ -946,8 +981,8 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0) {
         fireCooldown = 0.25;
 
-        const leftOffset = new THREE.Vector3(-0.46, 0, -0.3).applyQuaternion(playerShip.quaternion);
-        const rightOffset = new THREE.Vector3(0.46, 0, -0.3).applyQuaternion(playerShip.quaternion);
+        const leftOffset = new THREE.Vector3(-0.46, 0, -0.3).applyQuaternion(shipHolder.quaternion);
+        const rightOffset = new THREE.Vector3(0.46, 0, -0.3).applyQuaternion(shipHolder.quaternion);
 
         const leftPos = shipPos.clone().add(leftOffset);
         const rightPos = shipPos.clone().add(rightOffset);
@@ -1516,10 +1551,10 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
           setHealBonus(dp.healPercent);
           setTimeout(() => setHealBonus(0), 450);
 
-          playerShip.traverse((c) => {
+          shipHolder.traverse((c) => {
             if ((c as THREE.Mesh).isMesh) {
               const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
-              if (m) {
+              if (m && m.color) {
                 const orig = m.color.getHex();
                 m.color.setHex(0xff7777);
                 setTimeout(() => m.color.setHex(orig), 180);
@@ -1644,12 +1679,22 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       if (activeLightningMesh) {
         scene.remove(activeLightningMesh);
       }
+      if (xwingSource) {
+        try { xwingSource.stop(); } catch {}
+      }
+      if (tieSource) {
+        try { tieSource.stop(); } catch {}
+      }
+      if (bossSoundtrackSourceRef.current) {
+        try { bossSoundtrackSourceRef.current.stop(); } catch {}
+        bossSoundtrackSourceRef.current = null;
+      }
       if (renderer.domElement && renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
       renderer.dispose();
     };
-  }, [assets, onExit]);
+  }, [assets, selectedShipId, onExit]);
 
   const handleStickPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene) return;
@@ -1704,6 +1749,10 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
     playUiSound();
     if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
     if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
+    if (bossSoundtrackSourceRef.current) {
+      try { bossSoundtrackSourceRef.current.stop(); } catch {}
+      bossSoundtrackSourceRef.current = null;
+    }
     setCurtainVisible(true);
     setTimeout(() => {
       onExit();
