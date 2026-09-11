@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { PreloadedAssets } from '../App.tsx';
+import { HANGAR_SHIPS } from '../components/HangarScreen.tsx';
 
 interface IntroCutsceneProps {
   assets: PreloadedAssets;
+  selectedShipId?: string;
   onComplete: () => void;
   onError: (error: string) => void;
 }
 
-export default function IntroCutscene({ assets, onComplete }: IntroCutsceneProps) {
+export default function IntroCutscene({ assets, selectedShipId = 'xwing', onComplete }: IntroCutsceneProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [curtainVisible, setCurtainVisible] = useState<boolean>(true);
 
@@ -144,11 +147,55 @@ export default function IntroCutscene({ assets, onComplete }: IntroCutsceneProps
       });
     };
 
-    const xwing = models.xwing.clone();
-    xwing.scale.setScalar(4.6);
-    tuneTextures(xwing);
-    alignAndSway(xwing, startPos, 0, 0);
-    scene.add(xwing);
+    const playerGroup = new THREE.Group();
+    scene.add(playerGroup);
+
+    const shipConf = HANGAR_SHIPS.find((s) => s.id === selectedShipId) || HANGAR_SHIPS[0];
+    const gltfLoader = new GLTFLoader();
+
+    const attachShipMesh = (mesh: THREE.Group) => {
+      tuneTextures(mesh);
+      const xBox = new THREE.Box3().setFromObject(models.xwing);
+      const xSize = new THREE.Vector3();
+      xBox.getSize(xSize);
+      const xMax = Math.max(xSize.x, xSize.y, xSize.z) || 1;
+
+      const mBox = new THREE.Box3().setFromObject(mesh);
+      const mSize = new THREE.Vector3();
+      mBox.getSize(mSize);
+      const mMax = Math.max(mSize.x, mSize.y, mSize.z) || 1;
+
+      const targetScale = selectedShipId === 'ywing' ? 5.2 : 4.6;
+      const normalizedScale = (xMax / mMax) * targetScale;
+
+      mesh.scale.setScalar(normalizedScale);
+      mesh.rotation.set(shipConf.rot[0], shipConf.rot[1], shipConf.rot[2]);
+      playerGroup.add(mesh);
+    };
+
+    if (selectedShipId === 'xwing') {
+      const xwing = models.xwing.clone();
+      attachShipMesh(xwing);
+    } else if (shipConf.modelUrl) {
+      gltfLoader.load(
+        shipConf.modelUrl,
+        (gltf) => {
+          if (isDisposed) return;
+          attachShipMesh(gltf.scene);
+        },
+        undefined,
+        () => {
+          if (isDisposed) return;
+          const fb = models.xwing.clone();
+          attachShipMesh(fb);
+        }
+      );
+    } else {
+      const fb = models.xwing.clone();
+      attachShipMesh(fb);
+    }
+
+    alignAndSway(playerGroup, startPos, 0, 0);
 
     const tieLeftStart = startPos.clone().addScaledVector(sideNormal, -24);
     const tieLeft = models.tie.clone();
@@ -212,9 +259,9 @@ export default function IntroCutscene({ assets, onComplete }: IntroCutsceneProps
 
       const xDist = elapsed * shipSpeed;
       const xCurrentPos = startPos.clone().addScaledVector(flightDir, xDist);
-      alignAndSway(xwing, xCurrentPos, elapsed, 0);
+      alignAndSway(playerGroup, xCurrentPos, elapsed, 0);
 
-      const xCamDist = xwing.position.distanceTo(cameraBasePos);
+      const xCamDist = playerGroup.position.distanceTo(cameraBasePos);
       if (xCamDist < shakeRadius) {
         const factor = Math.pow(1 - xCamDist / shakeRadius, 2);
         currentShake = Math.max(currentShake, factor * 0.95);
@@ -228,7 +275,7 @@ export default function IntroCutscene({ assets, onComplete }: IntroCutsceneProps
       }
 
       if (elapsed < 1.05) {
-        camera.lookAt(xwing.position.x * 0.9, xwing.position.y, xwing.position.z);
+        camera.lookAt(playerGroup.position.x * 0.9, playerGroup.position.y, playerGroup.position.z);
       } else if (!hasLockedCamera) {
         hasLockedCamera = true;
         camera.getWorldDirection(lockedCameraDir);
@@ -334,7 +381,7 @@ export default function IntroCutscene({ assets, onComplete }: IntroCutsceneProps
       }
       renderer.dispose();
     };
-  }, [assets, onComplete]);
+  }, [assets, selectedShipId, onComplete]);
 
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', backgroundColor: '#000000' }}>
