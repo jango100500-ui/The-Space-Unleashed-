@@ -297,22 +297,18 @@ export default function GameScreen({ assets, selectedShipId = 'xwing', onExit }:
     const shipConf = HANGAR_SHIPS.find((s) => s.id === selectedShipId) || HANGAR_SHIPS[0];
 
     const applyCalculatedScaleAndRot = (targetObj: THREE.Group) => {
-      if (shipConf.id === 'twing') {
-        targetObj.scale.setScalar(0.48);
-      } else {
-        const xBox = new THREE.Box3().setFromObject(models.xwing);
-        const xSize = new THREE.Vector3();
-        xBox.getSize(xSize);
-        const xMax = Math.max(xSize.x, xSize.y, xSize.z) || 1;
+      const xBox = new THREE.Box3().setFromObject(models.xwing);
+      const xSize = new THREE.Vector3();
+      xBox.getSize(xSize);
+      const xMax = Math.max(xSize.x, xSize.y, xSize.z) || 1;
 
-        const mBox = new THREE.Box3().setFromObject(targetObj);
-        const mSize = new THREE.Vector3();
-        mBox.getSize(mSize);
-        const mMax = Math.max(mSize.x, mSize.y, mSize.z) || 1;
+      const mBox = new THREE.Box3().setFromObject(targetObj);
+      const mSize = new THREE.Vector3();
+      mBox.getSize(mSize);
+      const mMax = Math.max(mSize.x, mSize.y, mSize.z) || 1;
 
-        const normalizedScale = (xMax / mMax) * 0.48;
-        targetObj.scale.setScalar(normalizedScale);
-      }
+      const normalizedScale = (xMax / mMax) * 0.48;
+      targetObj.scale.setScalar(normalizedScale);
       targetObj.rotation.set(shipConf.rot[0], shipConf.rot[1], shipConf.rot[2]);
     };
 
