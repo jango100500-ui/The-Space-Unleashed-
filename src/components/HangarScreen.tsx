@@ -17,6 +17,9 @@ export interface HangarShipData {
   modelUrl?: string;
   scale: number;
   rot: [number, number, number];
+  damage: number;
+  fireRate: number;
+  shield: number;
 }
 
 export const HANGAR_SHIPS: HangarShipData[] = [
@@ -25,15 +28,21 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     name: 'X-ВИНГ',
     description: 'Универсальный звездный истребитель T-65B Альянса повстанцев. Баланс скорости, огневой мощи и маневренности.',
     scale: 0.26,
-    rot: [0, 0, 0]
+    rot: [0, 0, 0],
+    damage: 25,
+    fireRate: 40,
+    shield: 0
   },
   {
     id: 'ywing',
     name: 'Y-ВИНГ',
     description: 'Надежный тяжелый истребитель-бомбардировщик BTL-A4. Превосходная прочность корпуса и выносливость в бою.',
     modelUrl: '/models/y-wing.glb',
-    scale: 0.26,
-    rot: [0, Math.PI, 0]
+    scale: 0.32,
+    rot: [0, Math.PI / 2, 0],
+    damage: 35,
+    fireRate: 30,
+    shield: 0
   },
   {
     id: 'slave1',
@@ -41,7 +50,10 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     description: 'Грозный корабль типа «Огневержец-31». Оснащен мощным арсеналом, поворотной кабиной и тяжелой броней.',
     modelUrl: '/models/slave-1.glb',
     scale: 0.26,
-    rot: [0, Math.PI, 0]
+    rot: [0, Math.PI, 0],
+    damage: 50,
+    fireRate: 50,
+    shield: 100
   },
   {
     id: 'beatle',
@@ -49,7 +61,10 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     description: 'Тяжелый штурмовой челнок с усиленным бронированным корпусом и спаренными орудийными системами.',
     modelUrl: '/models/Beatle.glb',
     scale: 0.26,
-    rot: [0, 0, 0]
+    rot: [0, Math.PI, 0],
+    damage: 30,
+    fireRate: 45,
+    shield: 0
   }
 ];
 
@@ -137,8 +152,8 @@ export default function HangarScreen({ assets, selectedShipId, onSelectShip, onB
     scene.fog = new THREE.FogExp2(0x020409, 0.002);
 
     const camera = new THREE.PerspectiveCamera(46, width / height, 0.1, 1000);
-    camera.position.set(-1.2, 1.4, 6.2);
-    camera.lookAt(new THREE.Vector3(-1.0, 0, 0));
+    camera.position.set(0, 1.3, 6.2);
+    camera.lookAt(new THREE.Vector3(0, 0, 0));
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
@@ -158,22 +173,11 @@ export default function HangarScreen({ assets, selectedShipId, onSelectShip, onB
     scene.add(keyLight);
 
     const rimLight = new THREE.PointLight(0x00e5ff, 4.0, 15);
-    rimLight.position.set(-1.0, -1.8, 0);
+    rimLight.position.set(0, -1.8, 0);
     scene.add(rimLight);
 
-    const floorRingGeo = new THREE.RingGeometry(1.8, 2.05, 32);
-    floorRingGeo.rotateX(-Math.PI / 2);
-    const floorRingMat = new THREE.MeshBasicMaterial({ color: 0x00b0ff, side: THREE.DoubleSide, transparent: true, opacity: 0.65 });
-    const floorRing = new THREE.Mesh(floorRingGeo, floorRingMat);
-    floorRing.position.set(-1.0, -1.3, 0);
-    scene.add(floorRing);
-
-    const gridHelper = new THREE.GridHelper(5, 12, 0x00e5ff, 0x15354e);
-    gridHelper.position.set(-1.0, -1.31, 0);
-    scene.add(gridHelper);
-
     const shipHolder = new THREE.Group();
-    shipHolder.position.set(-1.0, 0.1, 0);
+    shipHolder.position.set(0, 0.1, 0);
     scene.add(shipHolder);
     rotatingHolderRef.current = shipHolder;
 
@@ -225,7 +229,8 @@ export default function HangarScreen({ assets, selectedShipId, onSelectShip, onB
       mBox.getSize(mSize);
       const mMax = Math.max(mSize.x, mSize.y, mSize.z) || 1;
 
-      const normalizedScale = (xMax / mMax) * 0.26;
+      const targetScaleRatio = ship.id === 'ywing' ? 0.32 : 0.26;
+      const normalizedScale = (xMax / mMax) * targetScaleRatio;
       cloned.scale.setScalar(normalizedScale);
       cloned.rotation.set(ship.rot[0], ship.rot[1], ship.rot[2]);
 
@@ -258,7 +263,6 @@ export default function HangarScreen({ assets, selectedShipId, onSelectShip, onB
       if (shipHolder) {
         shipHolder.rotation.y += dt * 0.75;
       }
-      floorRing.rotation.z += dt * 0.3;
 
       renderer.render(scene, camera);
       animId = requestAnimationFrame(renderLoop);
@@ -325,7 +329,7 @@ export default function HangarScreen({ assets, selectedShipId, onSelectShip, onB
           inset: 0;
           background: #03060c;
           background-image: 
-            radial-gradient(ellipse at 35% 45%, rgba(10, 60, 110, 0.45) 0%, transparent 65%),
+            radial-gradient(ellipse at 50% 45%, rgba(10, 60, 110, 0.45) 0%, transparent 65%),
             radial-gradient(circle at 80% 30%, rgba(30, 20, 50, 0.4) 0%, transparent 60%);
           display: flex;
           flex-direction: column;
@@ -375,40 +379,80 @@ export default function HangarScreen({ assets, selectedShipId, onSelectShip, onB
           inset: 0;
           z-index: 10;
         }
-        .tfu-hangar-info-window {
+        .tfu-hangar-side-window {
           position: absolute;
-          right: clamp(16px, 4vw, 44px);
           top: 50%;
           transform: translateY(-56%);
-          width: min(340px, 42vw);
+          width: min(250px, 28vw);
           background: #0a111a;
           border: 2px solid #5a738e;
           border-top: 2px solid #8fa9c4;
           border-radius: 0px;
-          padding: 22px 24px;
+          padding: 18px 20px;
           display: flex;
           flex-direction: column;
-          gap: 14px;
+          gap: 12px;
           box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85);
           z-index: 25;
           pointer-events: auto;
         }
-        .tfu-info-name {
+        .tfu-side-left {
+          left: clamp(14px, 3vw, 36px);
+        }
+        .tfu-side-right {
+          right: clamp(14px, 3vw, 36px);
+        }
+        .tfu-window-header {
           font-family: Arial, sans-serif;
-          font-size: clamp(16px, 2vw, 20px);
+          font-size: clamp(13px, 1.5vw, 16px);
           font-weight: 900;
-          letter-spacing: 2.5px;
+          letter-spacing: 2px;
           color: #ffffff;
           text-transform: uppercase;
           border-bottom: 1px solid #233446;
-          padding-bottom: 8px;
+          padding-bottom: 6px;
+        }
+        .tfu-stats-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .tfu-stat-row {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .tfu-stat-info {
+          display: flex;
+          justify-content: space-between;
+          font-family: Arial, sans-serif;
+          font-size: 10px;
+          font-weight: 900;
+          letter-spacing: 1.5px;
+          text-transform: uppercase;
+        }
+        .tfu-stat-name {
+          color: #8faec4;
+        }
+        .tfu-stat-val {
+          color: #64b5f6;
+        }
+        .tfu-stat-track {
+          width: 100%;
+          height: 6px;
+          background: #111a24;
+          border: 1px solid #2a3d52;
+        }
+        .tfu-stat-fill {
+          height: 100%;
+          background: linear-gradient(90deg, #0284c7 0%, #38bdf8 100%);
         }
         .tfu-info-desc {
           font-family: Arial, sans-serif;
-          font-size: clamp(11px, 1.2vw, 13px);
-          line-height: 1.55;
+          font-size: clamp(10px, 1vw, 12px);
+          line-height: 1.5;
           color: #a4b8cc;
-          min-height: 70px;
+          min-height: 65px;
         }
         .tfu-hangar-action-btn {
           width: 100%;
@@ -510,8 +554,41 @@ export default function HangarScreen({ assets, selectedShipId, onSelectShip, onB
 
       <div ref={mountRef} className="tfu-hangar-canvas" />
 
-      <div className="tfu-hangar-info-window">
-        <div className="tfu-info-name">{currentShip.name}</div>
+      <div className="tfu-hangar-side-window tfu-side-left">
+        <div className="tfu-window-header">ХАРАКТЕРИСТИКИ</div>
+        <div className="tfu-stats-list">
+          <div className="tfu-stat-row">
+            <div className="tfu-stat-info">
+              <span className="tfu-stat-name">УРОН</span>
+              <span className="tfu-stat-val">{currentShip.damage}</span>
+            </div>
+            <div className="tfu-stat-track">
+              <div className="tfu-stat-fill" style={{ width: `${(currentShip.damage / 60) * 100}%` }} />
+            </div>
+          </div>
+          <div className="tfu-stat-row">
+            <div className="tfu-stat-info">
+              <span className="tfu-stat-name">ТЕМП ОГНЯ</span>
+              <span className="tfu-stat-val">{currentShip.fireRate}</span>
+            </div>
+            <div className="tfu-stat-track">
+              <div className="tfu-stat-fill" style={{ width: `${(currentShip.fireRate / 60) * 100}%` }} />
+            </div>
+          </div>
+          <div className="tfu-stat-row">
+            <div className="tfu-stat-info">
+              <span className="tfu-stat-name">ЩИТЫ</span>
+              <span className="tfu-stat-val">{currentShip.shield}</span>
+            </div>
+            <div className="tfu-stat-track">
+              <div className="tfu-stat-fill" style={{ width: `${(currentShip.shield / 100) * 100}%`, background: currentShip.shield > 0 ? '#00e5ff' : '#334155' }} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="tfu-hangar-side-window tfu-side-right">
+        <div className="tfu-window-header">{currentShip.name}</div>
         <div className="tfu-info-desc">{currentShip.description}</div>
 
         {!isOwned ? (
