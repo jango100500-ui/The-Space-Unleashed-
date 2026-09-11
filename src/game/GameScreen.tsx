@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { PreloadedAssets } from '../App.tsx';
+import HallwayCutscene from '../cutscenes/HallwayCutscene.tsx';
 
 interface GameScreenProps {
   assets: PreloadedAssets;
@@ -242,6 +243,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   const [isConsoleOpen, setIsConsoleOpen] = useState<boolean>(false);
   const [consoleInput, setConsoleInput] = useState<string>('');
   const [consoleFeedback, setConsoleFeedback] = useState<string>('');
+  const [showHallwayCutscene, setShowHallwayCutscene] = useState<boolean>(false);
 
   const [currentStage, setCurrentStage] = useState<number>(0);
   const [stageProgressPercent, setStageProgressPercent] = useState<number>(0);
@@ -1825,6 +1827,12 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         setConsoleInput('');
         setConsoleFeedback('');
       }, 500);
+    } else if (code === 'akwk3lwo4ks7kp') {
+      setIsConsoleOpen(false);
+      setIsPaused(false);
+      setConsoleInput('');
+      setConsoleFeedback('');
+      setShowHallwayCutscene(true);
     } else {
       setConsoleFeedback('НЕВЕРНЫЙ КОД');
     }
@@ -2130,11 +2138,18 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         }
         .victory-text {
           font-family: Arial, sans-serif;
-          font-size: clamp(28px, 6vw, 46px);
+          font-size: clamp(30px, 7vw, 48px);
           font-weight: 900;
           letter-spacing: 8px;
           color: #ffffff;
           text-transform: uppercase;
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 55;
+          pointer-events: none;
         }
         .no-signal-indicator {
           position: absolute;
@@ -2288,9 +2303,18 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
         <div className="biome-subtext">ВЫХОДИТ ИЗ ГИПЕРПРОСТРАНСТВА</div>
       </div>
 
-      <div className={`biome-banner ${showVictoryText ? 'show-banner' : ''}`}>
+      {showVictoryText && (
         <div className="victory-text">ПОБЕДА!</div>
-      </div>
+      )}
+
+      {showHallwayCutscene && (
+        <HallwayCutscene
+          assets={assets}
+          onComplete={() => {
+            setShowHallwayCutscene(false);
+          }}
+        />
+      )}
 
       {playerStunned && <div className="no-signal-indicator">НЕТ СИГНАЛА</div>}
 
