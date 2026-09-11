@@ -100,6 +100,9 @@ export default function GameScreen({
   const bossCutsceneActiveRef = useRef<boolean>(false);
   const inHallwayRef = useRef<boolean>(false);
 
+  const isDeadRef = useRef<boolean>(false);
+  const isEndingSequenceRef = useRef<boolean>(false);
+
   const inputRef = useRef<{ x: number; y: number; fire: boolean }>({ x: 0, y: 0, fire: false });
   const godModeRef = useRef<boolean>(false);
   const skipToStage4Ref = useRef<boolean>(false);
@@ -199,7 +202,7 @@ export default function GameScreen({
   }, [isFiring]);
 
   const handleTriggerAbility1 = () => {
-    if (isPausedRef.current || playerStunned || ability1CooldownRef.current > 0) return;
+    if (isPausedRef.current || playerStunned || ability1CooldownRef.current > 0 || isDeadRef.current) return;
     if (selectedShipId !== 'xwing') return;
     ability1CooldownRef.current = 25.0;
     setAbility1Cooldown(25);
@@ -207,7 +210,7 @@ export default function GameScreen({
   };
 
   const handleTriggerAbility2 = () => {
-    if (isPausedRef.current || playerStunned || ability2CooldownRef.current > 0) return;
+    if (isPausedRef.current || playerStunned || ability2CooldownRef.current > 0 || isDeadRef.current) return;
     if (selectedShipId !== 'xwing') return;
     ability2CooldownRef.current = 26.0;
     setAbility2Cooldown(26);
@@ -581,7 +584,7 @@ export default function GameScreen({
         if (liveGens.length > 0) {
           activeTargets.push({ pos: liveGens[0].localPos.clone().applyMatrix4(bossData.group.matrixWorld) });
         } else {
-          activeTargets.push({ pos: bossData.pos.clone().add(new THREE.Vector3(0, 4, 30)) });
+          activeTargets.push({ pos: bossData.pos.clone().add(new THREE.Vector3(0, 4, 30)));
         }
       }
 
@@ -816,21 +819,31 @@ export default function GameScreen({
     let activeLightningLife = 0;
 
     const triggerEndGame = (mode: 'defeat' | 'victory') => {
-      isPausedRef.current = true;
-      if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
-      if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
+      if (isEndingSequenceRef.current) return;
+      isEndingSequenceRef.current = true;
 
       const earned = Math.floor(currentScore * 0.12 + currentKills * 35 + currentStagesDone * 150 + (mode === 'victory' ? 600 : 0));
       setCreditsEarned(earned);
       if (onAddCredits) {
         onAddCredits(earned);
       }
-      setEndGameModal(mode);
+
+      setTimeout(() => {
+        if (isDisposed) return;
+        setCurtainVisible(true);
+        setTimeout(() => {
+          if (isDisposed) return;
+          isPausedRef.current = true;
+          if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
+          if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
+          setEndGameModal(mode);
+        }, 400);
+      }, 1000);
     };
 
     const applyDamageToPlayer = (dmg: number) => {
-      if (godModeRef.current) {
-        spawnShieldImpact(shipPos);
+      if (godModeRef.current || isDeadRef.current || inBiomeTransitionRef.current || bossCutsceneActiveRef.current || showHallwayCutscene) {
+        if (godModeRef.current) spawnShieldImpact(shipPos);
         return;
       }
       if (currentShield > 0) {
@@ -844,7 +857,11 @@ export default function GameScreen({
         currentHp = Math.max(0, currentHp - dmg);
         setHp(currentHp);
         shakeIntensity = Math.max(shakeIntensity, 0.55);
-        if (currentHp <= 0) {
+        if (currentHp <= 0 && !isDeadRef.current) {
+          isDeadRef.current = true;
+          spawnRetroExplosion(shipPos, 2.8, true, false);
+          shipHolder.visible = false;
+          crosshairTex.visible = false;
           triggerEndGame('defeat');
         }
       }
@@ -928,7 +945,7 @@ export default function GameScreen({
       const realDt = Math.min((timestamp - lastTime) / 1000, 0.045);
       lastTime = timestamp;
 
-      if (isPausedRef.current || inHallwayRef.current) {
+      if (isPausedRef.current) {
         renderer.render(scene, camera);
         animId = requestAnimationFrame(gameLoop);
         return;
@@ -986,7 +1003,7 @@ export default function GameScreen({
       const currentStep = biomeRunRef.current[stageIdx] || biomeRunRef.current[0];
       const hasLightningBiome = !bossData && !bossCutsceneActiveRef.current && (currentStep.type === 'nebula_storm' || currentStep.type === 'ionic_vapors');
 
-      if (hasLightningBiome) {
+      if (hasLightningBiome && !inBiomeTransitionRef.current && !showHallwayCutscene) {
         lightningTimer += dt;
         if (lightningTimer >= lightningInterval) {
           lightningTimer = 0;
@@ -1014,7 +1031,7 @@ export default function GameScreen({
       }
 
       if (tieEngineGainRef.current) {
-        if (closestTieDistance < 130) {
+        if (closestTieDistance < 130 && !showHallwayCutscene) {
           const factor = Math.max(0, 1 - closestTieDistance / 130);
           tieEngineGainRef.current.gain.value = factor * 0.22;
         } else {
@@ -1023,10 +1040,10 @@ export default function GameScreen({
       }
 
       if (xwingGainRef.current) {
-        xwingGainRef.current.gain.value = 0.14;
+        xwingGainRef.current.gain.value = isDeadRef.current ? 0 : 0.14;
       }
 
-      if (!bossSpawned && stageIdx < 4) {
+      if (!bossSpawned && stageIdx < 4 && !isDeadRef.current) {
         stageTimer += dt;
         const pFrac = Math.min(1, stageTimer / STAGE_DURATION);
         setStageProgressPercent(Math.floor(pFrac * 100));
@@ -1063,7 +1080,7 @@ export default function GameScreen({
             }
           }
         }
-      } else if (!bossSpawned && stageIdx >= 4 && !bossCutsceneActiveRef.current) {
+      } else if (!bossSpawned && stageIdx >= 4 && !bossCutsceneActiveRef.current && !isDeadRef.current) {
         applyStageHeal(25);
         bossSpawned = true;
         bossCutsceneActiveRef.current = true;
@@ -1116,10 +1133,6 @@ export default function GameScreen({
 
           setBossActive(true);
         }
-
-        renderer.render(scene, camera);
-        animId = requestAnimationFrame(gameLoop);
-        return;
       }
 
       if (inBiomeTransitionRef.current) {
@@ -1130,7 +1143,7 @@ export default function GameScreen({
         }
       }
 
-      const activeSpeed = 160;
+      const activeSpeed = (isDeadRef.current && isEndingSequenceRef.current) ? 0 : 160;
       for (let k = 0; k < starCount; k++) {
         const idx = k * 3 + 2;
         starPos[idx] += activeSpeed * dt;
@@ -1144,7 +1157,7 @@ export default function GameScreen({
 
       for (let i = planetMeshes.length - 1; i >= 0; i--) {
         const pl = planetMeshes[i];
-        const pSpeed = pl.userData.speed || 38;
+        const pSpeed = (isDeadRef.current && isEndingSequenceRef.current) ? 0 : (pl.userData.speed || 38);
         pl.position.z += pSpeed * dt;
         pl.rotation.y += 0.001 * dt;
         if (pl.position.z > camera.position.z + pl.userData.radius + 60) {
@@ -1154,43 +1167,47 @@ export default function GameScreen({
         }
       }
 
-      const input = inBiomeTransitionRef.current || playerStunDuration > 0 ? { x: 0, y: 0, fire: false } : inputRef.current;
-      const aspect = window.innerWidth / window.innerHeight;
-      const xRange = Math.max(5.2, Math.min(16.0, 10.0 * aspect * 1.05));
-      const yRange = 8.5;
+      if (!isDeadRef.current) {
+        const input = inBiomeTransitionRef.current || playerStunDuration > 0 || showHallwayCutscene ? { x: 0, y: 0, fire: false } : inputRef.current;
+        const aspect = window.innerWidth / window.innerHeight;
+        const xRange = Math.max(5.2, Math.min(16.0, 10.0 * aspect * 1.05));
+        const yRange = 8.5;
 
-      const targetX = input.x * xRange;
-      const targetY = defaultShipPos.y + input.y * yRange;
+        const targetX = input.x * xRange;
+        const targetY = defaultShipPos.y + input.y * yRange;
 
-      const followDamp = 1 - Math.exp(-5.2 * dt);
-      const nextX = THREE.MathUtils.lerp(shipPos.x, targetX, followDamp);
-      const nextY = THREE.MathUtils.lerp(shipPos.y, targetY, followDamp);
+        const followDamp = 1 - Math.exp(-5.2 * dt);
+        const nextX = THREE.MathUtils.lerp(shipPos.x, targetX, followDamp);
+        const nextY = THREE.MathUtils.lerp(shipPos.y, targetY, followDamp);
 
-      shipVx = (nextX - shipPos.x) / Math.max(dt, 0.001);
-      shipVy = (nextY - shipPos.y) / Math.max(dt, 0.001);
+        shipVx = (nextX - shipPos.x) / Math.max(dt, 0.001);
+        shipVy = (nextY - shipPos.y) / Math.max(dt, 0.001);
 
-      shipPos.x = nextX;
-      shipPos.y = nextY;
+        shipPos.x = nextX;
+        shipPos.y = nextY;
 
-      shipHolder.position.copy(shipPos);
+        shipHolder.position.copy(shipPos);
 
-      if (playerStunDuration <= 0) {
-        const bankTarget = Math.max(-0.65, Math.min(0.65, -shipVx * 0.038));
-        const pitchTarget = Math.max(-0.4, Math.min(0.4, -shipVy * 0.024));
+        if (playerStunDuration <= 0) {
+          const bankTarget = Math.max(-0.65, Math.min(0.65, -shipVx * 0.038));
+          const pitchTarget = Math.max(-0.4, Math.min(0.4, -shipVy * 0.024));
 
-        shipBank = THREE.MathUtils.lerp(shipBank, bankTarget, 1 - Math.exp(-6.5 * dt));
-        shipPitch = THREE.MathUtils.lerp(shipPitch, pitchTarget, 1 - Math.exp(-6.5 * dt));
+          shipBank = THREE.MathUtils.lerp(shipBank, bankTarget, 1 - Math.exp(-6.5 * dt));
+          shipPitch = THREE.MathUtils.lerp(shipPitch, pitchTarget, 1 - Math.exp(-6.5 * dt));
 
-        shipHolder.rotation.set(shipPitch, 0, shipBank);
+          shipHolder.rotation.set(shipPitch, 0, shipBank);
+        }
       }
 
-      camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.32, 1 - Math.exp(-6.0 * dt));
-      camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.32, 1 - Math.exp(-6.0 * dt));
+      if (!bossCutsceneActiveRef.current) {
+        camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraBase.x + shipPos.x * 0.32, 1 - Math.exp(-6.0 * dt));
+        camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.32, 1 - Math.exp(-6.0 * dt));
+      }
 
       let autoTargetPos: THREE.Vector3 | null = null;
       let bestScore = 9999;
 
-      if (playerStunDuration <= 0) {
+      if (playerStunDuration <= 0 && !isDeadRef.current && !showHallwayCutscene) {
         for (const e of enemies) {
           if (e.state === 'attacking' && e.pos.z < shipPos.z - 2) {
             const d = e.pos.distanceTo(shipPos);
@@ -1237,7 +1254,7 @@ export default function GameScreen({
       const defaultAimDistance = 140;
       let bulletAimTarget = shipPos.clone().addScaledVector(shipForward, defaultAimDistance);
 
-      if (playerStunDuration > 0) {
+      if (playerStunDuration > 0 || isDeadRef.current || showHallwayCutscene) {
         crosshairTex.visible = false;
       } else {
         crosshairTex.visible = true;
@@ -1426,7 +1443,7 @@ export default function GameScreen({
       fireCooldown -= dt;
       const calcFireCooldown = THREE.MathUtils.clamp(0.35 - (shipConf.fireRate / 60) * 0.18, 0.14, 0.32);
 
-      if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0) {
+      if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0 && !isDeadRef.current && !showHallwayCutscene) {
         fireCooldown = calcFireCooldown;
 
         const leftOffset = new THREE.Vector3(-0.46, 0, -0.3).applyQuaternion(shipHolder.quaternion);
@@ -1455,7 +1472,7 @@ export default function GameScreen({
 
       const maxSimultaneousEnemies = Math.min(8, 3 + stageIdx);
 
-      if (!inBiomeTransitionRef.current && !bossData) {
+      if (!inBiomeTransitionRef.current && !bossData && !showHallwayCutscene && !isDeadRef.current) {
         spawnTimer += dt;
         const dynamicSpawnInterval = Math.max(1.7, 3.8 - stageIdx * 0.55);
         if (spawnTimer > dynamicSpawnInterval) {
@@ -1553,7 +1570,7 @@ export default function GameScreen({
         }
 
         const newTargetList: GeneratorScreenTarget[] = [];
-        if (!bossData.phase2Active) {
+        if (!bossData.phase2Active && !showHallwayCutscene) {
           for (const gen of bossData.generators) {
             if (!gen.destroyed) {
               const worldGPos = gen.localPos.clone().applyMatrix4(bossData.group.matrixWorld);
@@ -1568,7 +1585,7 @@ export default function GameScreen({
         }
         setGeneratorTargets(newTargetList);
 
-        if (!bossData.raidActive && !bossCutsceneActiveRef.current && !inBiomeTransitionRef.current) {
+        if (!bossData.raidActive && !bossCutsceneActiveRef.current && !inBiomeTransitionRef.current && !showHallwayCutscene && !isDeadRef.current) {
           const isSpecialBusy = zoneAttack.active || tractorBeam.active || isBossExecutingSpecial;
 
           if (!isSpecialBusy) {
@@ -1773,38 +1790,40 @@ export default function GameScreen({
             shakeIntensity = Math.max(shakeIntensity, flybyFactor * 0.7);
           }
 
-          e.shootCooldown -= dt;
-          if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 18 && e.pos.z > -160) {
-            e.shootCooldown = e.isRaid ? 0.9 : e.isElite ? 0.8 + Math.random() * 0.5 : 1.1 + Math.random() * 0.7;
-            const spreadX = (Math.random() - 0.5) * (e.isElite ? 3.0 : 4.5);
-            const spreadY = (Math.random() - 0.5) * (e.isElite ? 2.0 : 3.0);
-            const targetWithSpread = shipPos.clone().add(new THREE.Vector3(spreadX, spreadY, 0));
+          if (!showHallwayCutscene && !isDeadRef.current) {
+            e.shootCooldown -= dt;
+            if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 18 && e.pos.z > -160) {
+              e.shootCooldown = e.isRaid ? 0.9 : e.isElite ? 0.8 + Math.random() * 0.5 : 1.1 + Math.random() * 0.7;
+              const spreadX = (Math.random() - 0.5) * (e.isElite ? 3.0 : 4.5);
+              const spreadY = (Math.random() - 0.5) * (e.isElite ? 2.0 : 3.0);
+              const targetWithSpread = shipPos.clone().add(new THREE.Vector3(spreadX, spreadY, 0));
 
-            const baseLaserDir = new THREE.Vector3().subVectors(targetWithSpread, e.pos).normalize();
+              const baseLaserDir = new THREE.Vector3().subVectors(targetWithSpread, e.pos).normalize();
 
-            const fireSalvo = (offsetZ = 0) => {
-              for (const s of [-0.32, 0.32]) {
-                const lMesh = new THREE.Mesh(greenLaserGeo, greenLaserMat);
-                lMesh.position.set(e.pos.x + s, e.pos.y - 0.05, e.pos.z + 0.8 + offsetZ);
-                lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), baseLaserDir);
-                scene.add(lMesh);
-                lasers.push({ mesh: lMesh, vel: baseLaserDir.clone().multiplyScalar(155), life: 2.2, isEnemy: true });
-              }
-            };
-
-            fireSalvo(0);
-
-            if (e.isRaid) {
-              setTimeout(() => {
-                if (!isDisposed && e.hp > 0 && !bossCutsceneActiveRef.current) {
-                  fireSalvo(-0.5);
+              const fireSalvo = (offsetZ = 0) => {
+                for (const s of [-0.32, 0.32]) {
+                  const lMesh = new THREE.Mesh(greenLaserGeo, greenLaserMat);
+                  lMesh.position.set(e.pos.x + s, e.pos.y - 0.05, e.pos.z + 0.8 + offsetZ);
+                  lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), baseLaserDir);
+                  scene.add(lMesh);
+                  lasers.push({ mesh: lMesh, vel: baseLaserDir.clone().multiplyScalar(155), life: 2.2, isEnemy: true });
                 }
-              }, 110);
-            }
+              };
 
-            const distVolume = Math.max(0, Math.min(0.25, (1 - distToCam / 135) * 0.25));
-            if (distVolume > 0.02) {
-              playBuffer(audioBuffers.tieShot, distVolume, true);
+              fireSalvo(0);
+
+              if (e.isRaid) {
+                setTimeout(() => {
+                  if (!isDisposed && e.hp > 0 && !bossCutsceneActiveRef.current && !showHallwayCutscene) {
+                    fireSalvo(-0.5);
+                  }
+                }, 110);
+              }
+
+              const distVolume = Math.max(0, Math.min(0.25, (1 - distToCam / 135) * 0.25));
+              if (distVolume > 0.02) {
+                playBuffer(audioBuffers.tieShot, distVolume, true);
+              }
             }
           }
 
@@ -1867,14 +1886,7 @@ export default function GameScreen({
 
           if (isHit) {
             l.life = 0;
-
-            const isInvulnerable =
-              inBiomeTransitionRef.current ||
-              bossCutsceneActiveRef.current;
-
-            if (!isInvulnerable) {
-              applyDamageToPlayer(5);
-            }
+            applyDamageToPlayer(5);
           }
         } else {
           let hitAny = false;
@@ -2004,14 +2016,14 @@ export default function GameScreen({
         dp.pos.z += 95 * dt;
 
         const dToPlayer = dp.pos.distanceTo(shipPos);
-        if (dToPlayer < 85) {
+        if (dToPlayer < 85 && !isDeadRef.current) {
           const pullDir = new THREE.Vector3().subVectors(shipPos, dp.pos).normalize();
           dp.pos.addScaledVector(pullDir, 120 * dt);
           dp.pos.lerp(shipPos, dt * 8.0);
         }
         dp.mesh.position.copy(dp.pos);
 
-        const isCloseEnough = dToPlayer < 6.5 || (dp.pos.z >= shipPos.z - 1.5 && Math.hypot(dp.pos.x - shipPos.x, dp.pos.y - shipPos.y) < 5.5);
+        const isCloseEnough = !isDeadRef.current && (dToPlayer < 6.5 || (dp.pos.z >= shipPos.z - 1.5 && Math.hypot(dp.pos.x - shipPos.x, dp.pos.y - shipPos.y) < 5.5));
 
         if (isCloseEnough) {
           currentHp = Math.min(100, currentHp + dp.healPercent);
@@ -2177,7 +2189,7 @@ export default function GameScreen({
   }, [assets, selectedShipId, onExit, onAddCredits]);
 
   const handleStickPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene || endGameModal !== null) return;
+    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene || endGameModal !== null || isDeadRef.current) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     stickTouchId.current = e.pointerId;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -2187,7 +2199,7 @@ export default function GameScreen({
   };
 
   const handleStickMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene || endGameModal !== null || stickTouchId.current !== e.pointerId) return;
+    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene || endGameModal !== null || isDeadRef.current || stickTouchId.current !== e.pointerId) return;
     const dx = e.clientX - stickCenter.current.x;
     const dy = e.clientY - stickCenter.current.y;
     const maxRadius = 55;
@@ -2236,7 +2248,7 @@ export default function GameScreen({
     setCurtainVisible(true);
     setTimeout(() => {
       onExit();
-    }, 450);
+    }, 400);
   };
 
   const handleRestartGame = () => {
@@ -2254,7 +2266,7 @@ export default function GameScreen({
       } else {
         onExit();
       }
-    }, 450);
+    }, 400);
   };
 
   const handleOpenConsole = () => {
@@ -2359,7 +2371,6 @@ export default function GameScreen({
       joystickActive={joystickActive}
       joystickOffset={joystickOffset}
       ability1Cooldown={ability1Cooldown}
-      ability1Active={false}
       ability2Cooldown={ability2Cooldown}
       inBiomeTransition={inBiomeTransition}
       biomeTitle={biomeTitle}
@@ -2392,7 +2403,7 @@ export default function GameScreen({
       onConsoleInputChange={setConsoleInput}
       onApplyCheat={handleApplyCheat}
       onFirePointerDown={() => {
-        if (!inBiomeTransition && !isPaused && !isConsoleOpen && !bossCutsceneActive && !playerStunned && !showHallwayCutscene && endGameModal === null) setIsFiring(true);
+        if (!inBiomeTransition && !isPaused && !isConsoleOpen && !bossCutsceneActive && !playerStunned && !showHallwayCutscene && endGameModal === null && !isDeadRef.current) setIsFiring(true);
       }}
       onFirePointerUp={() => setIsFiring(false)}
       onFirePointerCancel={() => setIsFiring(false)}
