@@ -17,7 +17,7 @@ export interface ShipAbility {
   name: string;
   typeText: string;
   description: string;
-  iconUrl: string;
+  symbol: 'triangle' | 'circle' | 'square' | 'cross';
 }
 
 export type ShipClassType = 'basic' | 'special' | 'unique' | 'bonus';
@@ -59,14 +59,14 @@ export const HANGAR_SHIPS: HangarShipData[] = [
         name: 'РА-ТА-ТА-ТА-ТА',
         typeText: 'БАЗОВАЯ СПОСОБНОСТЬ',
         description: 'Дает эффект скорострельности на 6-9 секунд. Перезарядка: 15 секунд',
-        iconUrl: '/xwing1.png'
+        symbol: 'triangle'
       },
       {
         id: 'proton_torpedo',
         name: 'ПРОТОННАЯ РАКЕТА',
         typeText: 'ОСОБАЯ СПОСОБНОСТЬ',
         description: 'Запускает протонную ракету, которая автоматически наводится и наносит на 40% больше урона. Перезарядка: 20 секунд',
-        iconUrl: '/xwing2.png'
+        symbol: 'circle'
       }
     ]
   },
@@ -577,22 +577,20 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
           border: 1px solid #233446;
           padding: 6px;
         }
-        .tfu-ability-icon-wrapper {
-          width: 36px;
-          height: 36px;
-          min-width: 36px;
-          border: 1px solid #b2c2d4;
-          background: linear-gradient(180deg, #3d586e 0%, #15202b 100%);
+        .tfu-ability-symbol-circle {
+          width: 34px;
+          height: 34px;
+          min-width: 34px;
+          border-radius: 50%;
+          border: 1px solid rgba(255, 255, 255, 0.4);
+          background: rgba(255, 255, 255, 0.12);
           display: flex;
           align-items: center;
           justify-content: center;
-          overflow: hidden;
         }
-        .tfu-ability-icon {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
+        .tfu-ability-symbol-circle svg {
+          width: 16px;
+          height: 16px;
         }
         .tfu-ability-content {
           display: flex;
@@ -780,15 +778,12 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
               <div className="tfu-abilities-list">
                 {currentShip.abilities.map((ab) => (
                   <div key={ab.id} className="tfu-ability-item">
-                    <div className="tfu-ability-icon-wrapper">
-                      <img
-                        src={ab.iconUrl}
-                        alt={ab.name}
-                        className="tfu-ability-icon"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
-                        }}
-                      />
+                    <div className="tfu-ability-symbol-circle">
+                      {ab.symbol === 'triangle' ? (
+                        <svg viewBox="0 0 24 24"><polygon points="12,5 20,19 4,19" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinejoin="round" /></svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" fill="none" stroke="#ffffff" strokeWidth="2.5" /></svg>
+                      )}
                     </div>
                     <div className="tfu-ability-content">
                       <div className="tfu-ability-name">{ab.name}</div>
