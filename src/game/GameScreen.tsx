@@ -67,19 +67,11 @@ interface DatapadItem {
 }
 
 interface ShieldGenerator {
-  id: number;
+  mesh: THREE.Mesh;
   localPos: THREE.Vector3;
   hp: number;
   maxHp: number;
   destroyed: boolean;
-  fireParticles: THREE.Points;
-}
-
-interface GeneratorScreenTarget {
-  id: number;
-  x: number;
-  y: number;
-  visible: boolean;
 }
 
 interface BossZoneAttack {
@@ -386,7 +378,42 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
   };
 
   const playUiSound = () => {
-    playBuffer(assets.audioBuffers.click, 0.4);
+    if (!assets.audioBuffers.click) return;
+    try {
+      const { audioCtx } = assets;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const src = audioCtx.createBufferSource();
+      src.buffer = assets.audioBuffers.click;
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0.5;
+      src.connect(gain);
+      gain.connect(audioCtx.destination);
+      src.start(0);
+    } catch {
+      return;
+    }
+  };
+
+  const playTone = (freq: number, endFreq: number, dur: number, vol = 0.15, type: OscillatorType = 'sawtooth') => {
+    if (!assets.audioCtx || isPausedRef.current) return;
+    try {
+      const ctx = assets.audioCtx;
+      if (ctx.state === 'suspended') ctx.resume();
+      const t = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t);
+      osc.frequency.exponentialRampToValueAtTime(endFreq, t + dur);
+      gain.gain.setValueAtTime(vol, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + dur);
+    } catch {
+      return;
+    }
   };
 
   useEffect(() => {
