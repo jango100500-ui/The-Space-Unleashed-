@@ -11,6 +11,12 @@ interface GameUIProps {
   maxShield: number;
   shieldHp: number;
   healBonus: number;
+  score: number;
+  enemiesKilled: number;
+  damageDealt: number;
+  stagesCompleted: number;
+  creditsEarned: number;
+  endGameModal: 'defeat' | 'victory' | null;
   joystickActive: boolean;
   joystickOffset: { x: number; y: number };
   inBiomeTransition: boolean;
@@ -39,6 +45,7 @@ interface GameUIProps {
   onResume: () => void;
   onOpenConsole: () => void;
   onCloseConsole: () => void;
+  onRestartGame: () => void;
   onQuit: () => void;
   onConsoleInputChange: (val: string) => void;
   onApplyCheat: () => void;
@@ -87,9 +94,11 @@ export default function GameUI(props: GameUIProps) {
         .tfu-boss-hp-fill.raid { background: #ffffff; }
         .tfu-boss-raid-subtext { font-family: Arial, sans-serif; font-size: 9px; font-weight: 900; letter-spacing: 2px; color: #ff4757; text-shadow: 0 1px 3px #000; text-transform: uppercase; margin-top: 2px; animation: blinkRaidText 0.5s infinite alternate; }
         @keyframes blinkRaidText { from { opacity: 0.65; } to { opacity: 1; } }
-        .tfu-pause-btn { position: absolute; top: 12px; right: 18px; background: linear-gradient(180deg, #3d586e 0%, #15202b 100%); border: 1px solid #6e8fa8; color: #8faec4; padding: 4px 22px; clip-path: polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%); display: flex; align-items: center; justify-content: center; cursor: pointer; height: 28px; pointer-events: auto; }
+        .tfu-top-right-group { position: absolute; top: 12px; right: 18px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: auto; }
+        .tfu-pause-btn { background: linear-gradient(180deg, #3d586e 0%, #15202b 100%); border: 1px solid #6e8fa8; color: #8faec4; padding: 4px 22px; clip-path: polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%); display: flex; align-items: center; justify-content: center; cursor: pointer; height: 28px; }
         .tfu-pause-btn:active { filter: brightness(1.2); }
         .tfu-pause-btn svg { width: 14px; height: 14px; fill: currentColor; }
+        .tfu-score-display { font-family: monospace; font-size: 13px; font-weight: 900; letter-spacing: 2px; color: #ffffff; text-shadow: 0 0 6px rgba(100, 181, 246, 0.7); background: rgba(5, 12, 20, 0.75); border: 1px solid #3d586e; border-radius: 0px; padding: 3px 10px; }
         .tfu-joystick-zone { position: absolute; left: 25px; bottom: 20px; width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(circle, rgba(20, 35, 55, 0.4) 0%, rgba(5, 12, 20, 0.2) 70%, transparent 100%); border: 2px solid rgba(120, 160, 200, 0.35); display: flex; align-items: center; justify-content: center; pointer-events: auto; touch-action: none; opacity: 0.35; transition: opacity 0.2s ease; }
         .tfu-joystick-zone.active { opacity: 0.95; border-color: rgba(120, 180, 255, 0.8); }
         .tfu-joystick-knob { width: 46px; height: 46px; border-radius: 50%; background: linear-gradient(180deg, #415b76 0%, #1a2735 100%); border: 2px solid #8faec4; pointer-events: none; }
@@ -123,6 +132,14 @@ export default function GameUI(props: GameUIProps) {
         .console-desc { font-family: Arial, sans-serif; font-size: 11px; letter-spacing: 1px; color: #8faec4; text-align: center; }
         .console-input { width: 100%; background: #060b10; border: 1px solid #3d586e; border-radius: 0px; color: #ffffff; padding: 9px 12px; font-family: monospace; font-size: 13px; letter-spacing: 2px; text-align: center; outline: none; }
         .console-feedback { font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; letter-spacing: 1.5px; color: #ff4757; min-height: 14px; }
+        .end-modal-box { background: #0b141e; border: 2px solid #5a738e; border-top: 2px solid #8fa9c4; border-radius: 0px; padding: 24px 30px; width: min(380px, 85vw); display: flex; flex-direction: column; gap: 16px; box-shadow: 0 15px 40px rgba(0, 0, 0, 0.95); z-index: 90; }
+        .end-title-defeat { font-family: Arial, sans-serif; font-size: 24px; font-weight: 900; letter-spacing: 4px; color: #ff3838; text-transform: uppercase; text-align: center; border-bottom: 1px solid #3b141a; padding-bottom: 8px; }
+        .end-title-victory { font-family: Arial, sans-serif; font-size: 24px; font-weight: 900; letter-spacing: 4px; color: #00e5ff; text-transform: uppercase; text-align: center; border-bottom: 1px solid #14354b; padding-bottom: 8px; }
+        .end-stats-rows { display: flex; flex-direction: column; gap: 8px; }
+        .end-stat-line { display: flex; justify-content: space-between; font-family: Arial, sans-serif; font-size: 12px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: #8faec4; }
+        .end-stat-val { color: #ffffff; font-family: monospace; font-size: 14px; }
+        .end-stat-credits { color: #f1c40f; }
+        .end-actions-row { display: flex; gap: 10px; margin-top: 6px; }
       `}</style>
 
       <div className={`game-curtain ${props.curtainVisible ? 'curtain-black' : 'curtain-clear'}`} />
@@ -159,7 +176,43 @@ export default function GameUI(props: GameUIProps) {
 
       {props.playerStunned && <div className="no-signal-indicator">НЕТ СИГНАЛА</div>}
 
-      {props.isPaused && !props.isConsoleOpen && (
+      {props.endGameModal && (
+        <div className="pause-overlay" style={{ zIndex: 95 }}>
+          <div className="end-modal-box">
+            <div className={props.endGameModal === 'defeat' ? 'end-title-defeat' : 'end-title-victory'}>
+              {props.endGameModal === 'defeat' ? 'ПОРАЖЕНИЕ' : 'ПОБЕДА'}
+            </div>
+            <div className="end-stats-rows">
+              <div className="end-stat-line">
+                <span>СБИТО ВРАГОВ:</span>
+                <span className="end-stat-val">{props.enemiesKilled}</span>
+              </div>
+              <div className="end-stat-line">
+                <span>НАНЕСЕНО УРОНА:</span>
+                <span className="end-stat-val">{props.damageDealt}</span>
+              </div>
+              <div className="end-stat-line">
+                <span>СЧЕТ:</span>
+                <span className="end-stat-val">{props.score}</span>
+              </div>
+              <div className="end-stat-line">
+                <span>ПРОЙДЕНО ЭТАПОВ:</span>
+                <span className="end-stat-val">{props.stagesCompleted}</span>
+              </div>
+              <div className="end-stat-line" style={{ borderTop: '1px dashed #233446', paddingTop: '6px' }}>
+                <span style={{ color: '#f1c40f' }}>ЗАРАБОТАНО КРЕДИТОВ:</span>
+                <span className="end-stat-val end-stat-credits">+{props.creditsEarned}</span>
+              </div>
+            </div>
+            <div className="end-actions-row">
+              <button type="button" className="pause-button pause-btn-primary" onClick={props.onRestartGame}>ЕЩЕ РАЗ</button>
+              <button type="button" className="pause-button pause-btn-secondary" onClick={props.onQuit}>В МЕНЮ</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {props.isPaused && !props.isConsoleOpen && !props.endGameModal && (
         <div className="pause-overlay">
           <div className="pause-title">ИГРА НА ПАУЗЕ</div>
           <div className="pause-menu-list">
@@ -170,7 +223,7 @@ export default function GameUI(props: GameUIProps) {
         </div>
       )}
 
-      {props.isPaused && props.isConsoleOpen && (
+      {props.isPaused && props.isConsoleOpen && !props.endGameModal && (
         <div className="pause-overlay">
           <div className="console-window">
             <div className="console-title">КОНСОЛЬ</div>
@@ -191,7 +244,7 @@ export default function GameUI(props: GameUIProps) {
         </div>
       )}
 
-      <div className={`tfu-hud ${props.inBiomeTransition || props.isPaused || props.isConsoleOpen || props.bossCutsceneActive ? 'hidden-hud' : ''}`}>
+      <div className={`tfu-hud ${props.inBiomeTransition || props.isPaused || props.isConsoleOpen || props.bossCutsceneActive || props.endGameModal ? 'hidden-hud' : ''}`}>
         <div className="tfu-hp-container">
           <div className="tfu-hp-label">HULL INTEGRITY</div>
           <div className="tfu-hp-frame">
@@ -244,9 +297,12 @@ export default function GameUI(props: GameUIProps) {
           </div>
         )}
 
-        <button type="button" className="tfu-pause-btn" onClick={props.onTogglePause}>
-          <svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-        </button>
+        <div className="tfu-top-right-group">
+          <button type="button" className="tfu-pause-btn" onClick={props.onTogglePause}>
+            <svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+          </button>
+          <div className="tfu-score-display">СЧЕТ: {String(props.score).padStart(6, '0')}</div>
+        </div>
 
         <div
           className={`tfu-joystick-zone ${props.joystickActive ? 'active' : ''}`}
