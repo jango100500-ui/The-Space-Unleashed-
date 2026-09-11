@@ -11,11 +11,21 @@ import {
 import { HANGAR_SHIPS } from '../components/HangarScreen.tsx';
 import GameUI from './GameUI.tsx';
 
-interface Torpedo {
+interface ProtonBomb {
   mesh: THREE.Mesh;
   vel: THREE.Vector3;
-  targetPos: THREE.Vector3 | null;
+  targetPos: THREE.Vector3;
+  targetRef: Enemy | null;
+  speed: number;
   life: number;
+}
+
+interface WingmanState {
+  mesh: THREE.Group;
+  life: number;
+  state: 'entering' | 'escorting' | 'exiting';
+  fireCooldown: number;
+  droppedBomb: boolean;
 }
 
 interface GameScreenProps {
@@ -58,9 +68,9 @@ export default function GameScreen({
   const [ability2Cooldown, setAbility2Cooldown] = useState<number>(0);
 
   const ability1CooldownRef = useRef<number>(0);
-  const ability1ActiveTimerRef = useRef<number>(0);
   const ability2CooldownRef = useRef<number>(0);
-  const triggerTorpedoRef = useRef<boolean>(false);
+  const triggerBombRef = useRef<boolean>(false);
+  const triggerWingmanRef = useRef<boolean>(false);
 
   const [inBiomeTransition, setInBiomeTransition] = useState<boolean>(false);
   const [biomeTitle, setBiomeTitle] = useState<string>('');
@@ -190,20 +200,19 @@ export default function GameScreen({
   const handleTriggerAbility1 = () => {
     if (isPausedRef.current || playerStunned || ability1CooldownRef.current > 0) return;
     if (selectedShipId !== 'xwing') return;
-    playTone(480, 780, 0.2, 0.25, 'triangle');
-    ability1CooldownRef.current = 15.0;
-    ability1ActiveTimerRef.current = 7.5;
-    setAbility1Cooldown(15);
+    playTone(600, 920, 0.25, 0.35, 'sine');
+    ability1CooldownRef.current = 45.0;
+    setAbility1Cooldown(45);
     setAbility1Active(true);
+    triggerWingmanRef.current = true;
   };
 
   const handleTriggerAbility2 = () => {
     if (isPausedRef.current || playerStunned || ability2CooldownRef.current > 0) return;
     if (selectedShipId !== 'xwing') return;
-    playTone(320, 180, 0.35, 0.3, 'sawtooth');
-    ability2CooldownRef.current = 20.0;
-    setAbility2Cooldown(20);
-    triggerTorpedoRef.current = true;
+    ability2CooldownRef.current = 26.0;
+    setAbility2Cooldown(26);
+    triggerBombRef.current = true;
   };
 
   useEffect(() => {
@@ -411,16 +420,15 @@ export default function GameScreen({
     greenLaserGeo.rotateX(Math.PI / 2);
     const greenLaserMat = new THREE.MeshBasicMaterial({ color: 0x22ff44 });
 
-    const torpedoGeo = new THREE.CylinderGeometry(0.12, 0.12, 1.6, 8);
-    torpedoGeo.rotateX(Math.PI / 2);
-    const torpedoMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff });
+    const bombGeo = new THREE.SphereGeometry(0.32, 16, 16);
+    const bombMat = new THREE.MeshBasicMaterial({ color: 0xff2a8d });
 
     const flashCoreGeo = new THREE.IcosahedronGeometry(1.8, 1);
     const flashCoreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
     const shockRingGeo = new THREE.RingGeometry(0.5, 1.4, 18);
     const shockRingMat = new THREE.MeshBasicMaterial({ color: 0xff8822, side: THREE.DoubleSide, transparent: true, opacity: 0.95 });
-    const shockRingGreenMat = new THREE.MeshBasicMaterial({ color: 0x22ff44, side: THREE.DoubleSide, transparent: true, opacity: 0.95 });
+    const shockRingPinkMat = new THREE.MeshBasicMaterial({ color: 0xff3388, side: THREE.DoubleSide, transparent: true, opacity: 0.95 });
 
     const debrisPieceGeo = new THREE.DodecahedronGeometry(0.65, 0);
     const debrisMats = [
@@ -429,11 +437,11 @@ export default function GameScreen({
       new THREE.MeshBasicMaterial({ color: 0xd32f2f }),
       new THREE.MeshBasicMaterial({ color: 0x8a9ba8 })
     ];
-    const debrisMatsGreen = [
-      new THREE.MeshBasicMaterial({ color: 0x33ff44 }),
-      new THREE.MeshBasicMaterial({ color: 0x88ff66 }),
-      new THREE.MeshBasicMaterial({ color: 0x11cc33 }),
-      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    const debrisMatsPink = [
+      new THREE.MeshBasicMaterial({ color: 0xff2a8d }),
+      new THREE.MeshBasicMaterial({ color: 0xff7722 }),
+      new THREE.MeshBasicMaterial({ color: 0xffffff }),
+      new THREE.MeshBasicMaterial({ color: 0xec4899 })
     ];
 
     const shieldRippleGeo = new THREE.RingGeometry(0.4, 2.1, 24);
@@ -452,7 +460,7 @@ export default function GameScreen({
     ];
 
     const lasers: Laser[] = [];
-    const torpedoes: Torpedo[] = [];
+    const protonBombs: ProtonBomb[] = [];
     const enemies: Enemy[] = [];
     const debrisList: ExplosionPart[] = [];
     const shockwaves: ShockwaveRing[] = [];
@@ -460,6 +468,8 @@ export default function GameScreen({
     const shieldImpacts: ShieldImpactEffect[] = [];
     const datapads: DatapadItem[] = [];
     const bossSpaceDebris: BossDebris[] = [];
+
+    let wingman: WingmanState | null = null;
 
     const zoneAttack: BossZoneAttack = { active: false, timer: 0, duration: 1.6, xMin: -4, xMax: 4, fired: false };
     const tractorBeam: BossTractorBeam = { active: false, timer: 0, duration: 1.8, xMin: -6, xMax: 6, fired: false };
@@ -473,7 +483,7 @@ export default function GameScreen({
       shieldImpacts.push({ mesh: sMesh, life: 0.24, maxLife: 0.24 });
     };
 
-    const spawnRetroExplosion = (pos: THREE.Vector3, scale = 1.0, withLight = true, isGreen = false) => {
+    const spawnRetroExplosion = (pos: THREE.Vector3, scale = 1.0, withLight = true, isPink = false) => {
       const flashMesh = new THREE.Mesh(flashCoreGeo, flashCoreMat);
       flashMesh.position.copy(pos);
       flashMesh.scale.setScalar(2.2 * scale);
@@ -481,20 +491,20 @@ export default function GameScreen({
 
       let expLight: THREE.PointLight | undefined = undefined;
       if (withLight) {
-        expLight = new THREE.PointLight(isGreen ? 0x22ff44 : 0xff6622, 5.0 * scale, 55 * scale);
+        expLight = new THREE.PointLight(isPink ? 0xff2a8d : 0xff6622, 5.0 * scale, 55 * scale);
         expLight.position.copy(pos);
         scene.add(expLight);
       }
 
       flashCores.push({ mesh: flashMesh, light: expLight, life: 0.14, maxLife: 0.14 });
 
-      const ringMesh = new THREE.Mesh(shockRingGeo, isGreen ? shockRingGreenMat.clone() : shockRingMat.clone());
+      const ringMesh = new THREE.Mesh(shockRingGeo, isPink ? shockRingPinkMat.clone() : shockRingMat.clone());
       ringMesh.position.copy(pos);
       ringMesh.rotation.set((Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8, Math.random() * Math.PI);
       scene.add(ringMesh);
       shockwaves.push({ mesh: ringMesh, life: 0.38, maxLife: 0.38, scaleSpeed: 28.0 * scale });
 
-      const currentDebrisMats = isGreen ? debrisMatsGreen : debrisMats;
+      const currentDebrisMats = isPink ? debrisMatsPink : debrisMats;
       const debrisCount = withLight ? 16 : 8;
       for (let i = 0; i < debrisCount; i++) {
         const mat = currentDebrisMats[i % currentDebrisMats.length];
@@ -508,6 +518,58 @@ export default function GameScreen({
       }
 
       playBuffer(audioBuffers.explode, 0.42, true);
+    };
+
+    const spawnProtonBomb = (origin: THREE.Vector3, forcedTargetPos?: THREE.Vector3, forcedTargetRef?: Enemy | null) => {
+      let chosenTargetPos = forcedTargetPos ? forcedTargetPos.clone() : null;
+      let chosenTargetRef = forcedTargetRef !== undefined ? forcedTargetRef : null;
+
+      if (!chosenTargetPos) {
+        if (enemies.length > 0) {
+          const live = enemies.filter((e) => e.state === 'attacking' && e.pos.z < shipPos.z - 4);
+          if (live.length > 0) {
+            live.sort((a, b) => a.pos.distanceTo(origin) - b.pos.distanceTo(origin));
+            const candidatePool = live.slice(0, Math.min(3, live.length));
+            const pick = candidatePool[Math.floor(Math.random() * candidatePool.length)];
+            chosenTargetRef = pick;
+            chosenTargetPos = pick.pos.clone();
+          }
+        }
+        if (!chosenTargetPos && bossData && !bossData.destroyed && !bossData.raidActive) {
+          const liveGens = bossData.generators.filter((g) => !g.destroyed);
+          if (liveGens.length > 0) {
+            const gPick = liveGens[Math.floor(Math.random() * liveGens.length)];
+            chosenTargetPos = gPick.localPos.clone().applyMatrix4(bossData.group.matrixWorld);
+          } else {
+            chosenTargetPos = bossData.pos.clone().add(new THREE.Vector3(0, 4, 30));
+          }
+        }
+      }
+
+      if (!chosenTargetPos) {
+        chosenTargetPos = origin.clone().add(new THREE.Vector3(0, 0, -180));
+      }
+
+      const bMesh = new THREE.Mesh(bombGeo, bombMat);
+      bMesh.position.copy(origin);
+      scene.add(bMesh);
+
+      const initDir = new THREE.Vector3().subVectors(chosenTargetPos, origin).normalize();
+
+      protonBombs.push({
+        mesh: bMesh,
+        vel: initDir.multiplyScalar(35),
+        targetPos: chosenTargetPos,
+        targetRef: chosenTargetRef,
+        speed: 35,
+        life: 5.0
+      });
+
+      if (audioBuffers.proton) {
+        playBuffer(audioBuffers.proton, 0.45);
+      } else {
+        playTone(320, 160, 0.4, 0.35, 'sawtooth');
+      }
     };
 
     const spawnDatapad = (dropPos: THREE.Vector3) => {
@@ -540,7 +602,10 @@ export default function GameScreen({
       const startY = (Math.random() - 0.5) * 12;
       const startZ = -240 - Math.random() * 40;
 
-      const baseMesh = isRaid ? (models.tie2 ? models.tie2.clone() : models.tie.clone()) : models.tie.clone();
+      const allowTie2 = stageRef.current >= 2 && Math.random() < 0.45;
+      const useTie2Mesh = isRaid ? true : allowTie2;
+
+      const baseMesh = useTie2Mesh ? (models.tie2 ? models.tie2.clone() : models.tie.clone()) : models.tie.clone();
       baseMesh.scale.setScalar(0.42);
       scene.add(baseMesh);
 
@@ -548,7 +613,7 @@ export default function GameScreen({
       const vertLane = defaultShipPos.y + (Math.random() > 0.5 ? 1 : -1) * (5 + Math.random() * 5);
 
       enemySpawnCounter++;
-      const isElite = !isRaid && enemySpawnCounter % 2 === 0;
+      const isElite = !isRaid && (useTie2Mesh || enemySpawnCounter % 2 === 0);
       const baseHp = isRaid ? 7 : isElite ? 6 : 4;
 
       enemies.push({
@@ -557,8 +622,8 @@ export default function GameScreen({
         pos: new THREE.Vector3(startX, startY, startZ),
         targetX: lateralLane,
         targetY: vertLane,
-        speed: 40 + stageRef.current * 2 + Math.random() * 6,
-        shootCooldown: isRaid ? 0.9 : isElite ? 0.7 + Math.random() * 0.5 : 1.0 + Math.random() * 0.7,
+        speed: 42 + stageRef.current * 3 + Math.random() * 6,
+        shootCooldown: isRaid ? 0.9 : isElite ? 0.65 + Math.random() * 0.45 : 0.95 + Math.random() * 0.6,
         side,
         loopProgress: 0,
         seed: Math.random() * 10,
@@ -775,13 +840,6 @@ export default function GameScreen({
         ability1CooldownRef.current = Math.max(0, ability1CooldownRef.current - dt);
         setAbility1Cooldown(Math.ceil(ability1CooldownRef.current));
       }
-      if (ability1ActiveTimerRef.current > 0) {
-        ability1ActiveTimerRef.current = Math.max(0, ability1ActiveTimerRef.current - dt);
-        if (ability1ActiveTimerRef.current <= 0) {
-          setAbility1Active(false);
-        }
-      }
-
       if (ability2CooldownRef.current > 0) {
         ability2CooldownRef.current = Math.max(0, ability2CooldownRef.current - dt);
         setAbility2Cooldown(Math.ceil(ability2CooldownRef.current));
@@ -1105,79 +1163,166 @@ export default function GameScreen({
         }
       }
 
-      if (triggerTorpedoRef.current) {
-        triggerTorpedoRef.current = false;
-        const tMesh = new THREE.Mesh(torpedoGeo, torpedoMat);
-        tMesh.position.copy(shipPos).add(new THREE.Vector3(0, -0.2, -0.6));
-        tMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), shipForward);
-        scene.add(tMesh);
-        torpedoes.push({
-          mesh: tMesh,
-          vel: shipForward.clone().multiplyScalar(260),
-          targetPos: autoTargetPos ? autoTargetPos.clone() : null,
-          life: 3.5
-        });
+      if (triggerBombRef.current) {
+        triggerBombRef.current = false;
+        spawnProtonBomb(shipPos.clone().add(new THREE.Vector3(0, -0.3, -0.6)));
       }
 
-      for (let tIdx = torpedoes.length - 1; tIdx >= 0; tIdx--) {
-        const torp = torpedoes[tIdx];
-        torp.life -= dt;
+      if (triggerWingmanRef.current) {
+        triggerWingmanRef.current = false;
+        const wMesh = models.xwing.clone();
+        wMesh.scale.setScalar(0.48);
+        wMesh.position.set(shipPos.x - 18, shipPos.y - 4, shipPos.z + 28);
+        scene.add(wMesh);
+        wingman = {
+          mesh: wMesh,
+          life: 7.0,
+          state: 'entering',
+          fireCooldown: 0.2,
+          droppedBomb: false
+        };
+      }
 
-        if (torp.targetPos) {
-          const desiredDir = new THREE.Vector3().subVectors(torp.targetPos, torp.mesh.position).normalize();
-          torp.vel.lerp(desiredDir.multiplyScalar(320), dt * 6.5);
-          torp.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), torp.vel.clone().normalize());
+      if (wingman) {
+        wingman.life -= dt;
+        const targetFormationPos = new THREE.Vector3(shipPos.x - 3.4, shipPos.y + 0.1, shipPos.z + 0.4);
+
+        if (wingman.life <= 0) {
+          scene.remove(wingman.mesh);
+          wingman = null;
+          setAbility1Active(false);
+        } else if (wingman.life <= 1.4) {
+          wingman.state = 'exiting';
+          wingman.mesh.position.x -= 22 * dt;
+          wingman.mesh.position.y += 12 * dt;
+          wingman.mesh.position.z -= 180 * dt;
+          wingman.mesh.rotation.z = 0.45;
+          wingman.mesh.rotation.x = -0.2;
+        } else if (wingman.state === 'entering') {
+          wingman.mesh.position.lerp(targetFormationPos, dt * 4.8);
+          wingman.mesh.rotation.set(shipPitch, 0, shipBank);
+          if (wingman.mesh.position.distanceTo(targetFormationPos) < 1.2) {
+            wingman.state = 'escorting';
+          }
+        } else {
+          wingman.mesh.position.lerp(targetFormationPos, dt * 7.5);
+          wingman.mesh.rotation.set(shipPitch, 0, shipBank);
+
+          wingman.fireCooldown -= dt;
+          if (wingman.fireCooldown <= 0) {
+            wingman.fireCooldown = 0.22;
+            const wLeft = wingman.mesh.position.clone().add(new THREE.Vector3(-0.4, 0, -0.3));
+            const wRight = wingman.mesh.position.clone().add(new THREE.Vector3(0.4, 0, -0.3));
+            const wDir = bulletAimTarget ? new THREE.Vector3().subVectors(bulletAimTarget, wingman.mesh.position).normalize() : shipForward;
+
+            const l1 = new THREE.Mesh(redLaserGeo, redLaserMat);
+            l1.position.copy(wLeft);
+            l1.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), wDir);
+            scene.add(l1);
+            lasers.push({ mesh: l1, vel: wDir.clone().multiplyScalar(640), life: 1.0, isEnemy: false });
+
+            const l2 = new THREE.Mesh(redLaserGeo, redLaserMat);
+            l2.position.copy(wRight);
+            l2.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), wDir);
+            scene.add(l2);
+            lasers.push({ mesh: l2, vel: wDir.clone().multiplyScalar(640), life: 1.0, isEnemy: false });
+          }
+
+          if (wingman.life <= 2.2 && !wingman.droppedBomb) {
+            wingman.droppedBomb = true;
+            spawnProtonBomb(wingman.mesh.position.clone().add(new THREE.Vector3(0, -0.2, -0.5)));
+          }
+        }
+      }
+
+      for (let bIdx = protonBombs.length - 1; bIdx >= 0; bIdx--) {
+        const bomb = protonBombs[bIdx];
+        bomb.life -= dt;
+
+        if (bomb.targetRef && bomb.targetRef.hp > 0 && bomb.targetRef.state === 'attacking') {
+          bomb.targetPos.copy(bomb.targetRef.pos);
         }
 
-        torp.mesh.position.addScaledVector(torp.vel, dt);
+        const toTarget = new THREE.Vector3().subVectors(bomb.targetPos, bomb.mesh.position);
+        const distToTarget = toTarget.length();
 
-        let torpHit = false;
-        for (let j = enemies.length - 1; j >= 0; j--) {
-          const e = enemies[j];
-          if (torp.mesh.position.distanceTo(e.pos) < 4.2) {
-            torpHit = true;
-            const dealt = Math.floor((shipConf.damage >= 45 ? 4 : 3) * 1.4);
-            e.hp -= dealt;
-            currentDamage += dealt * 35;
+        bomb.speed = THREE.MathUtils.lerp(bomb.speed, 360, dt * 3.8);
+
+        const trackDamp = THREE.MathUtils.clamp(dt * (14.0 + (1.0 / Math.max(0.2, distToTarget)) * 45.0), 0, 1);
+        const desiredDir = toTarget.normalize();
+        bomb.vel.lerp(desiredDir.multiplyScalar(bomb.speed), trackDamp);
+
+        bomb.mesh.position.addScaledVector(bomb.vel, dt);
+
+        let bombHit = false;
+
+        if (bomb.targetRef && bomb.targetRef.hp > 0) {
+          if (bomb.mesh.position.distanceTo(bomb.targetRef.pos) < 4.8) {
+            bombHit = true;
+            const victim = bomb.targetRef;
+            victim.hp = 0;
+            currentDamage += 120;
             setDamageDealt(currentDamage);
-            currentScore += dealt * 40;
+            currentScore += 350;
             setScore(currentScore);
+            currentKills += 1;
+            setEnemiesKilled(currentKills);
 
-            spawnRetroExplosion(torp.mesh.position, 2.2, true, false);
+            spawnRetroExplosion(victim.pos, 2.6, true, true);
 
-            if (e.hp <= 0) {
+            if (Math.random() < 0.25) {
+              spawnDatapad(victim.pos);
+            }
+            scene.remove(victim.mesh);
+            const vIdx = enemies.indexOf(victim);
+            if (vIdx >= 0) enemies.splice(vIdx, 1);
+          }
+        }
+
+        if (!bombHit) {
+          for (let j = enemies.length - 1; j >= 0; j--) {
+            const e = enemies[j];
+            if (bomb.mesh.position.distanceTo(e.pos) < 4.5) {
+              bombHit = true;
+              e.hp = 0;
+              currentDamage += 120;
+              setDamageDealt(currentDamage);
+              currentScore += 350;
+              setScore(currentScore);
               currentKills += 1;
               setEnemiesKilled(currentKills);
-              currentScore += e.isRaid ? 250 : e.isElite ? 180 : 100;
-              setScore(currentScore);
 
-              if (Math.random() < 0.15) {
+              spawnRetroExplosion(e.pos, 2.6, true, true);
+
+              if (Math.random() < 0.25) {
                 spawnDatapad(e.pos);
               }
               scene.remove(e.mesh);
               enemies.splice(j, 1);
+              break;
             }
-            break;
           }
         }
 
-        if (!torpHit && bossData && !bossData.destroyed && !bossData.raidActive && !bossCutsceneActiveRef.current) {
+        if (!bombHit && bossData && !bossData.destroyed && !bossData.raidActive && !bossCutsceneActiveRef.current) {
           const hasGenerators = bossData.generators.some((g) => !g.destroyed);
           if (hasGenerators) {
             for (const gen of bossData.generators) {
               if (!gen.destroyed) {
                 const worldGPos = gen.localPos.clone().applyMatrix4(bossData.group.matrixWorld);
-                if (torp.mesh.position.distanceTo(worldGPos) < 14.0) {
-                  torpHit = true;
-                  const dealt = Math.floor((shipConf.damage >= 45 ? 4 : 3) * 1.4);
-                  gen.hp -= dealt;
-                  currentDamage += dealt * 45;
+                if (bomb.mesh.position.distanceTo(worldGPos) < 14.0) {
+                  bombHit = true;
+                  gen.hp = Math.max(0, gen.hp - 8);
+                  currentDamage += 160;
                   setDamageDealt(currentDamage);
-                  spawnRetroExplosion(torp.mesh.position, 2.4, true, false);
+                  currentScore += 180;
+                  setScore(currentScore);
+
+                  spawnRetroExplosion(bomb.mesh.position, 2.6, true, true);
 
                   if (gen.hp <= 0) {
                     gen.destroyed = true;
-                    spawnRetroExplosion(worldGPos, 2.0);
+                    spawnRetroExplosion(worldGPos, 2.2, true, true);
                     currentScore += 500;
                     setScore(currentScore);
                   }
@@ -1186,41 +1331,44 @@ export default function GameScreen({
               }
             }
           } else {
-            const dx = Math.abs(torp.mesh.position.x - bossData.pos.x);
-            const dy = Math.abs(torp.mesh.position.y - bossData.pos.y);
-            const dz = Math.abs(torp.mesh.position.z - bossData.pos.z);
-            if (dx < 32 && dy < 16 && dz < 55) {
-              torpHit = true;
-              const dealt = Math.floor((shipConf.damage >= 45 ? 5 : 4) * 1.4);
-              bossData.hullHp -= dealt;
-              currentDamage += dealt * 50;
+            const dx = Math.abs(bomb.mesh.position.x - bossData.pos.x);
+            const dy = Math.abs(bomb.mesh.position.y - bossData.pos.y);
+            const dz = Math.abs(bomb.mesh.position.z - bossData.pos.z);
+            if (dx < 34 && dy < 18 && dz < 55) {
+              bombHit = true;
+              bossData.hullHp -= 10;
+              currentDamage += 180;
               setDamageDealt(currentDamage);
-              spawnRetroExplosion(torp.mesh.position, 2.4, true, false);
+              currentScore += 220;
+              setScore(currentScore);
+
+              spawnRetroExplosion(bomb.mesh.position, 2.8, true, true);
 
               if (bossData.hullHp <= 0) {
                 bossData.destroyed = true;
                 currentScore += 5000;
                 setScore(currentScore);
-                spawnRetroExplosion(bossData.pos, 3.5, true);
+                spawnRetroExplosion(bossData.pos, 3.8, true);
                 triggerEndGame('victory');
               }
             }
           }
         }
 
-        if (torpHit || torp.life <= 0) {
-          scene.remove(torp.mesh);
-          torpedoes.splice(tIdx, 1);
+        if (bombHit || bomb.life <= 0 || distToTarget < 1.2) {
+          if (!bombHit && distToTarget < 1.8) {
+            spawnRetroExplosion(bomb.mesh.position, 2.4, true, true);
+          }
+          scene.remove(bomb.mesh);
+          protonBombs.splice(bIdx, 1);
         }
       }
 
       fireCooldown -= dt;
-
-      const baseCooldown = THREE.MathUtils.clamp(0.35 - (shipConf.fireRate / 60) * 0.18, 0.14, 0.32);
-      const activeCooldown = ability1ActiveTimerRef.current > 0 ? 0.085 : baseCooldown;
+      const calcFireCooldown = THREE.MathUtils.clamp(0.35 - (shipConf.fireRate / 60) * 0.18, 0.14, 0.32);
 
       if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0) {
-        fireCooldown = activeCooldown;
+        fireCooldown = calcFireCooldown;
 
         const leftOffset = new THREE.Vector3(-0.46, 0, -0.3).applyQuaternion(shipHolder.quaternion);
         const rightOffset = new THREE.Vector3(0.46, 0, -0.3).applyQuaternion(shipHolder.quaternion);
@@ -1231,28 +1379,27 @@ export default function GameScreen({
         const leftDir = new THREE.Vector3().subVectors(bulletAimTarget, leftPos).normalize();
         const rightDir = new THREE.Vector3().subVectors(bulletAimTarget, rightPos).normalize();
 
-        const laserSpeedVal = ability1ActiveTimerRef.current > 0 ? 760 : 640;
-
         const lMesh1 = new THREE.Mesh(redLaserGeo, redLaserMat);
         lMesh1.position.copy(leftPos);
         lMesh1.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), leftDir);
         scene.add(lMesh1);
-        lasers.push({ mesh: lMesh1, vel: leftDir.multiplyScalar(laserSpeedVal), life: 1.0, isEnemy: false });
+        lasers.push({ mesh: lMesh1, vel: leftDir.multiplyScalar(640), life: 1.0, isEnemy: false });
 
         const lMesh2 = new THREE.Mesh(redLaserGeo, redLaserMat);
         lMesh2.position.copy(rightPos);
         lMesh2.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), rightDir);
         scene.add(lMesh2);
-        lasers.push({ mesh: lMesh2, vel: rightDir.multiplyScalar(laserSpeedVal), life: 1.0, isEnemy: false });
+        lasers.push({ mesh: lMesh2, vel: rightDir.multiplyScalar(640), life: 1.0, isEnemy: false });
 
-        playBuffer(audioBuffers.xwingShot, ability1ActiveTimerRef.current > 0 ? 0.22 : 0.28);
+        playBuffer(audioBuffers.xwingShot, 0.28);
       }
 
-      const maxSimultaneousEnemies = Math.min(6, 2 + stageIdx);
+      const maxSimultaneousEnemies = Math.min(8, 3 + stageIdx);
 
       if (!inBiomeTransitionRef.current && !bossData) {
         spawnTimer += dt;
-        if (spawnTimer > Math.max(2.4, 4.5 - stageIdx * 0.45)) {
+        const dynamicSpawnInterval = Math.max(1.7, 3.8 - stageIdx * 0.55);
+        if (spawnTimer > dynamicSpawnInterval) {
           spawnTimer = 0;
           if (enemies.length < maxSimultaneousEnemies) {
             spawnEnemy();
@@ -1465,7 +1612,7 @@ export default function GameScreen({
               yPoints.forEach((yPos, idx) => {
                 setTimeout(() => {
                   if (!isDisposed) {
-                    spawnRetroExplosion(new THREE.Vector3(laneCenter, yPos, blastZ), 1.6, false, true);
+                    spawnRetroExplosion(new THREE.Vector3(laneCenter, yPos, blastZ), 1.6, false, false);
                   }
                 }, idx * 75);
               });
@@ -1923,7 +2070,7 @@ export default function GameScreen({
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
       lasers.forEach((l) => scene.remove(l.mesh));
-      torpedoes.forEach((t) => scene.remove(t.mesh));
+      protonBombs.forEach((b) => scene.remove(b.mesh));
       enemies.forEach((e) => scene.remove(e.mesh));
       planetMeshes.forEach((pl) => scene.remove(pl));
       debrisList.forEach((d) => scene.remove(d.mesh));
@@ -1931,6 +2078,9 @@ export default function GameScreen({
       datapads.forEach((dp) => scene.remove(dp.mesh));
       shieldImpacts.forEach((si) => scene.remove(si.mesh));
       bossSpaceDebris.forEach((deb) => scene.remove(deb.mesh));
+      if (wingman) {
+        scene.remove(wingman.mesh);
+      }
       scene.remove(crosshairTex);
       crosshairGeo.dispose();
       crosshairMat.dispose();
