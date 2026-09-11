@@ -63,7 +63,7 @@ export default function GameUI(props: GameUIProps) {
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', backgroundColor: '#000000' }}>
       <style>{`
-        .game-curtain { position: absolute; inset: 0; background-color: #000000; pointer-events: none; transition: opacity 0.4s ease-in-out; z-index: 50; }
+        .game-curtain { position: absolute; inset: 0; background-color: #000000; pointer-events: none; transition: opacity 0.4s ease-in-out; z-index: 80; }
         .curtain-black { opacity: 1; }
         .curtain-clear { opacity: 0; }
         .tfu-hud { position: absolute; inset: 0; pointer-events: none; z-index: 10; transition: opacity 0.4s ease; }
@@ -146,13 +146,12 @@ export default function GameUI(props: GameUIProps) {
         .console-desc { font-family: Arial, sans-serif; font-size: 11px; letter-spacing: 1px; color: #8faec4; text-align: center; }
         .console-input { width: 100%; background: #060b10; border: 1px solid #3d586e; border-radius: 0px; color: #ffffff; padding: 9px 12px; font-family: monospace; font-size: 13px; letter-spacing: 2px; text-align: center; outline: none; }
         .console-feedback { font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; letter-spacing: 1.5px; color: #ff4757; min-height: 14px; text-align: center; }
-        .end-modal-box { background: #0b141e; border: 2px solid #5a738e; border-top: 2px solid #8fa9c4; border-radius: 0px; padding: 24px 30px; width: min(380px, 85vw); display: flex; flex-direction: column; gap: 16px; box-shadow: 0 15px 40px rgba(0, 0, 0, 0.95); z-index: 90; }
-        .end-title-defeat { font-family: Arial, sans-serif; font-size: 24px; font-weight: 900; letter-spacing: 4px; color: #ffffff; text-transform: uppercase; text-align: center; border-bottom: 1px solid #233446; padding-bottom: 8px; }
-        .end-title-victory { font-family: Arial, sans-serif; font-size: 24px; font-weight: 900; letter-spacing: 4px; color: #ffffff; text-transform: uppercase; text-align: center; border-bottom: 1px solid #233446; padding-bottom: 8px; }
+        .end-game-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; pointer-events: auto; background: rgba(0, 0, 0, 0.7); }
+        .end-modal-box { background: #0b141e; border: 2px solid #5a738e; border-top: 2px solid #8fa9c4; border-radius: 0px; padding: 24px 30px; width: min(380px, 85vw); display: flex; flex-direction: column; gap: 16px; box-shadow: 0 15px 40px rgba(0, 0, 0, 0.95); }
+        .end-modal-title { font-family: Arial, sans-serif; font-size: 24px; font-weight: 900; letter-spacing: 4px; color: #ffffff; text-transform: uppercase; text-align: center; border-bottom: 1px solid #233446; padding-bottom: 8px; }
         .end-stats-rows { display: flex; flex-direction: column; gap: 8px; }
         .end-stat-line { display: flex; justify-content: space-between; font-family: Arial, sans-serif; font-size: 12px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: #ffffff; }
         .end-stat-val { color: #ffffff; font-family: monospace; font-size: 14px; }
-        .end-stat-credits { color: #ffffff; }
         .end-actions-row { display: flex; gap: 10px; margin-top: 6px; }
       `}</style>
 
@@ -191,9 +190,9 @@ export default function GameUI(props: GameUIProps) {
       {props.playerStunned && <div className="no-signal-indicator">НЕТ СИГНАЛА</div>}
 
       {props.endGameModal && (
-        <div className="pause-overlay" style={{ zIndex: 95 }}>
+        <div className="end-game-overlay">
           <div className="end-modal-box">
-            <div className={props.endGameModal === 'defeat' ? 'end-title-defeat' : 'end-title-victory'}>
+            <div className="end-modal-title">
               {props.endGameModal === 'defeat' ? 'ПОРАЖЕНИЕ' : 'ПОБЕДА'}
             </div>
             <div className="end-stats-rows">
@@ -215,7 +214,7 @@ export default function GameUI(props: GameUIProps) {
               </div>
               <div className="end-stat-line" style={{ borderTop: '1px solid #233446', paddingTop: '6px' }}>
                 <span>ЗАРАБОТАНО КРЕДИТОВ:</span>
-                <span className="end-stat-val end-stat-credits">+{props.creditsEarned}</span>
+                <span className="end-stat-val">+{props.creditsEarned}</span>
               </div>
             </div>
             <div className="end-actions-row">
