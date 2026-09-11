@@ -2,6 +2,7 @@ import { useState } from 'react';
 import * as THREE from 'three';
 import LoadingScreen from './components/LoadingScreen.tsx';
 import MainMenu from './components/MainMenu.tsx';
+import HangarScreen from './components/HangarScreen.tsx';
 import IntroCutscene from './cutscenes/IntroCutscene.tsx';
 import GameScreen from './game/GameScreen.tsx';
 
@@ -21,9 +22,18 @@ export interface PreloadedAssets {
 }
 
 export default function App() {
-  const [stage, setStage] = useState<'loading' | 'menu' | 'cutscene' | 'game'>('loading');
+  const [stage, setStage] = useState<'loading' | 'menu' | 'hangar' | 'cutscene' | 'game'>('loading');
   const [assets, setAssets] = useState<PreloadedAssets | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [gameSessionId, setGameSessionId] = useState<number>(0);
+  const [selectedShipId, setSelectedShipId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('tsu_selected_ship');
+      return saved || 'xwing';
+    } catch {
+      return 'xwing';
+    }
+  });
 
   const handleLoadingComplete = (loaded: PreloadedAssets) => {
     setAssets(loaded);
@@ -38,16 +48,33 @@ export default function App() {
     setStage('cutscene');
   };
 
+  const handleOpenHangar = () => {
+    setStage('hangar');
+  };
+
+  const handleBackFromHangar = () => {
+    setStage('menu');
+  };
+
+  const handleSelectShip = (id: string) => {
+    setSelectedShipId(id);
+    try {
+      localStorage.setItem('tsu_selected_ship', id);
+    } catch {}
+  };
+
   const handleCutsceneError = (err: string) => {
     setErrorMessage(err);
     setStage('menu');
   };
 
   const handleCutsceneComplete = () => {
+    setGameSessionId((prev) => prev + 1);
     setStage('game');
   };
 
   const handleGameOver = () => {
+    setGameSessionId((prev) => prev + 1);
     setStage('menu');
   };
 
@@ -67,7 +94,7 @@ export default function App() {
           background: #111a24;
           border: 2px solid #5a738e;
           border-top: 2px solid #8fa9c4;
-          clip-path: polygon(12px 0%, 100% 0%, calc(100% - 12px) 100%, 0% 100%);
+          border-radius: 0px;
           padding: 24px 32px;
           max-width: 480px;
           width: 85vw;
@@ -101,7 +128,24 @@ export default function App() {
           letter-spacing: 1.5px;
           text-transform: uppercase;
           cursor: pointer;
-          clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+          border-radius: 0px;
+        }
+        .menu-slider {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          width: 200vw;
+          height: 100vh;
+          transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .menu-slider.slide-hangar {
+          transform: translateX(-100vw);
+        }
+        .menu-slide-pane {
+          position: relative;
+          width: 100vw;
+          height: 100vh;
+          overflow: hidden;
         }
       `}</style>
 
@@ -109,8 +153,25 @@ export default function App() {
         <LoadingScreen onComplete={handleLoadingComplete} />
       )}
 
-      {stage === 'menu' && (
-        <MainMenu onStart={handleStartRequested} />
+      {(stage === 'menu' || stage === 'hangar') && (
+        <div className={`menu-slider ${stage === 'hangar' ? 'slide-hangar' : ''}`}>
+          <div className="menu-slide-pane">
+            <MainMenu
+              onStart={handleStartRequested}
+              onOpenHangar={handleOpenHangar}
+            />
+          </div>
+          <div className="menu-slide-pane">
+            {assets && (
+              <HangarScreen
+                assets={assets}
+                selectedShipId={selectedShipId}
+                onSelectShip={handleSelectShip}
+                onBack={handleBackFromHangar}
+              />
+            )}
+          </div>
+        </div>
       )}
 
       {stage === 'cutscene' && assets && (
@@ -123,7 +184,9 @@ export default function App() {
 
       {stage === 'game' && assets && (
         <GameScreen
+          key={gameSessionId}
           assets={assets}
+          selectedShipId={selectedShipId}
           onExit={handleGameOver}
         />
       )}
