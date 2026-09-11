@@ -169,13 +169,13 @@ export default function GameUI(props: GameUIProps) {
         <div className="pause-overlay">
           <div className="console-window">
             <div className="console-title">КОНСОЛЬ</div>
-            <div className="console-desc">Введи читкод для консоли</div>
+            <div className="console-desc">Введи читкод...</div>
             <input
               type="text"
               className="console-input"
               value={props.consoleInput}
               onChange={(e) => props.onConsoleInputChange(e.target.value)}
-              placeholder="КОД..."
+              placeholder="Введи читкод..."
             />
             <div className="console-feedback">{props.consoleFeedback}</div>
             <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
