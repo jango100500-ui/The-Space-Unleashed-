@@ -257,6 +257,8 @@ export default function GameUI(props: GameUIProps) {
           <svg viewBox="0 0 24 24"><path d="M12 2C9.5 2 7.5 4 7.5 6.5v9l4.5 4.5 4.5-4.5v-9C16.5 4 14.5 2 12 2zm0 3c.8 0 1.5.7 1.5 1.5v6h-3v-6c0-.8.7-1.5 1.5-1.5z" /></svg>
         </button>
       </div>
-    </>
+
+      <div ref={props.mountRef} style={{ width: '100%', height: '100%' }} />
+    </div>
   );
 }
