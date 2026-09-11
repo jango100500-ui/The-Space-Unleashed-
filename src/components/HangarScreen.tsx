@@ -55,17 +55,17 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     classBadge: 'B',
     abilities: [
       {
-        id: 'rapid_fire',
-        name: 'РА-ТА-ТА-ТА-ТА',
+        id: 'brother_help',
+        name: 'БРАТСКАЯ ПОМОЩЬ',
         typeText: 'БАЗОВАЯ СПОСОБНОСТЬ',
-        description: 'Дает эффект скорострельности на 6-9 секунд. Перезарядка: 15 секунд',
+        description: 'Призывает союзный X-Винг на 7 секунд. Помогает огнем и запускает протонную бомбу перед отлетом. Перезарядка: 45 секунд',
         symbol: 'triangle'
       },
       {
         id: 'proton_torpedo',
-        name: 'ПРОТОННАЯ РАКЕТА',
+        name: 'ПРОТОННАЯ БОМБА',
         typeText: 'ОСОБАЯ СПОСОБНОСТЬ',
-        description: 'Запускает протонную ракету, которая автоматически наводится и наносит на 40% больше урона. Перезарядка: 20 секунд',
+        description: 'Самонаводящаяся протонная бомба. Наносит колоссальный урон и уничтожает истребители с одного удара. Перезарядка: 26 секунд',
         symbol: 'circle'
       }
     ]
@@ -440,18 +440,19 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
         }
         .tfu-hangar-side-window {
           position: absolute;
-          top: 50%;
-          transform: translateY(-56%);
+          top: 56%;
+          transform: translateY(-50%);
           width: min(240px, 25vw);
-          height: 380px;
+          height: 310px;
+          max-height: 48vh;
           background: #0a111a;
           border: 1px solid #6e8fa8;
           border-top: 1px solid #b2c2d4;
           border-radius: 0px;
-          padding: 14px 16px;
+          padding: 12px 14px;
           display: flex;
           flex-direction: column;
-          gap: 10px;
+          gap: 8px;
           z-index: 25;
           pointer-events: auto;
           box-sizing: border-box;
@@ -470,7 +471,7 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
           color: #ffffff;
           text-transform: uppercase;
           border-bottom: 1px solid #233446;
-          padding-bottom: 6px;
+          padding-bottom: 5px;
           flex-shrink: 0;
         }
         .tfu-side-scroll {
@@ -479,7 +480,7 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
           -ms-overflow-style: none;
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 10px;
           flex: 1;
         }
         .tfu-side-scroll::-webkit-scrollbar {
@@ -491,15 +492,15 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
           gap: 8px;
           background: linear-gradient(180deg, #1a2735 0%, #0d151f 100%);
           border: 1px solid #5a738e;
-          padding: 5px 8px;
+          padding: 4px 7px;
         }
         .tfu-class-square {
-          width: 20px;
-          height: 20px;
+          width: 18px;
+          height: 18px;
           border: 1px solid #b2c2d4;
           color: #ffffff;
           font-family: Arial, sans-serif;
-          font-size: 10px;
+          font-size: 9px;
           font-weight: 900;
           display: flex;
           align-items: center;
@@ -508,7 +509,7 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
         }
         .tfu-class-title {
           font-family: Arial, sans-serif;
-          font-size: 10px;
+          font-size: 9px;
           font-weight: 900;
           letter-spacing: 1.5px;
           color: #c8d6e5;
@@ -517,12 +518,12 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
         .tfu-stats-list {
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 6px;
         }
         .tfu-stat-row {
           display: flex;
           flex-direction: column;
-          gap: 3px;
+          gap: 2px;
         }
         .tfu-stat-info {
           display: flex;
@@ -541,7 +542,7 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
         }
         .tfu-stat-track {
           width: 100%;
-          height: 5px;
+          height: 4px;
           background: #111a24;
           border: 1px solid #233446;
         }
@@ -552,13 +553,13 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
         .tfu-abilities-section {
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 6px;
           border-top: 1px solid #233446;
-          padding-top: 8px;
+          padding-top: 6px;
         }
         .tfu-abilities-header {
           font-family: Arial, sans-serif;
-          font-size: 10px;
+          font-size: 9px;
           font-weight: 900;
           letter-spacing: 2px;
           color: #8faec4;
@@ -567,7 +568,7 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
         .tfu-abilities-list {
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 6px;
         }
         .tfu-ability-item {
           display: flex;
@@ -575,12 +576,12 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
           align-items: flex-start;
           background: #060b10;
           border: 1px solid #233446;
-          padding: 6px;
+          padding: 5px;
         }
         .tfu-ability-symbol-circle {
-          width: 34px;
-          height: 34px;
-          min-width: 34px;
+          width: 28px;
+          height: 28px;
+          min-width: 28px;
           border-radius: 50%;
           border: 1px solid rgba(255, 255, 255, 0.4);
           background: rgba(255, 255, 255, 0.12);
@@ -589,17 +590,17 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
           justify-content: center;
         }
         .tfu-ability-symbol-circle svg {
-          width: 16px;
-          height: 16px;
+          width: 14px;
+          height: 14px;
         }
         .tfu-ability-content {
           display: flex;
           flex-direction: column;
-          gap: 2px;
+          gap: 1px;
         }
         .tfu-ability-name {
           font-family: Arial, sans-serif;
-          font-size: 10px;
+          font-size: 9px;
           font-weight: 900;
           letter-spacing: 1px;
           color: #ffffff;
@@ -615,27 +616,27 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
         }
         .tfu-ability-desc {
           font-family: Arial, sans-serif;
-          font-size: 9px;
-          line-height: 1.35;
+          font-size: 8.5px;
+          line-height: 1.3;
           color: #94a3b8;
         }
         .tfu-info-desc {
           font-family: Arial, sans-serif;
-          font-size: 11px;
-          line-height: 1.5;
+          font-size: 10.5px;
+          line-height: 1.45;
           color: #a4b8cc;
           flex: 1;
         }
         .tfu-hangar-action-btn {
           width: 100%;
-          height: 36px;
+          height: 34px;
           border-radius: 0px;
           cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
           font-family: Arial, sans-serif;
-          font-size: 12px;
+          font-size: 11px;
           font-weight: 900;
           letter-spacing: 2px;
           text-transform: uppercase;
