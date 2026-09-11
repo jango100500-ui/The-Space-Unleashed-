@@ -80,6 +80,11 @@ export default function App() {
 
   return (
     <div className="game-wrapper">
+      <div className="portrait-rotate-warning">
+        <div className="portrait-rotate-icon" />
+        <div className="portrait-rotate-text">Переверните устройство</div>
+      </div>
+
       <style>{`
         .modal-overlay {
           position: fixed;
@@ -106,20 +111,22 @@ export default function App() {
           font-size: 18px;
           font-weight: 900;
           letter-spacing: 2px;
-          color: #ff4757;
+          color: #ffffff;
           text-transform: uppercase;
+          text-align: center;
           margin-bottom: 12px;
         }
         .modal-text {
           font-family: Arial, sans-serif;
           font-size: 13px;
-          color: #c8d6e5;
+          color: #ffffff;
           line-height: 1.5;
           margin-bottom: 20px;
+          text-align: center;
         }
         .modal-btn {
-          background: linear-gradient(180deg, #d31820 0%, #ff3b30 45%, #b50e17 55%, #66050b 100%);
-          border: 1px solid #ff6b81;
+          background: linear-gradient(180deg, #3d586e 0%, #15202b 100%);
+          border: 1px solid #6e8fa8;
           color: #ffffff;
           padding: 10px 24px;
           font-family: Arial, sans-serif;
@@ -199,7 +206,7 @@ export default function App() {
       {errorMessage && (
         <div className="modal-overlay">
           <div className="modal-box">
-            <div className="modal-title">Ошибка</div>
+            <div className="modal-title">ОШИБКА</div>
             <div className="modal-text">{errorMessage}</div>
             <button
               type="button"
