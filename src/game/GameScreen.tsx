@@ -8,6 +8,22 @@ interface GameScreenProps {
   onExit: () => void;
 }
 
+interface GeneratorScreenTarget {
+  id: number;
+  x: number;
+  y: number;
+  visible: boolean;
+}
+
+interface ShieldGenerator {
+  id: number;
+  localPos: THREE.Vector3;
+  hp: number;
+  maxHp: number;
+  destroyed: boolean;
+  fireParticles: THREE.Points;
+}
+
 interface Enemy {
   mesh: THREE.Group;
   state: 'attacking' | 'looping_out' | 'looping_back' | 'disabled';
@@ -64,14 +80,6 @@ interface DatapadItem {
   pos: THREE.Vector3;
   rotSpeed: THREE.Vector3;
   healPercent: number;
-}
-
-interface ShieldGenerator {
-  mesh: THREE.Mesh;
-  localPos: THREE.Vector3;
-  hp: number;
-  maxHp: number;
-  destroyed: boolean;
 }
 
 interface BossZoneAttack {
@@ -385,7 +393,7 @@ export default function GameScreen({ assets, onExit }: GameScreenProps) {
       const src = audioCtx.createBufferSource();
       src.buffer = assets.audioBuffers.click;
       const gain = audioCtx.createGain();
-      gain.gain.value = 0.5;
+      gain.gain.value = 0.55;
       src.connect(gain);
       gain.connect(audioCtx.destination);
       src.start(0);
