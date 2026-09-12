@@ -1,14 +1,13 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { PreloadedAssets } from '../App.tsx';
 import {
-  Enemy, Laser, ExplosionPart, ShockwaveRing, FlashCore, ShieldImpactEffect,
-  DatapadItem, ShieldGenerator, BossZoneAttack, BossTractorBeam, BossState,
+  Enemy, Laser, ShieldGenerator, BossZoneAttack, BossTractorBeam, BossState,
   PlanetItem, BiomeRunStep, generateBiomeRun, createProceduralPlanetTexture,
-  createProceduralNoiseTexture, availablePlanets, BiomeType, GeneratorScreenTarget,
-  BossDebris, AsteroidItem, TrashItem, DerelictTie, IonicCloudItem,
-  ASTEROID_TEXTURE_URLS, TRASH_TEXTURE_URLS
+  availablePlanets, BiomeType, GeneratorScreenTarget, ShieldImpactEffect,
+  DatapadItem, createExplosionGlowTexture, createExplosionRingTexture,
+  ExplosionSmokeParticle, RetroExplosionInstance
 } from './GameData.ts';
 import { HANGAR_SHIPS } from '../components/HangarScreen.tsx';
 import VictoryCutscene from '../cutscenes/VictoryCutscene.tsx';
@@ -88,7 +87,6 @@ export default function GameScreen({
   const [isConsoleOpen, setIsConsoleOpen] = useState<boolean>(false);
   const [consoleInput, setConsoleInput] = useState<string>('');
   const [consoleFeedback, setConsoleFeedback] = useState<string>('');
-  const [showHallwayCutscene, setShowHallwayCutscene] = useState<boolean>(false);
 
   const [currentStage, setCurrentStage] = useState<number>(0);
   const [stageProgressPercent, setStageProgressPercent] = useState<number>(0);
@@ -120,7 +118,6 @@ export default function GameScreen({
   const isPausedRef = useRef<boolean>(false);
   const inBiomeTransitionRef = useRef<boolean>(false);
   const bossCutsceneActiveRef = useRef<boolean>(false);
-  const inHallwayRef = useRef<boolean>(false);
   const showVictoryCutsceneRef = useRef<boolean>(false);
 
   const isDeadRef = useRef<boolean>(false);
@@ -144,7 +141,6 @@ export default function GameScreen({
 
   useEffect(() => {
     isPausedRef.current = isPaused;
-    inHallwayRef.current = showHallwayCutscene;
     showVictoryCutsceneRef.current = showVictoryCutscene;
     if (xwingGainRef.current && tieEngineGainRef.current) {
       if (isPaused || endGameModal !== null || showVictoryCutscene) {
@@ -159,7 +155,7 @@ export default function GameScreen({
         if (assets.audioCtx.state === 'suspended') assets.audioCtx.resume();
       }
     }
-  }, [isPaused, showHallwayCutscene, endGameModal, showVictoryCutscene, assets.audioCtx]);
+  }, [isPaused, endGameModal, showVictoryCutscene, assets.audioCtx]);
 
   const playTone = (freq: number, endFreq: number, dur: number, vol = 0.15, type: OscillatorType = 'sawtooth') => {
     if (!assets.audioCtx || isPausedRef.current) return;
@@ -218,17 +214,6 @@ export default function GameScreen({
       src.start(0);
     } catch {
       return;
-    }
-  };
-
-  const playClapSound = (volume = 0.38) => {
-    const clapKeys = ['clap1', 'clap2', 'clap3', 'clap4'];
-    const chosen = clapKeys[Math.floor(Math.random() * clapKeys.length)];
-    const buf = assets.audioBuffers[chosen];
-    if (buf) {
-      playBuffer(buf, volume);
-    } else {
-      playTone(180, 80, 0.15, volume * 0.7, 'square');
     }
   };
 
@@ -335,16 +320,32 @@ export default function GameScreen({
       mountRef.current.appendChild(renderer.domElement);
     }
 
-    const flatAmbient = new THREE.AmbientLight(0x555555, 1.6);
-    scene.add(flatAmbient);
+    // === РЕТРО-ОСВЕЩЕНИЕ (Яркое, плоское, без черных теней и стали) ===
+    const ambientLight = new THREE.AmbientLight(0xffffff, 2.2);
+    scene.add(ambientLight);
 
-    const mainSun = new THREE.DirectionalLight(0xffffff, 4.0);
-    mainSun.position.set(40, 180, 80);
-    scene.add(mainSun);
+    const cameraFillLight = new THREE.DirectionalLight(0xffffff, 1.3);
+    cameraFillLight.position.set(0, 10, 30);
+    scene.add(cameraFillLight);
 
-    const fillLight = new THREE.DirectionalLight(0x222222, 0.4);
-    fillLight.position.set(-40, -120, -50);
-    scene.add(fillLight);
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.6);
+    sunLight.position.set(40, 100, 50);
+    scene.add(sunLight);
+
+    // Убираем у всех моделей зеркальный/темный PBR металл, делая их чистыми и яркими
+    const applyRetroShipMaterial = (obj: THREE.Object3D) => {
+      obj.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const m = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
+          if (m) {
+            m.roughness = 1.0;
+            m.metalness = 0.0;
+            if (m.envMapIntensity !== undefined) m.envMapIntensity = 0.0;
+            m.needsUpdate = true;
+          }
+        }
+      });
+    };
 
     const starCount = 2400;
     const starPos = new Float32Array(starCount * 3);
@@ -402,41 +403,9 @@ export default function GameScreen({
       planetMeshes.push(planet);
     };
 
-    let junkyardDreadnought: THREE.Group | null = null;
-    const spawnJunkyardDreadnought = () => {
-      if (junkyardDreadnought) {
-        scene.remove(junkyardDreadnought);
-        junkyardDreadnought = null;
-      }
-      const dr = models.destroyer.clone();
-      dr.scale.setScalar(18.0);
-      dr.position.set(-180, -40, -1200);
-      dr.rotation.set(0.42, 2.3, -0.55);
-      dr.traverse((c) => {
-        if ((c as THREE.Mesh).isMesh) {
-          const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
-          if (m) {
-            m.roughness = 0.95;
-            m.metalness = 0.05;
-          }
-        }
-      });
-      scene.add(dr);
-      junkyardDreadnought = dr;
-    };
-
-    const clearJunkyardDreadnought = () => {
-      if (junkyardDreadnought) {
-        scene.remove(junkyardDreadnought);
-        junkyardDreadnought = null;
-      }
-    };
-
     const firstStep = biomeRunRef.current[0];
     if (firstStep.type === 'planet' && firstStep.planet) {
       spawnPlanet(firstStep.planet);
-    } else if (firstStep.type === 'junkyard') {
-      spawnJunkyardDreadnought();
     }
 
     const defaultShipPos = new THREE.Vector3(0, -1.2, 0);
@@ -453,6 +422,7 @@ export default function GameScreen({
     const gltfLoader = new GLTFLoader();
 
     const applyCalculatedScaleAndRot = (targetObj: THREE.Group) => {
+      applyRetroShipMaterial(targetObj);
       const xBox = new THREE.Box3().setFromObject(models.xwing);
       const xSize = new THREE.Vector3();
       xBox.getSize(xSize);
@@ -471,6 +441,7 @@ export default function GameScreen({
 
     if (selectedShipId === 'xwing') {
       const xObj = models.xwing.clone();
+      applyRetroShipMaterial(xObj);
       xObj.scale.setScalar(0.48);
       xObj.rotation.set(shipConf.rot[0], shipConf.rot[1], shipConf.rot[2]);
       shipHolder.add(xObj);
@@ -490,12 +461,14 @@ export default function GameScreen({
         () => {
           if (isDisposed) return;
           const fb = models.xwing.clone();
+          applyRetroShipMaterial(fb);
           fb.scale.setScalar(0.48);
           shipHolder.add(fb);
         }
       );
     } else {
       const fb = models.xwing.clone();
+      applyRetroShipMaterial(fb);
       fb.scale.setScalar(0.48);
       shipHolder.add(fb);
     }
@@ -516,77 +489,21 @@ export default function GameScreen({
     const bombGeo = new THREE.SphereGeometry(0.35, 16, 16);
     const bombMat = new THREE.MeshBasicMaterial({ color: 0xff3388 });
 
-    const flashCoreGeo = new THREE.IcosahedronGeometry(1.8, 1);
-    const flashCoreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-
-    const shockRingGeo = new THREE.RingGeometry(0.5, 1.4, 18);
-    const shockRingMat = new THREE.MeshBasicMaterial({ color: 0xff8822, side: THREE.DoubleSide, transparent: true, opacity: 0.95 });
-    const shockRingGreenMat = new THREE.MeshBasicMaterial({ color: 0x22ff44, side: THREE.DoubleSide, transparent: true, opacity: 0.95 });
-
-    const debrisPieceGeo = new THREE.DodecahedronGeometry(0.65, 0);
-    const debrisMats = [
-      new THREE.MeshBasicMaterial({ color: 0xffdd44 }),
-      new THREE.MeshBasicMaterial({ color: 0xff5522 }),
-      new THREE.MeshBasicMaterial({ color: 0xd32f2f }),
-      new THREE.MeshBasicMaterial({ color: 0x8a9ba8 })
-    ];
-    const debrisMatsGreen = [
-      new THREE.MeshBasicMaterial({ color: 0x33ff44 }),
-      new THREE.MeshBasicMaterial({ color: 0x88ff66 }),
-      new THREE.MeshBasicMaterial({ color: 0x11cc33 }),
-      new THREE.MeshBasicMaterial({ color: 0xffffff })
-    ];
-
     const shieldRippleGeo = new THREE.RingGeometry(0.4, 2.1, 24);
     const shieldRippleMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
 
-    const spaceDebrisGeoList = [
-      new THREE.DodecahedronGeometry(1.4, 0),
-      new THREE.IcosahedronGeometry(1.2, 0),
-      new THREE.DodecahedronGeometry(1.7, 0)
-    ];
-    const spaceDebrisMats = [
-      new THREE.MeshLambertMaterial({ color: 0x4a4f56 }),
-      new THREE.MeshLambertMaterial({ color: 0x5c524b }),
-      new THREE.MeshLambertMaterial({ color: 0x383e44 }),
-      new THREE.MeshLambertMaterial({ color: 0x635b54 })
-    ];
-
-    const asteroidTextures: THREE.Texture[] = ASTEROID_TEXTURE_URLS.map((url, idx) => {
-      const fb = createProceduralNoiseTexture('#555555', '#242424');
-      textureLoader.load(url, (tex) => {
-        tex.wrapS = THREE.RepeatWrapping;
-        tex.wrapT = THREE.RepeatWrapping;
-        asteroidTextures[idx] = tex;
-      });
-      return fb;
-    });
-
-    const trashTextures: THREE.Texture[] = TRASH_TEXTURE_URLS.map((url, idx) => {
-      const fb = createProceduralNoiseTexture('#3e444b', '#1a1f26');
-      textureLoader.load(url, (tex) => {
-        tex.wrapS = THREE.RepeatWrapping;
-        tex.wrapT = THREE.RepeatWrapping;
-        trashTextures[idx] = tex;
-      });
-      return fb;
-    });
+    // === ТЕКСТУРЫ ДЛЯ НОВОГО РЕТРО-ВЗРЫВА ===
+    const sharedGlowTexture = createExplosionGlowTexture();
+    const sharedRingTexture = createExplosionRingTexture();
+    const ringPlaneGeo = new THREE.PlaneGeometry(1, 1);
 
     const lasers: Laser[] = [];
     const protonBombs: ProtonBomb[] = [];
     const wingmanFlyers: WingmanFlyer[] = [];
     const enemies: Enemy[] = [];
-    const debrisList: ExplosionPart[] = [];
-    const shockwaves: ShockwaveRing[] = [];
-    const flashCores: FlashCore[] = [];
     const shieldImpacts: ShieldImpactEffect[] = [];
     const datapads: DatapadItem[] = [];
-    const bossSpaceDebris: BossDebris[] = [];
-
-    const asteroids: AsteroidItem[] = [];
-    const trashItems: TrashItem[] = [];
-    const derelictTies: DerelictTie[] = [];
-    const ionicClouds: IonicCloudItem[] = [];
+    const activeExplosions: RetroExplosionInstance[] = [];
 
     const zoneAttack: BossZoneAttack = { active: false, timer: 0, duration: 1.6, xMin: -4, xMax: 4, fired: false };
     const tractorBeam: BossTractorBeam = { active: false, timer: 0, duration: 1.8, xMin: -6, xMax: 6, fired: false };
@@ -600,39 +517,110 @@ export default function GameScreen({
       shieldImpacts.push({ mesh: sMesh, life: 0.24, maxLife: 0.24 });
     };
 
+    // Новый ретро-взрыв на спрайтах (аккуратный, сочный, без пересвета)
     const spawnRetroExplosion = (pos: THREE.Vector3, scale = 1.0, withLight = true, isGreenish = false) => {
-      const flashMesh = new THREE.Mesh(flashCoreGeo, flashCoreMat);
-      flashMesh.position.copy(pos);
-      flashMesh.scale.setScalar(2.2 * scale);
-      scene.add(flashMesh);
+      const expGroup = new THREE.Group();
+      expGroup.position.copy(pos);
+      scene.add(expGroup);
 
-      let expLight: THREE.PointLight | undefined = undefined;
+      const outerMat = new THREE.SpriteMaterial({
+        map: sharedGlowTexture,
+        color: isGreenish ? 0x22ff44 : 0xff3300,
+        transparent: true,
+        opacity: 0.85,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const outerCore = new THREE.Sprite(outerMat);
+      outerCore.scale.set(2.0 * scale, 2.0 * scale, 1);
+      expGroup.add(outerCore);
+
+      const coreMat = new THREE.SpriteMaterial({
+        map: sharedGlowTexture,
+        color: isGreenish ? 0x88ff66 : 0xffaa00,
+        transparent: true,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const core = new THREE.Sprite(coreMat);
+      core.scale.set(1.2 * scale, 1.2 * scale, 1);
+      expGroup.add(core);
+
+      const innerMat = new THREE.SpriteMaterial({
+        map: sharedGlowTexture,
+        color: 0xffffff,
+        transparent: true,
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const innerCore = new THREE.Sprite(innerMat);
+      innerCore.scale.set(0.6 * scale, 0.6 * scale, 1);
+      expGroup.add(innerCore);
+
+      const ringMat = new THREE.MeshBasicMaterial({
+        map: sharedRingTexture,
+        color: isGreenish ? 0x44ff66 : 0xffddaa,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      const ringMesh = new THREE.Mesh(ringPlaneGeo, ringMat);
+      ringMesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      ringMesh.scale.set(1.5 * scale, 1.5 * scale, 1);
+      expGroup.add(ringMesh);
+
+      const smoke: ExplosionSmokeParticle[] = [];
+      const particleCount = withLight ? 14 : 8;
+      for (let i = 0; i < particleCount; i++) {
+        const sMat = new THREE.SpriteMaterial({
+          map: sharedGlowTexture,
+          color: isGreenish ? 0x11cc33 : 0xff5500,
+          transparent: true,
+          opacity: 0.65,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+        const sprite = new THREE.Sprite(sMat);
+        const pScale = (1.8 + Math.random() * 2.2) * scale;
+        sprite.scale.set(pScale, pScale, 1);
+        expGroup.add(sprite);
+
+        const dir = new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2).normalize();
+        smoke.push({
+          sprite,
+          velocity: dir.multiplyScalar((18 + Math.random() * 28) * scale),
+          life: 0.95,
+          age: 0,
+          initialScale: pScale
+        });
+      }
+
+      let expLight: THREE.PointLight | undefined;
       if (withLight) {
-        expLight = new THREE.PointLight(isGreenish ? 0x22ff44 : 0xff6622, 5.0 * scale, 55 * scale);
+        expLight = new THREE.PointLight(isGreenish ? 0x22ff44 : 0xff6622, 6.0 * scale, 55 * scale);
         expLight.position.copy(pos);
         scene.add(expLight);
       }
 
-      flashCores.push({ mesh: flashMesh, light: expLight, life: 0.14, maxLife: 0.14 });
-
-      const ringMesh = new THREE.Mesh(shockRingGeo, isGreenish ? shockRingGreenMat.clone() : shockRingMat.clone());
-      ringMesh.position.copy(pos);
-      ringMesh.rotation.set((Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8, Math.random() * Math.PI);
-      scene.add(ringMesh);
-      shockwaves.push({ mesh: ringMesh, life: 0.38, maxLife: 0.38, scaleSpeed: 28.0 * scale });
-
-      const currentDebrisMats = isGreenish ? debrisMatsGreen : debrisMats;
-      const debrisCount = withLight ? 16 : 8;
-      for (let i = 0; i < debrisCount; i++) {
-        const mat = currentDebrisMats[i % currentDebrisMats.length];
-        const dMesh = new THREE.Mesh(debrisPieceGeo, mat);
-        dMesh.position.copy(pos);
-        dMesh.scale.setScalar((0.6 + Math.random() * 0.8) * scale);
-        const vel = new THREE.Vector3((Math.random() - 0.5) * 60 * scale, (Math.random() - 0.5) * 60 * scale, (Math.random() - 0.5) * 60 * scale);
-        const spin = new THREE.Vector3((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10);
-        scene.add(dMesh);
-        debrisList.push({ mesh: dMesh, vel, life: 0.65, maxLife: 0.65, spin });
-      }
+      activeExplosions.push({
+        group: expGroup,
+        smoke,
+        shockwaveMesh: ringMesh,
+        shockwaveAge: 0,
+        shockwaveLife: 0.65,
+        shockwaveMaxScale: 28 * scale,
+        outerCore,
+        core,
+        innerCore,
+        light: expLight,
+        age: 0,
+        duration: 1.1,
+        isGreenish
+      });
 
       playBuffer(audioBuffers.explode, 0.42, true);
     };
@@ -754,6 +742,7 @@ export default function GameScreen({
         if (isDisposed) return;
         const createFlyer = (side: number) => {
           const w = models.xwing.clone();
+          applyRetroShipMaterial(w);
           w.scale.setScalar(0.46);
           const start = new THREE.Vector3(shipPos.x + side * 7.5, shipPos.y + 5.5, shipPos.z + 24);
           w.position.copy(start);
@@ -803,6 +792,7 @@ export default function GameScreen({
         dModel = new THREE.Group();
         dModel.add(new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.06, 0.5), new THREE.MeshStandardMaterial({ color: 0x3399ff, emissive: 0x113355 })));
       }
+      applyRetroShipMaterial(dModel);
       dModel.scale.setScalar(0.45);
       dModel.position.copy(dropPos);
       scene.add(dModel);
@@ -817,127 +807,8 @@ export default function GameScreen({
       });
     };
 
-    const spawnAsteroid = () => {
-      const radius = 1.3 + Math.random() * 2.1;
-      const geo = new THREE.DodecahedronGeometry(radius, 1);
-      const tex = asteroidTextures[Math.floor(Math.random() * asteroidTextures.length)];
-      const mat = new THREE.MeshLambertMaterial({ map: tex });
-      const mesh = new THREE.Mesh(geo, mat);
-
-      const startX = (Math.random() - 0.5) * 55;
-      const startY = defaultShipPos.y + (Math.random() - 0.5) * 22;
-      const startZ = -360 - Math.random() * 60;
-      mesh.position.set(startX, startY, startZ);
-      scene.add(mesh);
-
-      const speed = 55 + Math.random() * 50;
-      asteroids.push({
-        mesh,
-        pos: mesh.position,
-        vel: new THREE.Vector3((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 3, speed),
-        rotSpeed: new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2),
-        radius,
-        hp: 3
-      });
-    };
-
-    const spawnTrashItem = () => {
-      const shapeType = Math.floor(Math.random() * 4);
-      let geo: THREE.BufferGeometry;
-      let rad = 1.4;
-
-      if (shapeType === 0) {
-        geo = new THREE.BoxGeometry(0.5, 0.5, 3.4);
-        rad = 1.6;
-      } else if (shapeType === 1) {
-        geo = new THREE.BoxGeometry(2.4, 0.16, 2.0);
-        rad = 1.5;
-      } else if (shapeType === 2) {
-        geo = new THREE.CylinderGeometry(0.35, 0.35, 2.8, 8);
-        rad = 1.4;
-      } else {
-        geo = new THREE.DodecahedronGeometry(1.5, 0);
-        rad = 1.5;
-      }
-
-      const tex = trashTextures[Math.floor(Math.random() * trashTextures.length)];
-      const mat = new THREE.MeshLambertMaterial({ map: tex });
-      const mesh = new THREE.Mesh(geo, mat);
-
-      const startX = (Math.random() - 0.5) * 60;
-      const startY = defaultShipPos.y + (Math.random() - 0.5) * 24;
-      const startZ = -340 - Math.random() * 60;
-      mesh.position.set(startX, startY, startZ);
-      scene.add(mesh);
-
-      const speed = 40 + Math.random() * 55;
-      trashItems.push({
-        mesh,
-        pos: mesh.position,
-        vel: new THREE.Vector3((Math.random() - 0.5) * 5, (Math.random() - 0.5) * 4, speed),
-        rotSpeed: new THREE.Vector3((Math.random() - 0.5) * 2.5, (Math.random() - 0.5) * 2.5, (Math.random() - 0.5) * 2.5),
-        radius: rad
-      });
-    };
-
-    const spawnDerelictTie = () => {
-      const tie = models.tie.clone();
-      tie.scale.setScalar(0.42);
-      tie.traverse((c) => {
-        if ((c as THREE.Mesh).isMesh) {
-          const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
-          if (m) {
-            m.roughness = 0.95;
-            m.metalness = 0.05;
-            m.color.setHex(0x30353c);
-          }
-        }
-      });
-
-      const startX = (Math.random() - 0.5) * 35;
-      const startY = defaultShipPos.y + (Math.random() - 0.5) * 16;
-      const startZ = -320;
-      tie.position.set(startX, startY, startZ);
-      scene.add(tie);
-
-      derelictTies.push({
-        mesh: tie,
-        pos: tie.position,
-        vel: new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 45),
-        rotSpeed: new THREE.Vector3(0.4, 0.6, 0.2),
-        radius: 2.2,
-        hp: 2
-      });
-    };
-
-    const spawnIonicCloud = (posZ: number) => {
-      const cloudRadius = 32 + Math.random() * 14;
-      const geo = new THREE.SphereGeometry(cloudRadius, 16, 12);
-      const mat = new THREE.MeshBasicMaterial({
-        color: 0x8822aa,
-        transparent: true,
-        opacity: 0.16,
-        depthWrite: false
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set((Math.random() - 0.5) * 30, defaultShipPos.y + (Math.random() - 0.5) * 12, posZ);
-      scene.add(mesh);
-      ionicClouds.push({
-        mesh,
-        pos: mesh.position,
-        radius: cloudRadius,
-        cloudLength: cloudRadius * 1.8
-      });
-    };
-
-    let enemySpawnCounter = 0;
-
-    const spawnEnemy = (forcedSide?: number, isRaid = false) => {
-      const side = forcedSide !== undefined ? forcedSide : (Math.random() > 0.5 ? 1 : -1);
-      const startX = side * (65 + Math.random() * 25);
-      const startY = (Math.random() - 0.5) * 12;
-      const startZ = -240 - Math.random() * 40;
-
+    // Спавн отдельного истребителя
+    const createEnemyMesh = (isElite: boolean, isRaid: boolean): THREE.Group => {
       const allowTie2 = stageRef.current >= 2 && Math.random() < 0.45;
       const useTie2Mesh = isRaid || allowTie2;
 
@@ -947,38 +818,67 @@ export default function GameScreen({
       } else {
         baseMesh = models.tie.clone();
       }
+      applyRetroShipMaterial(baseMesh);
       baseMesh.scale.setScalar(0.42);
       scene.add(baseMesh);
+      return baseMesh;
+    };
 
-      const lateralLane = (Math.random() > 0.5 ? 1 : -1) * (13 + Math.random() * 12);
-      const vertLane = defaultShipPos.y + (Math.random() > 0.5 ? 1 : -1) * (5 + Math.random() * 5);
+    // === СПАВН ЗВЕНЬЯМИ ПО 3 ИСТРЕБИТЕЛЯ ===
+    const spawnSquad = (forcedSide?: number, isRaid = false) => {
+      const side = forcedSide !== undefined ? forcedSide : (Math.random() > 0.5 ? 1 : -1);
+      const formationType = Math.floor(Math.random() * 3); // 0: Клин, 1: Клещи, 2: Эшелон
 
-      enemySpawnCounter++;
-      const isElite = !isRaid && (useTie2Mesh || enemySpawnCounter % 2 === 0);
-      const baseHp = isRaid ? 7 : (isElite ? 6 : 4);
+      const baseCenterLane = side * (10 + Math.random() * 10);
+      const baseVertLane = defaultShipPos.y + (Math.random() - 0.5) * 8;
+      const spawnZ = -250 - Math.random() * 25;
 
-      let shootCd = 0.95 + Math.random() * 0.6;
-      if (isRaid) {
-        shootCd = 0.9;
-      } else if (isElite) {
-        shootCd = 0.65 + Math.random() * 0.45;
+      const squadOffsets = [
+        new THREE.Vector3(0, 0, 0),                       // Лидер
+        new THREE.Vector3(-4.8 * side, 1.4, -9),          // Ведомый левый
+        new THREE.Vector3(4.8 * side, 1.4, -9)            // Ведомый правый
+      ];
+
+      if (formationType === 1) { // Клещи
+        squadOffsets[1].set(-8.5 * side, -1.2, -5);
+        squadOffsets[2].set(8.5 * side, 2.5, -12);
+      } else if (formationType === 2) { // Эшелон
+        squadOffsets[1].set(3.5 * side, 1.8, -8);
+        squadOffsets[2].set(7.0 * side, 3.6, -16);
       }
 
-      enemies.push({
-        mesh: baseMesh,
-        state: 'attacking',
-        pos: new THREE.Vector3(startX, startY, startZ),
-        targetX: lateralLane,
-        targetY: vertLane,
-        speed: 42 + stageRef.current * 3 + Math.random() * 6,
-        shootCooldown: shootCd,
-        side,
-        loopProgress: 0,
-        seed: Math.random() * 10,
-        hp: baseHp,
-        isElite,
-        isRaid
-      });
+      for (let idx = 0; idx < 3; idx++) {
+        const offset = squadOffsets[idx];
+        const isLeader = idx === 0;
+        const isElite = !isRaid && (isLeader || Math.random() < 0.35);
+        const mesh = createEnemyMesh(isElite, isRaid);
+
+        const startX = side * (60 + Math.random() * 18) + offset.x;
+        const startY = baseVertLane + offset.y;
+        const startZ = spawnZ + offset.z;
+
+        const hp = isRaid ? 7 : (isElite ? 6 : 4);
+        const shootCd = 0.75 + idx * 0.25 + Math.random() * 0.4;
+
+        enemies.push({
+          mesh,
+          state: 'attacking',
+          pos: new THREE.Vector3(startX, startY, startZ),
+          targetX: baseCenterLane + offset.x * 0.6,
+          targetY: baseVertLane + offset.y * 0.6,
+          speed: 46 + stageRef.current * 3 + Math.random() * 5,
+          shootCooldown: shootCd,
+          side,
+          loopProgress: 0,
+          seed: Math.random() * 10 + idx,
+          hp,
+          isElite,
+          isRaid,
+          hitFlashTimer: 0,
+          squadRole: isLeader ? 'leader' : idx === 1 ? 'left_wing' : 'right_wing',
+          squadOffset: offset
+        });
+      }
     };
 
     let bossData: BossState | null = null;
@@ -989,9 +889,11 @@ export default function GameScreen({
     let nextExplosionThreshold = 8;
     let isBossExecutingSpecial = false;
     let raidTotalEnemies = 10;
+    let raidSpawnFinished = false;
 
     const initBoss = () => {
       const grp = models.destroyer.clone();
+      applyRetroShipMaterial(grp);
       grp.scale.setScalar(0.0001);
       grp.position.set(0, 18, -380);
       grp.rotation.set(0, Math.PI, 0);
@@ -1041,13 +943,10 @@ export default function GameScreen({
     let stageIdx = 0;
     const stageRef = { current: 0 };
     let stageTimer = 0;
-    const STAGE_DURATION = 140;
+    // 2.35 минуты = 141 секунда на этап
+    const STAGE_DURATION = 141;
 
-    let spawnTimer = 0;
-    let asteroidSpawnTimer = 0;
-    let trashSpawnTimer = 0;
-    let derelictSpawnTimer = 0;
-
+    let squadSpawnTimer = 0;
     let fireCooldown = 0;
     let shakeIntensity = 0;
     let currentHp = 100;
@@ -1074,7 +973,7 @@ export default function GameScreen({
       isDefeatSequenceActive = true;
       isDeadRef.current = true;
 
-      spawnRetroExplosion(shipPos, 3.0, true, false);
+      spawnRetroExplosion(shipPos, 2.5, true, false);
       shipHolder.visible = false;
       crosshairTex.visible = false;
 
@@ -1125,7 +1024,7 @@ export default function GameScreen({
     };
 
     const applyDamageToPlayer = (dmg: number) => {
-      if (godModeRef.current || isDeadRef.current || inBiomeTransitionRef.current || bossCutsceneActiveRef.current || showHallwayCutscene || showVictoryCutsceneRef.current) {
+      if (godModeRef.current || isDeadRef.current || inBiomeTransitionRef.current || bossCutsceneActiveRef.current || showVictoryCutsceneRef.current) {
         if (godModeRef.current) spawnShieldImpact(shipPos);
         return;
       }
@@ -1166,7 +1065,7 @@ export default function GameScreen({
 
       if (forcePlayer) {
         endL.copy(shipPos);
-        playerStunDuration = 4.5;
+        playerStunDuration = 3.0; // Ровно 3 секунды
         setPlayerStunned(true);
         shakeIntensity = 1.2;
         applyDamageToPlayer(8);
@@ -1183,7 +1082,7 @@ export default function GameScreen({
         } else if (roll < 0.30 && !playerHitByLightningOnce) {
           playerHitByLightningOnce = true;
           endL.copy(shipPos);
-          playerStunDuration = 4.5;
+          playerStunDuration = 3.0; // Ровно 3 секунды
           setPlayerStunned(true);
           shakeIntensity = 1.2;
           applyDamageToPlayer(8);
@@ -1260,24 +1159,14 @@ export default function GameScreen({
       if (forceBiomeRef.current) {
         const forcedType = forceBiomeRef.current;
         forceBiomeRef.current = null;
-        let targetColor = 0x0c111a;
+        let targetColor = 0x0a1018;
         let titleText = 'ТУМАННОСТЬ';
         if (forcedType === 'ionic_vapors') {
-          targetColor = 0x220524;
+          targetColor = 0x1f0724;
           titleText = 'ИОННЫЕ ИСПАРЕНИЯ';
-        } else if (forcedType === 'asteroid_field') {
-          targetColor = 0x070a10;
-          titleText = 'ПОЛЕ АСТЕРОИДОВ';
-        } else if (forcedType === 'junkyard') {
-          targetColor = 0x0b0d10;
-          titleText = 'КОСМИЧЕСКАЯ СВАЛКА';
         }
         biomeRunRef.current[stageIdx] = { type: forcedType, title: titleText, fogColor: targetColor };
         clearAllPlanets();
-        clearJunkyardDreadnought();
-        if (forcedType === 'junkyard') {
-          spawnJunkyardDreadnought();
-        }
         (scene.fog as THREE.FogExp2).color.setHex(targetColor);
         renderer.setClearColor(targetColor);
         setBiomeTitle(titleText);
@@ -1299,7 +1188,7 @@ export default function GameScreen({
       const currentStep = biomeRunRef.current[stageIdx] || biomeRunRef.current[0];
       const hasLightningBiome = !bossData && !bossCutsceneActiveRef.current && (currentStep.type === 'nebula_storm');
 
-      if (hasLightningBiome && !inBiomeTransitionRef.current && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
+      if (hasLightningBiome && !inBiomeTransitionRef.current && !showVictoryCutsceneRef.current) {
         lightningTimer += dt;
         if (lightningTimer >= lightningInterval) {
           lightningTimer = 0;
@@ -1307,49 +1196,6 @@ export default function GameScreen({
           triggerLightning();
         }
       }
-
-      if (currentStep.type === 'asteroid_field' && !inBiomeTransitionRef.current && !bossData && !showHallwayCutscene) {
-        asteroidSpawnTimer += dt;
-        if (asteroidSpawnTimer >= 1.6) {
-          asteroidSpawnTimer = 0;
-          if (asteroids.length < 9) {
-            spawnAsteroid();
-          }
-        }
-      }
-
-      if (currentStep.type === 'junkyard' && !inBiomeTransitionRef.current && !bossData && !showHallwayCutscene) {
-        trashSpawnTimer += dt;
-        if (trashSpawnTimer >= 1.2) {
-          trashSpawnTimer = 0;
-          if (trashItems.length < 14) {
-            spawnTrashItem();
-          }
-        }
-        derelictSpawnTimer += dt;
-        if (derelictSpawnTimer >= 18.0) {
-          derelictSpawnTimer = 0;
-          if (derelictTies.length < 2) {
-            spawnDerelictTie();
-          }
-        }
-      }
-
-      let insideAnyCloud = false;
-      if (currentStep.type === 'ionic_vapors' && !inBiomeTransitionRef.current && !bossData) {
-        if (ionicClouds.length === 0) {
-          spawnIonicCloud(-220);
-          spawnIonicCloud(-460);
-        }
-        for (const ic of ionicClouds) {
-          if (Math.abs(ic.pos.z - shipPos.z) < ic.cloudLength * 0.5 && Math.hypot(ic.pos.x - shipPos.x, ic.pos.y - shipPos.y) < ic.radius) {
-            insideAnyCloud = true;
-          }
-        }
-      }
-
-      const targetFogDensity = insideAnyCloud ? baseFogDensity * 1.35 : baseFogDensity;
-      (scene.fog as THREE.FogExp2).density = THREE.MathUtils.lerp((scene.fog as THREE.FogExp2).density, targetFogDensity, dt * 2.0);
 
       if (playerStunDuration > 0) {
         playerStunDuration -= dt;
@@ -1370,7 +1216,7 @@ export default function GameScreen({
       }
 
       if (tieEngineGainRef.current) {
-        if (closestTieDistance < 130 && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
+        if (closestTieDistance < 130 && !showVictoryCutsceneRef.current) {
           const factor = Math.max(0, 1 - closestTieDistance / 130);
           tieEngineGainRef.current.gain.value = factor * 0.22;
         } else {
@@ -1382,6 +1228,7 @@ export default function GameScreen({
         xwingGainRef.current.gain.value = (isDeadRef.current || showVictoryCutsceneRef.current) ? 0 : 0.14;
       }
 
+      // === ПРОГРЕСС ЭТАПА (141 секунда) ===
       if (!bossSpawned && stageIdx < 4 && !isDeadRef.current && !showVictoryCutsceneRef.current) {
         stageTimer += dt;
         const pFrac = Math.min(1, stageTimer / STAGE_DURATION);
@@ -1414,14 +1261,8 @@ export default function GameScreen({
             renderer.setClearColor(fogTarget);
 
             clearAllPlanets();
-            clearJunkyardDreadnought();
-            for (const ic of ionicClouds) scene.remove(ic.mesh);
-            ionicClouds.length = 0;
-
             if (step.type === 'planet' && step.planet) {
               spawnPlanet(step.planet);
-            } else if (step.type === 'junkyard') {
-              spawnJunkyardDreadnought();
             }
           }
         }
@@ -1453,7 +1294,6 @@ export default function GameScreen({
 
       if (bossCutsceneActiveRef.current) {
         bossCutsceneTimer += dt;
-
         shipPos.z -= 45 * dt;
         shipHolder.position.copy(shipPos);
 
@@ -1512,12 +1352,7 @@ export default function GameScreen({
         }
       }
 
-      if (junkyardDreadnought && !(isDeadRef.current || isEndingSequenceRef.current)) {
-        junkyardDreadnought.position.z += 18 * dt;
-        junkyardDreadnought.rotation.z += 0.0004 * dt;
-      }
-
-      const input = (isDeadRef.current || inBiomeTransitionRef.current || playerStunDuration > 0 || showHallwayCutscene || showVictoryCutsceneRef.current)
+      const input = (isDeadRef.current || inBiomeTransitionRef.current || playerStunDuration > 0 || showVictoryCutsceneRef.current)
         ? { x: 0, y: 0, fire: false }
         : inputRef.current;
 
@@ -1560,7 +1395,7 @@ export default function GameScreen({
       let autoTargetPos: THREE.Vector3 | null = null;
       let bestScore = 9999;
 
-      if (playerStunDuration <= 0 && !isDeadRef.current && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
+      if (playerStunDuration <= 0 && !isDeadRef.current && !showVictoryCutsceneRef.current) {
         for (const e of enemies) {
           if (e.state === 'attacking' && e.pos.z < shipPos.z - 2) {
             const d = e.pos.distanceTo(shipPos);
@@ -1607,7 +1442,7 @@ export default function GameScreen({
       const defaultAimDistance = 140;
       let bulletAimTarget = shipPos.clone().addScaledVector(shipForward, defaultAimDistance);
 
-      if (playerStunDuration > 0 || isDeadRef.current || showHallwayCutscene || showVictoryCutsceneRef.current) {
+      if (playerStunDuration > 0 || isDeadRef.current || showVictoryCutsceneRef.current) {
         crosshairTex.visible = false;
       } else {
         crosshairTex.visible = true;
@@ -1646,7 +1481,6 @@ export default function GameScreen({
       for (let wIdx = wingmanFlyers.length - 1; wIdx >= 0; wIdx--) {
         const wf = wingmanFlyers[wIdx];
         wf.life -= dt;
-
         wf.pos.z += wf.vel.z * dt;
 
         if (wf.life < 1.4) {
@@ -1685,11 +1519,9 @@ export default function GameScreen({
         const distToTarget = toTarget.length();
 
         bomb.speed = THREE.MathUtils.lerp(bomb.speed, 380, dt * 3.6);
-
         const trackDamp = THREE.MathUtils.clamp(dt * (15.0 + (1.0 / Math.max(0.2, distToTarget)) * 50.0), 0, 1);
         const desiredDir = toTarget.normalize();
         bomb.vel.lerp(desiredDir.multiplyScalar(bomb.speed), trackDamp);
-
         bomb.mesh.position.addScaledVector(bomb.vel, dt);
 
         let bombHit = false;
@@ -1707,7 +1539,6 @@ export default function GameScreen({
             setScore(currentScore);
             currentKills += 1;
             setEnemiesKilled(currentKills);
-
             spawnRetroExplosion(bomb.mesh.position, 1.8, true, false);
           }
         }
@@ -1726,7 +1557,6 @@ export default function GameScreen({
               setScore(currentScore);
               currentKills += 1;
               setEnemiesKilled(currentKills);
-
               spawnRetroExplosion(bomb.mesh.position, 1.8, true, false);
               break;
             }
@@ -1746,7 +1576,6 @@ export default function GameScreen({
                   setDamageDealt(currentDamage);
                   currentScore += 180;
                   setScore(currentScore);
-
                   spawnRetroExplosion(bomb.mesh.position, 2.6, true, false);
 
                   if (gen.hp <= 0) {
@@ -1770,7 +1599,6 @@ export default function GameScreen({
               setDamageDealt(currentDamage);
               currentScore += 220;
               setScore(currentScore);
-
               spawnRetroExplosion(bomb.mesh.position, 2.8, true, false);
 
               if (bossData.hullHp <= 0) {
@@ -1789,118 +1617,10 @@ export default function GameScreen({
         }
       }
 
-      for (let aIdx = asteroids.length - 1; aIdx >= 0; aIdx--) {
-        const ast = asteroids[aIdx];
-        ast.pos.addScaledVector(ast.vel, dt);
-        ast.mesh.rotation.x += ast.rotSpeed.x * dt;
-        ast.mesh.rotation.y += ast.rotSpeed.y * dt;
-        ast.mesh.rotation.z += ast.rotSpeed.z * dt;
-
-        if (!isDeadRef.current && ast.pos.distanceTo(shipPos) < ast.radius + 1.1) {
-          applyDamageToPlayer(12);
-          playClapSound(0.48);
-          spawnRetroExplosion(ast.pos, 1.4);
-          scene.remove(ast.mesh);
-          ast.mesh.geometry.dispose();
-          asteroids.splice(aIdx, 1);
-          continue;
-        }
-
-        for (let eIdx = enemies.length - 1; eIdx >= 0; eIdx--) {
-          const e = enemies[eIdx];
-          const distToTie = e.pos.distanceTo(ast.pos);
-          if (distToTie < ast.radius + 3.8 && e.state === 'attacking') {
-            if (Math.random() < 0.10) {
-              e.hp = 0;
-              e.state = 'disabled';
-              e.disabledTimer = 0.2;
-              spawnRetroExplosion(e.pos, 2.0);
-              ast.hp -= 2;
-            } else {
-              const avoidDir = (e.pos.x > ast.pos.x ? 1 : -1);
-              e.pos.x += avoidDir * 18 * dt;
-            }
-          }
-        }
-
-        if (ast.hp <= 0 || ast.pos.z > camera.position.z + 20) {
-          if (ast.hp <= 0) {
-            spawnRetroExplosion(ast.pos, 1.3);
-            currentScore += 25;
-            setScore(currentScore);
-          }
-          scene.remove(ast.mesh);
-          ast.mesh.geometry.dispose();
-          asteroids.splice(aIdx, 1);
-        }
-      }
-
-      for (let tIdx = trashItems.length - 1; tIdx >= 0; tIdx--) {
-        const tr = trashItems[tIdx];
-        tr.pos.addScaledVector(tr.vel, dt);
-        tr.mesh.rotation.x += tr.rotSpeed.x * dt;
-        tr.mesh.rotation.y += tr.rotSpeed.y * dt;
-
-        if (!isDeadRef.current && tr.pos.distanceTo(shipPos) < tr.radius + 1.0) {
-          applyDamageToPlayer(8);
-          playClapSound(0.42);
-          const pushDir = new THREE.Vector3().subVectors(tr.pos, shipPos).normalize();
-          tr.vel.addScaledVector(pushDir, 35);
-        }
-
-        if (tr.pos.z > camera.position.z + 20) {
-          scene.remove(tr.mesh);
-          tr.mesh.geometry.dispose();
-          trashItems.splice(tIdx, 1);
-        }
-      }
-
-      for (let dIdx = derelictTies.length - 1; dIdx >= 0; dIdx--) {
-        const dtie = derelictTies[dIdx];
-        dtie.pos.addScaledVector(dtie.vel, dt);
-        dtie.mesh.rotation.x += dtie.rotSpeed.x * dt;
-        dtie.mesh.rotation.y += dtie.rotSpeed.y * dt;
-
-        if (dtie.hp <= 0) {
-          spawnRetroExplosion(dtie.pos, 2.6);
-          currentScore += 150;
-          setScore(currentScore);
-
-          let affectedTrash = 0;
-          for (const tr of trashItems) {
-            if (tr.pos.distanceTo(dtie.pos) < 26 && affectedTrash < 3) {
-              const impulse = new THREE.Vector3().subVectors(tr.pos, dtie.pos).normalize().multiplyScalar(45);
-              tr.vel.add(impulse);
-              affectedTrash++;
-            }
-          }
-
-          scene.remove(dtie.mesh);
-          derelictTies.splice(dIdx, 1);
-          continue;
-        }
-
-        if (dtie.pos.z > camera.position.z + 20) {
-          scene.remove(dtie.mesh);
-          derelictTies.splice(dIdx, 1);
-        }
-      }
-
-      for (let cIdx = ionicClouds.length - 1; cIdx >= 0; cIdx--) {
-        const c = ionicClouds[cIdx];
-        c.pos.z += 16 * dt;
-        c.mesh.position.copy(c.pos);
-        if (c.pos.z > camera.position.z + c.radius + 20) {
-          scene.remove(c.mesh);
-          c.mesh.geometry.dispose();
-          ionicClouds.splice(cIdx, 1);
-        }
-      }
-
       fireCooldown -= dt;
       const calcFireCooldown = THREE.MathUtils.clamp(0.35 - (shipConf.fireRate / 60) * 0.18, 0.14, 0.32);
 
-      if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0 && !isDeadRef.current && !showHallwayCutscene) {
+      if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0 && !isDeadRef.current) {
         fireCooldown = calcFireCooldown;
 
         const leftOffset = new THREE.Vector3(-0.46, 0, -0.3).applyQuaternion(shipHolder.quaternion);
@@ -1927,15 +1647,14 @@ export default function GameScreen({
         playBuffer(audioBuffers.xwingShot, 0.28);
       }
 
-      const maxSimultaneousEnemies = Math.min(8, 3 + stageIdx);
-
-      if (!inBiomeTransitionRef.current && !bossData && !showHallwayCutscene && !isDeadRef.current) {
-        spawnTimer += dt;
-        const dynamicSpawnInterval = Math.max(1.7, 3.8 - stageIdx * 0.55);
-        if (spawnTimer > dynamicSpawnInterval) {
-          spawnTimer = 0;
-          if (enemies.length < maxSimultaneousEnemies) {
-            spawnEnemy();
+      // === СПАВН ЗВЕНЬЯМИ (Каждые ~7.8 секунд) ===
+      if (!inBiomeTransitionRef.current && !bossData && !isDeadRef.current) {
+        squadSpawnTimer += dt;
+        const dynamicSquadInterval = Math.max(6.5, 9.0 - stageIdx * 0.6);
+        if (squadSpawnTimer > dynamicSquadInterval) {
+          squadSpawnTimer = 0;
+          if (enemies.length <= 6) {
+            spawnSquad();
           }
         }
       }
@@ -1957,6 +1676,7 @@ export default function GameScreen({
           if (!isAbilityActive) {
             bossData.phase2Active = true;
             bossData.raidActive = true;
+            raidSpawnFinished = false;
             setBossShieldsDown(true);
             setBossBarMode('raid');
             setBossBarPercent(100);
@@ -1972,17 +1692,22 @@ export default function GameScreen({
               }
             });
 
+            // Корректный спавн рейда без бага быстрого скипа
+            let spawnedCount = 0;
             for (let k = 0; k < 7; k++) {
               setTimeout(() => {
-                if (!isDisposed) spawnEnemy(k % 2 === 0 ? -1 : 1, false);
-              }, k * 180);
+                if (!isDisposed) {
+                  spawnSquad(k % 2 === 0 ? -1 : 1, false);
+                  spawnedCount += 3;
+                }
+              }, k * 350);
             }
 
-            for (let k = 0; k < 3; k++) {
-              setTimeout(() => {
-                if (!isDisposed) spawnEnemy(k % 2 === 0 ? 1 : -1, true);
-              }, 1300 + k * 260);
-            }
+            setTimeout(() => {
+              if (!isDisposed) {
+                raidSpawnFinished = true;
+              }
+            }, 2600);
           } else {
             setBossShieldsDown(false);
             setBossBarMode('shield');
@@ -1994,7 +1719,8 @@ export default function GameScreen({
           const remainingEnemies = enemies.length;
           setBossBarPercent(Math.floor(Math.min(100, Math.max(0, (remainingEnemies / raidTotalEnemies) * 100))));
 
-          if (remainingEnemies === 0 && !bossData.raidCompleted) {
+          // Проверяем завершение только КОГДА ВСЕ ВРАГИ РЕАЛЬНО ЗАСПАВНИЛИСЬ
+          if (raidSpawnFinished && remainingEnemies === 0 && !bossData.raidCompleted) {
             bossData.raidActive = false;
             bossData.raidCompleted = true;
             setBossBarMode('hull');
@@ -2027,7 +1753,7 @@ export default function GameScreen({
         }
 
         const newTargetList: GeneratorScreenTarget[] = [];
-        if (!bossData.phase2Active && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
+        if (!bossData.phase2Active && !showVictoryCutsceneRef.current) {
           for (const gen of bossData.generators) {
             if (!gen.destroyed) {
               const worldGPos = gen.localPos.clone().applyMatrix4(bossData.group.matrixWorld);
@@ -2042,7 +1768,7 @@ export default function GameScreen({
         }
         setGeneratorTargets(newTargetList);
 
-        if (!bossData.raidActive && !bossCutsceneActiveRef.current && !inBiomeTransitionRef.current && !showHallwayCutscene && !isDeadRef.current && !showVictoryCutsceneRef.current) {
+        if (!bossData.raidActive && !bossCutsceneActiveRef.current && !inBiomeTransitionRef.current && !isDeadRef.current && !showVictoryCutsceneRef.current) {
           const isSpecialBusy = zoneAttack.active || tractorBeam.active || isBossExecutingSpecial;
 
           if (!isSpecialBusy) {
@@ -2096,17 +1822,10 @@ export default function GameScreen({
             } else if (bossData.squadCooldown <= 0 && enemies.length === 0) {
               bossData.squadCooldown = 18.0 + Math.random() * 4.0;
               isBossExecutingSpecial = true;
-              const squadCount = Math.min(6, 4 + Math.floor(Math.random() * 3));
-              for (let k = 0; k < squadCount; k++) {
-                setTimeout(() => {
-                  if (!isDisposed) {
-                    spawnEnemy(k % 2 === 0 ? -1 : 1);
-                  }
-                  if (k === squadCount - 1) {
-                    isBossExecutingSpecial = false;
-                  }
-                }, k * 280);
-              }
+              spawnSquad(Math.random() > 0.5 ? 1 : -1);
+              setTimeout(() => {
+                isBossExecutingSpecial = false;
+              }, 1200);
             } else if (bossData.bombardCooldown <= 0) {
               bossData.bombardCooldown = 8.0;
               isBossExecutingSpecial = true;
@@ -2170,7 +1889,7 @@ export default function GameScreen({
                 if (godModeRef.current) {
                   spawnShieldImpact(shipPos);
                 } else {
-                  playerStunDuration = 4.5;
+                  playerStunDuration = 3.0; // Ровно 3 секунды
                   setPlayerStunned(true);
                   shakeIntensity = 1.0;
                   playTone(180, 60, 0.4, 0.3, 'sawtooth');
@@ -2203,11 +1922,28 @@ export default function GameScreen({
         }
       }
 
+      // === ОБНОВЛЕНИЕ ИСТРЕБИТЕЛЕЙ (УМНОЕ ПОВЕДЕНИЕ + СБРОС HIT FLASH) ===
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
         const jitterX = Math.sin(timestamp * 0.015 + e.seed) * 0.12;
         const jitterY = Math.cos(timestamp * 0.018 + e.seed * 2) * 0.09;
         const jitterRoll = Math.sin(timestamp * 0.012 + e.seed) * 0.06;
+
+        // Сброс алой вспышки попадания
+        if (e.hitFlashTimer !== undefined && e.hitFlashTimer > 0) {
+          e.hitFlashTimer -= dt;
+          if (e.hitFlashTimer <= 0) {
+            e.mesh.traverse((c) => {
+              if ((c as THREE.Mesh).isMesh) {
+                const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
+                if (m && m.emissive) {
+                  m.emissive.setHex(0x000000);
+                  m.emissiveIntensity = 0;
+                }
+              }
+            });
+          }
+        }
 
         if (e.state === 'disabled') {
           e.pos.z += e.speed * dt;
@@ -2219,7 +1955,7 @@ export default function GameScreen({
           if (e.disabledTimer !== undefined) {
             e.disabledTimer -= dt;
             if (e.disabledTimer <= 0) {
-              spawnRetroExplosion(e.pos, 2.5, true, false);
+              spawnRetroExplosion(e.pos, 2.0, true, false);
               if (Math.random() < 0.25) {
                 spawnDatapad(e.pos);
               }
@@ -2233,8 +1969,8 @@ export default function GameScreen({
 
         if (e.state === 'attacking') {
           e.pos.z += e.speed * dt;
-          e.pos.x = THREE.MathUtils.lerp(e.pos.x, e.targetX, dt * 0.95);
-          e.pos.y = THREE.MathUtils.lerp(e.pos.y, e.targetY, dt * 0.95);
+          e.pos.x = THREE.MathUtils.lerp(e.pos.x, e.targetX, dt * 1.15);
+          e.pos.y = THREE.MathUtils.lerp(e.pos.y, e.targetY, dt * 1.15);
 
           const moveDir = new THREE.Vector3(e.targetX - e.pos.x, e.targetY - e.pos.y, 40).normalize();
           e.mesh.position.set(e.pos.x + jitterX, e.pos.y + jitterY, e.pos.z);
@@ -2247,15 +1983,19 @@ export default function GameScreen({
             shakeIntensity = Math.max(shakeIntensity, flybyFactor * 0.7);
           }
 
-          if (!showHallwayCutscene && !isDeadRef.current && !showVictoryCutsceneRef.current) {
+          if (!isDeadRef.current && !showVictoryCutsceneRef.current) {
             e.shootCooldown -= dt;
             if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 18 && e.pos.z > -160) {
               e.shootCooldown = e.isRaid ? 0.9 : e.isElite ? 0.8 + Math.random() * 0.5 : 1.1 + Math.random() * 0.7;
-              const spreadX = (Math.random() - 0.5) * (e.isElite ? 3.0 : 4.5);
-              const spreadY = (Math.random() - 0.5) * (e.isElite ? 2.0 : 3.0);
-              const targetWithSpread = shipPos.clone().add(new THREE.Vector3(spreadX, spreadY, 0));
 
-              const baseLaserDir = new THREE.Vector3().subVectors(targetWithSpread, e.pos).normalize();
+              // Упреждающий огонь по траектории игрока
+              const leadTarget = shipPos.clone().add(new THREE.Vector3(shipVx * 0.32, shipVy * 0.32, 0));
+              const spreadX = (Math.random() - 0.5) * (e.isElite ? 2.5 : 3.8);
+              const spreadY = (Math.random() - 0.5) * (e.isElite ? 1.8 : 2.6);
+              leadTarget.x += spreadX;
+              leadTarget.y += spreadY;
+
+              const baseLaserDir = new THREE.Vector3().subVectors(leadTarget, e.pos).normalize();
 
               const fireSalvo = (offsetZ = 0) => {
                 for (const s of [-0.32, 0.32]) {
@@ -2263,7 +2003,7 @@ export default function GameScreen({
                   lMesh.position.set(e.pos.x + s, e.pos.y - 0.05, e.pos.z + 0.8 + offsetZ);
                   lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), baseLaserDir);
                   scene.add(lMesh);
-                  lasers.push({ mesh: lMesh, vel: baseLaserDir.clone().multiplyScalar(155), life: 2.2, isEnemy: true });
+                  lasers.push({ mesh: lMesh, vel: baseLaserDir.clone().multiplyScalar(160), life: 2.2, isEnemy: true });
                 }
               };
 
@@ -2271,7 +2011,7 @@ export default function GameScreen({
 
               if (e.isRaid) {
                 setTimeout(() => {
-                  if (!isDisposed && e.hp > 0 && !bossCutsceneActiveRef.current && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
+                  if (!isDisposed && e.hp > 0 && !bossCutsceneActiveRef.current && !showVictoryCutsceneRef.current) {
                     fireSalvo(-0.5);
                   }
                 }, 110);
@@ -2314,14 +2054,15 @@ export default function GameScreen({
           if (e.pos.z < -220) {
             e.state = 'attacking';
             e.pos.z = -230;
-            e.pos.x = e.side * (65 + Math.random() * 20);
-            e.targetX = (Math.random() > 0.5 ? 1 : -1) * (13 + Math.random() * 12);
-            e.targetY = defaultShipPos.y + (Math.random() > 0.5 ? 1 : -1) * (5 + Math.random() * 5);
+            e.pos.x = e.side * (60 + Math.random() * 20);
+            e.targetX = (Math.random() > 0.5 ? 1 : -1) * (12 + Math.random() * 10);
+            e.targetY = defaultShipPos.y + (Math.random() > 0.5 ? 1 : -1) * (4 + Math.random() * 5);
             e.shootCooldown = 1.0 + Math.random() * 0.7;
           }
         }
       }
 
+      // === ПОЛЕТ И КОЛЛИЗИИ ЛАЗЕРОВ ===
       for (let i = lasers.length - 1; i >= 0; i--) {
         const l = lasers[i];
         l.life -= dt;
@@ -2348,76 +2089,48 @@ export default function GameScreen({
         } else {
           let hitAny = false;
 
-          for (let dIdx = bossSpaceDebris.length - 1; dIdx >= 0; dIdx--) {
-            const deb = bossSpaceDebris[dIdx];
-            if (l.mesh.position.distanceTo(deb.pos) < deb.radius + 1.2) {
+          for (let j = enemies.length - 1; j >= 0; j--) {
+            const e = enemies[j];
+            if (l.mesh.position.distanceTo(e.pos) < 3.8) {
               l.life = 0;
               hitAny = true;
-              scene.remove(deb.mesh);
-              deb.mesh.geometry.dispose();
-              bossSpaceDebris.splice(dIdx, 1);
-              break;
-            }
-          }
+              const dealt = shipConf.damage >= 45 ? 2 : 1;
+              e.hp -= dealt;
 
-          if (!hitAny) {
-            for (let aIdx = asteroids.length - 1; aIdx >= 0; aIdx--) {
-              const ast = asteroids[aIdx];
-              if (l.mesh.position.distanceTo(ast.pos) < ast.radius + 0.6) {
-                l.life = 0;
-                hitAny = true;
-                ast.hp -= 1;
-                spawnRetroExplosion(l.mesh.position, 0.7, false);
-                break;
-              }
-            }
-          }
+              currentDamage += dealt * 25;
+              setDamageDealt(currentDamage);
+              currentScore += dealt * 30;
+              setScore(currentScore);
 
-          if (!hitAny) {
-            for (let dtIdx = derelictTies.length - 1; dtIdx >= 0; dtIdx--) {
-              const dtie = derelictTies[dtIdx];
-              if (l.mesh.position.distanceTo(dtie.pos) < dtie.radius + 0.8) {
-                l.life = 0;
-                hitAny = true;
-                dtie.hp -= 1;
-                spawnRetroExplosion(l.mesh.position, 0.8, false);
-                break;
-              }
-            }
-          }
+              // === АЛАЯ ВСПЫШКА ПОПАДАНИЯ (HIT FLASH) ===
+              e.hitFlashTimer = 0.06;
+              e.mesh.traverse((c) => {
+                if ((c as THREE.Mesh).isMesh) {
+                  const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
+                  if (m && m.emissive) {
+                    m.emissive.setHex(0xff2a3a);
+                    m.emissiveIntensity = 1.5;
+                  }
+                }
+              });
 
-          if (!hitAny) {
-            for (let j = enemies.length - 1; j >= 0; j--) {
-              const e = enemies[j];
-              if (l.mesh.position.distanceTo(e.pos) < 3.8) {
-                l.life = 0;
-                hitAny = true;
-                const dealt = shipConf.damage >= 45 ? 2 : 1;
-                e.hp -= dealt;
+              if (e.hp <= 0) {
+                spawnRetroExplosion(e.pos, 1.3);
+                shakeIntensity = Math.max(shakeIntensity, 0.8);
 
-                currentDamage += dealt * 25;
-                setDamageDealt(currentDamage);
-                currentScore += dealt * 30;
+                currentKills += 1;
+                setEnemiesKilled(currentKills);
+                currentScore += e.isRaid ? 250 : e.isElite ? 180 : 100;
                 setScore(currentScore);
 
-                if (e.hp <= 0) {
-                  spawnRetroExplosion(e.pos);
-                  shakeIntensity = Math.max(shakeIntensity, 0.8);
-
-                  currentKills += 1;
-                  setEnemiesKilled(currentKills);
-                  currentScore += e.isRaid ? 250 : e.isElite ? 180 : 100;
-                  setScore(currentScore);
-
-                  if (Math.random() < 0.0745) {
-                    spawnDatapad(e.pos);
-                  }
-
-                  scene.remove(e.mesh);
-                  enemies.splice(j, 1);
+                if (Math.random() < 0.075) {
+                  spawnDatapad(e.pos);
                 }
-                break;
+
+                scene.remove(e.mesh);
+                enemies.splice(j, 1);
               }
+              break;
             }
           }
 
@@ -2487,11 +2200,11 @@ export default function GameScreen({
         }
       }
 
+      // === ДАТАПАДЫ (Аптечки) ===
       for (let i = datapads.length - 1; i >= 0; i--) {
         const dp = datapads[i];
         dp.mesh.rotation.x += dp.rotSpeed.x * dt;
         dp.mesh.rotation.y += dp.rotSpeed.y * dt;
-
         dp.pos.z += 95 * dt;
 
         const dToPlayer = dp.pos.distanceTo(shipPos);
@@ -2534,6 +2247,7 @@ export default function GameScreen({
         }
       }
 
+      // === ЭФФЕКТЫ ЩИТА ===
       for (let i = shieldImpacts.length - 1; i >= 0; i--) {
         const si = shieldImpacts[i];
         si.life -= dt;
@@ -2543,50 +2257,71 @@ export default function GameScreen({
         if (si.life <= 0) {
           scene.remove(si.mesh);
           si.mesh.geometry.dispose();
+          (si.mesh.material as THREE.Material).dispose();
           shieldImpacts.splice(i, 1);
         }
       }
 
-      for (let i = flashCores.length - 1; i >= 0; i--) {
-        const f = flashCores[i];
-        f.life -= dt;
-        const progress = 1 - f.life / f.maxLife;
-        f.mesh.scale.setScalar(2.2 + progress * 3.5);
-        if (f.light) {
-          f.light.intensity = (f.life / f.maxLife) * 5.0;
-        }
-        if (f.life <= 0) {
-          scene.remove(f.mesh);
-          if (f.light) scene.remove(f.light);
-          flashCores.splice(i, 1);
-        }
-      }
+      // === АНИМАЦИЯ НОВЫХ РЕТРО-ВЗРЫВОВ ===
+      for (let eIdx = activeExplosions.length - 1; eIdx >= 0; eIdx--) {
+        const exp = activeExplosions[eIdx];
+        exp.age += dt;
+        const p = THREE.MathUtils.clamp(exp.age / exp.duration, 0, 1);
 
-      for (let i = shockwaves.length - 1; i >= 0; i--) {
-        const s = shockwaves[i];
-        s.life -= dt;
-        const progress = 1 - s.life / s.maxLife;
-        s.mesh.scale.setScalar(1.0 + progress * s.scaleSpeed);
-        (s.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, (s.life / s.maxLife) * 0.95);
-        if (s.life <= 0) {
-          scene.remove(s.mesh);
-          shockwaves.splice(i, 1);
-        }
-      }
+        // Ядра вспышки
+        const alpha = Math.max(0, 1.0 - p);
+        (exp.outerCore.material as THREE.SpriteMaterial).opacity = alpha * 0.85;
+        (exp.core.material as THREE.SpriteMaterial).opacity = Math.pow(alpha, 1.2) * 0.95;
+        (exp.innerCore.material as THREE.SpriteMaterial).opacity = Math.pow(alpha, 1.5);
 
-      for (let i = debrisList.length - 1; i >= 0; i--) {
-        const d = debrisList[i];
-        d.life -= dt;
-        d.mesh.position.addScaledVector(d.vel, dt);
-        d.vel.multiplyScalar(1 - 2.2 * dt);
-        d.mesh.rotation.x += d.spin.x * dt;
-        d.mesh.rotation.y += d.spin.y * dt;
-        d.mesh.rotation.z += d.spin.z * dt;
-        const scaleProgress = Math.max(0, d.life / d.maxLife);
-        d.mesh.scale.setScalar(scaleProgress);
-        if (d.life <= 0) {
-          scene.remove(d.mesh);
-          debrisList.splice(i, 1);
+        const expExpansion = 1 - Math.pow(1 - p, 1.8);
+        exp.outerCore.scale.addScalar(expExpansion * 4.0 * dt);
+        exp.core.scale.addScalar(expExpansion * 2.5 * dt);
+
+        // Ударное кольцо
+        if (exp.shockwaveMesh) {
+          exp.shockwaveAge += dt;
+          const sP = THREE.MathUtils.clamp(exp.shockwaveAge / exp.shockwaveLife, 0, 1);
+          const currentScale = (1 - Math.pow(1 - sP, 2.0)) * exp.shockwaveMaxScale;
+          exp.shockwaveMesh.scale.set(currentScale, currentScale, 1);
+          (exp.shockwaveMesh.material as THREE.MeshBasicMaterial).opacity = Math.pow(1 - sP, 1.2) * 0.9;
+
+          if (sP >= 1.0) {
+            exp.group.remove(exp.shockwaveMesh);
+            (exp.shockwaveMesh.material as THREE.Material).dispose();
+            exp.shockwaveMesh = null;
+          }
+        }
+
+        // Дым и искры
+        for (let sIdx = exp.smoke.length - 1; sIdx >= 0; sIdx--) {
+          const s = exp.smoke[sIdx];
+          s.age += dt;
+          if (s.age >= s.life || alpha <= 0) {
+            exp.group.remove(s.sprite);
+            (s.sprite.material as THREE.Material).dispose();
+            exp.smoke.splice(sIdx, 1);
+            continue;
+          }
+          s.velocity.multiplyScalar(0.95);
+          s.sprite.position.addScaledVector(s.velocity, dt);
+          const sProg = s.age / s.life;
+          const currentScale = s.initialScale + sProg * 6.5;
+          s.sprite.scale.set(currentScale, currentScale, 1);
+          (s.sprite.material as THREE.SpriteMaterial).opacity = (1 - sProg) * 0.65;
+        }
+
+        if (exp.light) {
+          exp.light.intensity = alpha * 5.0;
+        }
+
+        if (exp.age >= exp.duration) {
+          scene.remove(exp.group);
+          if (exp.light) scene.remove(exp.light);
+          (exp.outerCore.material as THREE.Material).dispose();
+          (exp.core.material as THREE.Material).dispose();
+          (exp.innerCore.material as THREE.Material).dispose();
+          activeExplosions.splice(eIdx, 1);
         }
       }
 
@@ -2630,34 +2365,22 @@ export default function GameScreen({
         }
         scene.remove(w.mesh);
       });
-      asteroids.forEach((a) => {
-        scene.remove(a.mesh);
-        a.mesh.geometry.dispose();
-      });
-      trashItems.forEach((t) => {
-        scene.remove(t.mesh);
-        t.mesh.geometry.dispose();
-      });
-      derelictTies.forEach((d) => scene.remove(d.mesh));
-      ionicClouds.forEach((c) => {
-        scene.remove(c.mesh);
-        c.mesh.geometry.dispose();
-      });
       enemies.forEach((e) => scene.remove(e.mesh));
       planetMeshes.forEach((pl) => scene.remove(pl));
-      clearJunkyardDreadnought();
-      debrisList.forEach((d) => scene.remove(d.mesh));
-      shockwaves.forEach((s) => scene.remove(s.mesh));
       datapads.forEach((dp) => scene.remove(dp.mesh));
-      shieldImpacts.forEach((si) => scene.remove(si.mesh));
-      bossSpaceDebris.forEach((deb) => scene.remove(deb.mesh));
+      shieldImpacts.forEach((si) => {
+        scene.remove(si.mesh);
+        si.mesh.geometry.dispose();
+        (si.mesh.material as THREE.Material).dispose();
+      });
+      activeExplosions.forEach((exp) => {
+        scene.remove(exp.group);
+        if (exp.light) scene.remove(exp.light);
+      });
       scene.remove(crosshairTex);
       crosshairGeo.dispose();
       crosshairMat.dispose();
-      flashCores.forEach((f) => {
-        scene.remove(f.mesh);
-        if (f.light) scene.remove(f.light);
-      });
+      ringPlaneGeo.dispose();
       if (bossData) {
         scene.remove(bossData.group);
       }
@@ -2682,7 +2405,7 @@ export default function GameScreen({
   }, [assets, selectedShipId]);
 
   const handleStickPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene || showVictoryCutscene || endGameModal !== null || isDeadRef.current) return;
+    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showVictoryCutscene || endGameModal !== null || isDeadRef.current) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     stickTouchId.current = e.pointerId;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -2692,7 +2415,7 @@ export default function GameScreen({
   };
 
   const handleStickMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showHallwayCutscene || showVictoryCutscene || endGameModal !== null || isDeadRef.current || stickTouchId.current !== e.pointerId) return;
+    if (inBiomeTransitionRef.current || isPaused || isConsoleOpen || bossCutsceneActiveRef.current || playerStunned || showVictoryCutscene || endGameModal !== null || isDeadRef.current || stickTouchId.current !== e.pointerId) return;
     const dx = e.clientX - stickCenter.current.x;
     const dy = e.clientY - stickCenter.current.y;
     const maxRadius = 55;
@@ -2715,6 +2438,27 @@ export default function GameScreen({
     setJoystickOffset({ x: 0, y: 0 });
     inputRef.current.x = 0;
     inputRef.current.y = 0;
+  };
+
+  const handleFirePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    if (!inBiomeTransition && !isPaused && !isConsoleOpen && !bossCutsceneActive && !playerStunned && !showVictoryCutscene && endGameModal === null && !isDeadRef.current) {
+      setIsFiring(true);
+    }
+  };
+
+  const handleFirePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    setIsFiring(false);
+  };
+
+  const handleFirePointerCancel = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    setIsFiring(false);
   };
 
   const handleTogglePause = () => {
@@ -2813,24 +2557,6 @@ export default function GameScreen({
         setConsoleInput('');
         setConsoleFeedback('');
       }, 500);
-    } else if (code === 'astfield77') {
-      forceBiomeRef.current = 'asteroid_field';
-      setConsoleFeedback('ПОЛЕ АСТЕРОИДОВ АКТИВИРОВАНО');
-      setTimeout(() => {
-        setIsConsoleOpen(false);
-        setIsPaused(false);
-        setConsoleInput('');
-        setConsoleFeedback('');
-      }, 500);
-    } else if (code === 'junkyard88') {
-      forceBiomeRef.current = 'junkyard';
-      setConsoleFeedback('СВАЛКА АКТИВИРОВАНА');
-      setTimeout(() => {
-        setIsConsoleOpen(false);
-        setIsPaused(false);
-        setConsoleInput('');
-        setConsoleFeedback('');
-      }, 500);
     } else if (code === '5dbb6kaopwnqhoa') {
       forceLightningPlayerRef.current = true;
       setConsoleFeedback('УДАР МОЛНИИ ПО ИГРОКУ');
@@ -2840,12 +2566,6 @@ export default function GameScreen({
         setConsoleInput('');
         setConsoleFeedback('');
       }, 500);
-    } else if (code === 'akwk3lwo4ks7kp') {
-      setIsConsoleOpen(false);
-      setIsPaused(false);
-      setConsoleInput('');
-      setConsoleFeedback('');
-      setShowHallwayCutscene(true);
     } else if (code === 'jekkepq392sjjsppp') {
       setIsConsoleOpen(false);
       setIsPaused(false);
@@ -2876,10 +2596,6 @@ export default function GameScreen({
     }
   };
 
-  const handleHallwayComplete = useCallback(() => {
-    setShowHallwayCutscene(false);
-  }, []);
-
   return (
     <>
       <GameUI
@@ -2907,7 +2623,6 @@ export default function GameScreen({
         isConsoleOpen={isConsoleOpen}
         consoleInput={consoleInput}
         consoleFeedback={consoleFeedback}
-        showHallwayCutscene={showHallwayCutscene}
         currentStage={currentStage}
         stageProgressPercent={stageProgressPercent}
         bossActive={bossActive}
@@ -2930,14 +2645,11 @@ export default function GameScreen({
         onQuit={handleQuit}
         onConsoleInputChange={setConsoleInput}
         onApplyCheat={handleApplyCheat}
-        onFirePointerDown={() => {
-          if (!inBiomeTransition && !isPaused && !isConsoleOpen && !bossCutsceneActive && !playerStunned && !showHallwayCutscene && !showVictoryCutscene && endGameModal === null && !isDeadRef.current) setIsFiring(true);
-        }}
-        onFirePointerUp={() => setIsFiring(false)}
-        onFirePointerCancel={() => setIsFiring(false)}
+        onFirePointerDown={handleFirePointerDown}
+        onFirePointerUp={handleFirePointerUp}
+        onFirePointerCancel={handleFirePointerCancel}
         onTriggerAbility1={handleTriggerAbility1}
         onTriggerAbility2={handleTriggerAbility2}
-        onHallwayComplete={handleHallwayComplete}
       />
 
       {showVictoryCutscene && (
