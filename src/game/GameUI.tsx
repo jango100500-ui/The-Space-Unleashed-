@@ -252,7 +252,7 @@ export default function GameUI(props: GameUIProps) {
 
       <div className={`tfu-hud ${props.inBiomeTransition || props.isPaused || props.isConsoleOpen || props.bossCutsceneActive || props.endGameModal ? 'hidden-hud' : ''}`}>
         <div className="tfu-hp-container">
-          <div className="tfu-hp-label">HULL INTEGRITY</div>
+          <div className="tfu-hp-label">СОСТОЯНИЕ</div>
           <div className="tfu-hp-frame">
             <div className="tfu-hp-fill" style={{ width: `${props.hp}%` }} />
             {props.healBonus > 0 && (
@@ -261,7 +261,7 @@ export default function GameUI(props: GameUIProps) {
           </div>
           {props.maxShield > 0 && (
             <>
-              <div className="tfu-shield-label">SHIELD DEFENSE</div>
+              <div className="tfu-shield-label">ЭНЕРГОЩИТЫ</div>
               <div className="tfu-shield-frame">
                 <div className="tfu-shield-fill" style={{ width: `${(props.shieldHp / props.maxShield) * 100}%` }} />
               </div>
