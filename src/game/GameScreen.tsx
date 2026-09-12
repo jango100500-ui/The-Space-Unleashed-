@@ -28,6 +28,7 @@ interface ProtonBomb {
   targetRef: Enemy | null;
   speed: number;
   life: number;
+  trailTimer: number; // <--- ДОБАВИТЬ ЭТУ СТРОКУ
   soundSource: AudioBufferSourceNode | null;
   soundGain: GainNode | null;
 }
