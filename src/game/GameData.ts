@@ -117,12 +117,45 @@ export interface BossState {
   raidCompleted: boolean;
 }
 
+export interface AsteroidItem {
+  mesh: THREE.Mesh;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  rotSpeed: THREE.Vector3;
+  radius: number;
+  hp: number;
+}
+
+export interface TrashItem {
+  mesh: THREE.Mesh;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  rotSpeed: THREE.Vector3;
+  radius: number;
+}
+
+export interface DerelictTie {
+  mesh: THREE.Group;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  rotSpeed: THREE.Vector3;
+  radius: number;
+  hp: number;
+}
+
+export interface IonicCloudItem {
+  mesh: THREE.Mesh;
+  pos: THREE.Vector3;
+  radius: number;
+  cloudLength: number;
+}
+
 export interface PlanetItem {
   name: string;
   url: string;
 }
 
-export type BiomeType = 'deep_space' | 'planet' | 'ionic_vapors' | 'nebula_storm';
+export type BiomeType = 'deep_space' | 'planet' | 'ionic_vapors' | 'nebula_storm' | 'asteroid_field' | 'junkyard';
 
 export interface BiomeRunStep {
   type: BiomeType;
@@ -130,6 +163,23 @@ export interface BiomeRunStep {
   fogColor: number;
   planet?: PlanetItem;
 }
+
+export const ASTEROID_TEXTURE_URLS = [
+  '/mocs/asteroid1.png',
+  '/mocs/asteroid2.png',
+  '/mocs/asteroid3.png',
+  '/mocs/asteroid4.png',
+  '/mocs/asteroid5.png'
+];
+
+export const TRASH_TEXTURE_URLS = [
+  '/mocs/trash1.png',
+  '/mocs/trash2.png',
+  '/mocs/trash3.png',
+  '/mocs/trash4.png',
+  '/mocs/trash5.png',
+  '/mocs/trash6.png'
+];
 
 export const globPlanetFiles = import.meta.glob<string>(
   ['/public/planets/*.{png,PNG,jpg,jpeg,webp}', '../../public/planets/*.{png,PNG,jpg,jpeg,webp}'],
@@ -160,7 +210,7 @@ export function generateBiomeRun(planets: PlanetItem[]): BiomeRunStep[] {
   let pIdx = 0;
   const run: BiomeRunStep[] = [];
   let deepSpaceCount = 0;
-  const maxDeepSpace = Math.random() < 0.6 ? 2 : 1;
+  const maxDeepSpace = Math.random() < 0.5 ? 2 : 1;
 
   for (let i = 0; i < 5; i++) {
     const isAllowedDeepSpace = (i === 0 || i === 2 || i === 3) && deepSpaceCount < maxDeepSpace;
@@ -169,13 +219,15 @@ export function generateBiomeRun(planets: PlanetItem[]): BiomeRunStep[] {
     let chosenType: BiomeType = 'planet';
 
     if (i === 0) {
-      if (Math.random() < 0.5 && isAllowedDeepSpace) {
+      if (Math.random() < 0.4 && isAllowedDeepSpace) {
         chosenType = 'deep_space';
+      } else if (Math.random() < 0.5) {
+        chosenType = 'asteroid_field';
       } else {
         chosenType = 'planet';
       }
     } else {
-      const candidates: BiomeType[] = ['planet', 'ionic_vapors', 'nebula_storm'];
+      const candidates: BiomeType[] = ['planet', 'ionic_vapors', 'nebula_storm', 'asteroid_field', 'junkyard'];
       if (isAllowedDeepSpace && prevType !== 'deep_space') {
         candidates.push('deep_space');
       }
@@ -187,9 +239,13 @@ export function generateBiomeRun(planets: PlanetItem[]): BiomeRunStep[] {
       deepSpaceCount++;
       run.push({ type: 'deep_space', title: 'ГЛУБОКИЙ КОСМОС', fogColor: 0x000103 });
     } else if (chosenType === 'ionic_vapors') {
-      run.push({ type: 'ionic_vapors', title: 'ИОННЫЕ ИСПАРЕНИЯ', fogColor: 0x240620 });
+      run.push({ type: 'ionic_vapors', title: 'ИОННЫЕ ИСПАРЕНИЯ', fogColor: 0x220524 });
     } else if (chosenType === 'nebula_storm') {
-      run.push({ type: 'nebula_storm', title: 'ТУМАННОСТЬ', fogColor: 0x0d121c });
+      run.push({ type: 'nebula_storm', title: 'ТУМАННОСТЬ', fogColor: 0x0c111a });
+    } else if (chosenType === 'asteroid_field') {
+      run.push({ type: 'asteroid_field', title: 'ПОЛЕ АСТЕРОИДОВ', fogColor: 0x070a10 });
+    } else if (chosenType === 'junkyard') {
+      run.push({ type: 'junkyard', title: 'КОСМИЧЕСКАЯ СВАЛКА', fogColor: 0x0b0d10 });
     } else {
       const p = shuffledPlanets[pIdx % shuffledPlanets.length];
       pIdx++;
@@ -231,5 +287,29 @@ export function createProceduralPlanetTexture(name: string): THREE.CanvasTexture
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
+}
+
+export function createProceduralNoiseTexture(baseColor: string, detailColor: string): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = baseColor;
+  ctx.fillRect(0, 0, 256, 256);
+
+  for (let i = 0; i < 280; i++) {
+    const x = Math.random() * 256;
+    const y = Math.random() * 256;
+    const s = 2 + Math.random() * 8;
+    ctx.fillStyle = detailColor;
+    ctx.fillRect(x, y, s, s);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
   return tex;
 }
