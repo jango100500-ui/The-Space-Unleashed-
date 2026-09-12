@@ -48,6 +48,23 @@ export interface DatapadItem {
   healPercent: number;
 }
 
+// Данные обломка/тела пилота в невесомости
+export interface PilotDebris {
+  mesh: THREE.Group;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  spin: THREE.Vector3;
+  radius: number;
+  life: number;
+  bones?: {
+    head?: THREE.Bone;
+    leftArm?: THREE.Bone;
+    rightArm?: THREE.Bone;
+    leftLeg?: THREE.Bone;
+    rightLeg?: THREE.Bone;
+  };
+}
+
 export interface BossZoneAttack {
   active: boolean;
   timer: number;
@@ -230,7 +247,6 @@ export function createProceduralPlanetTexture(name: string): THREE.CanvasTexture
   return tex;
 }
 
-// Общие текстуры взрыва из референса
 export function createExplosionGlowTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
