@@ -60,13 +60,6 @@ interface GameUIProps {
 }
 
 export default function GameUI(props: GameUIProps) {
-  // Цветовая гамма комбо под шкалу Разрушителя
-  const getComboColor = (streak: number) => {
-    if (streak >= 9) return '#ff3838'; // Рубиново-красный (х9 - х11)
-    if (streak >= 6) return '#f1c40f'; // Золотой (х6 - х8)
-    return '#00d2d3';                  // Неоново-бирюзовый (х3 - х5)
-  };
-
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', backgroundColor: '#000000' }}>
       <style>{`
@@ -127,43 +120,40 @@ export default function GameUI(props: GameUIProps) {
         .tfu-pad-bottom:active { transform: translateX(-50%) scale(0.94); }
         .tfu-pad-timer-text { font-family: monospace; font-size: 16px; font-weight: 900; color: #ffffff; }
         
-        /* Плашки комбо и буйства над прицелом */
+        /* Плашки комбо и буйства: синий цвет прицела, без свечения и без увеличения */
         .hud-target-overlay {
           position: absolute;
           transform: translate(-50%, -100%);
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 2px;
+          gap: 3px;
           pointer-events: none;
           z-index: 25;
         }
         .hud-combo-label {
           font-family: Arial, sans-serif;
-          font-size: 13px;
+          font-size: 12px;
           font-weight: 900;
           letter-spacing: 2.5px;
           text-transform: uppercase;
-          text-shadow: 0 0 10px currentColor, 0 1px 4px #000;
-          animation: comboPulseAnim 0.22s infinite alternate;
+          color: #64b5f6;
+          text-shadow: 0 1px 3px #000000;
+          animation: fadeBlinkAnim 0.32s infinite alternate ease-in-out;
         }
         .hud-rage-label {
           font-family: Arial, sans-serif;
           font-size: 11px;
           font-weight: 900;
           letter-spacing: 3px;
-          color: #f1c40f;
+          color: #64b5f6;
           text-transform: uppercase;
-          text-shadow: 0 0 10px rgba(241, 196, 15, 0.8), 0 1px 3px #000;
-          animation: ragePulseAnim 0.35s infinite alternate;
+          text-shadow: 0 1px 3px #000000;
+          animation: fadeBlinkAnim 0.38s infinite alternate ease-in-out;
         }
-        @keyframes comboPulseAnim {
-          from { transform: scale(1); opacity: 0.88; }
-          to { transform: scale(1.08); opacity: 1; }
-        }
-        @keyframes ragePulseAnim {
-          from { opacity: 0.65; transform: scale(0.98); }
-          to { opacity: 1; transform: scale(1.05); }
+        @keyframes fadeBlinkAnim {
+          from { opacity: 0.35; }
+          to { opacity: 1; }
         }
 
         .zone-attack-indicator { position: absolute; top: 0; bottom: 0; background: rgba(255, 30, 30, 0.2); border-left: 2px dashed rgba(255, 80, 80, 0.65); border-right: 2px dashed rgba(255, 80, 80, 0.65); pointer-events: none; z-index: 8; animation: zoneBlink 0.22s infinite alternate; }
@@ -209,7 +199,7 @@ export default function GameUI(props: GameUIProps) {
           <div key={gt.id} className="generator-reticle" style={{ left: `${gt.x}px`, top: `${gt.y}px` }} />
         ))}
 
-      {/* Индикаторы комбо и буйства над прицелом */}
+      {/* Индикаторы комбо и буйства: цвет как у прицела, плавное мигание без скейла */}
       {!props.inBiomeTransition && !props.isPaused && !props.isConsoleOpen && !props.bossCutsceneActive && !props.playerStunned && !props.endGameModal && (
         <div
           className="hud-target-overlay"
@@ -222,10 +212,7 @@ export default function GameUI(props: GameUIProps) {
             <div className="hud-rage-label">БУЙСТВО</div>
           )}
           {props.comboStreak >= 3 && (
-            <div
-              className="hud-combo-label"
-              style={{ color: getComboColor(props.comboStreak) }}
-            >
+            <div className="hud-combo-label">
               КОМБО Х{props.comboStreak}
             </div>
           )}
