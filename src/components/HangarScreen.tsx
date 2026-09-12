@@ -131,7 +131,29 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     shipClass: 'unique',
     classLabel: 'УНИКАЛЬНЫЙ',
     classBadge: 'U',
-    abilities: []
+    abilities: [
+      {
+        id: 'explosive_surprise',
+        name: 'ВЗРЫВНОЙ СЮРПРИЗ',
+        typeText: 'БАЗОВАЯ СПОСОБНОСТЬ',
+        description: 'Очередной запуск 6 маневренных самонаводящихся ракет, распределяющихся по целям. 2 ракеты на истребитель. Перезарядка: 24 секунды',
+        symbol: 'triangle'
+      },
+      {
+        id: 'signal_reroute',
+        name: 'ПЕРЕНАПРАВЛЕНИЕ СИГНАЛА',
+        typeText: 'ОСОБАЯ СПОСОБНОСТЬ',
+        description: 'На 8 секунд снижает входящий урон на 60% и дарует полный иммунитет к оглушению до конца боя. Перезарядка: 40 секунд',
+        symbol: 'circle'
+      },
+      {
+        id: 'gravity_mine',
+        name: 'ЗАХВАТ В ЦЕНТРЕ',
+        typeText: 'ГРАВИТАЦИОННАЯ МИНА',
+        description: 'Сброс мины вперед с торможением за 2 секунды. Мощный детонационный импульс наносит урон и раскидывает врагов воронкой. Перезарядка: 28 секунд',
+        symbol: 'square'
+      }
+    ]
   }
 ];
 
@@ -797,8 +819,10 @@ export default function HangarScreen({ assets, selectedShipId, credits, onSelect
                     <div className="tfu-ability-symbol-circle">
                       {ab.symbol === 'triangle' ? (
                         <svg viewBox="0 0 24 24"><polygon points="12,5 20,19 4,19" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinejoin="round" /></svg>
-                      ) : (
+                      ) : ab.symbol === 'circle' ? (
                         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" fill="none" stroke="#ffffff" strokeWidth="2.5" /></svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" fill="none" stroke="#ffffff" strokeWidth="2.5" /></svg>
                       )}
                     </div>
                     <div className="tfu-ability-content">
