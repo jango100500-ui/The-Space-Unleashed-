@@ -77,8 +77,14 @@ export interface RocketTrailParticle {
   initialScale: number;
 }
 
+// Новая модель красной ракеты-конуса из SlaveRocket.html
 export interface SlaveRocket {
-  mesh: THREE.Mesh;
+  group: THREE.Group;
+  posAttr: THREE.BufferAttribute;
+  origPos: Float32Array;
+  coreMesh: THREE.Mesh;
+  auraMesh: THREE.Mesh;
+  light: THREE.PointLight;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   targetRef: Enemy | null;
@@ -90,8 +96,13 @@ export interface SlaveRocket {
   trailTimer: number;
 }
 
+// Новая модель Ионного заряда из SlaveProtonBomb.html
 export interface SlaveIonCharge {
-  mesh: THREE.Mesh;
+  group: THREE.Group;
+  coreMat: THREE.ShaderMaterial;
+  waveMat: THREE.ShaderMaterial;
+  waveMesh: THREE.Mesh;
+  halo: THREE.Sprite;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   life: number;
@@ -300,25 +311,6 @@ export function createExplosionGlowTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-// Голубая текстура свечения для Ионного заряда Раба-1
-export function createCyanGlowTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const c = canvas.getContext('2d')!;
-  const g = c.createRadialGradient(128, 128, 0, 128, 128, 128);
-  g.addColorStop(0, 'rgba(230, 255, 255, 1)');
-  g.addColorStop(0.2, 'rgba(0, 229, 255, 0.95)');
-  g.addColorStop(0.5, 'rgba(0, 150, 255, 0.7)');
-  g.addColorStop(0.75, 'rgba(0, 80, 200, 0.25)');
-  g.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  c.fillStyle = g;
-  c.fillRect(0, 0, 256, 256);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
 export function createExplosionRingTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
@@ -338,19 +330,113 @@ export function createExplosionRingTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-// Голубая кольцевая текстура воронки для Ионного заряда
+// Розовый Glow из XWingProtonRocket.html
+export function createPinkGlowTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const c = canvas.getContext('2d')!;
+  const g = c.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.12, 'rgba(255,160,220,1)');
+  g.addColorStop(0.3, 'rgba(255,0,170,0.9)');
+  g.addColorStop(0.58, 'rgba(180,0,255,0.35)');
+  g.addColorStop(1, 'rgba(80,0,255,0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Розовый Ring из XWingProtonRocket.html
+export function createPinkRingTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const c = canvas.getContext('2d')!;
+  const g = c.createRadialGradient(128, 128, 50, 128, 128, 125);
+  g.addColorStop(0, 'rgba(255,0,200,0)');
+  g.addColorStop(0.25, 'rgba(255,80,200,0.4)');
+  g.addColorStop(0.42, 'rgba(255,180,240,1)');
+  g.addColorStop(0.60, 'rgba(220,0,180,0.8)');
+  g.addColorStop(0.82, 'rgba(130,0,255,0.2)');
+  g.addColorStop(1, 'rgba(50,0,255,0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Голубой Glow из SlaveProtonBomb.html
+export function createCyanGlowTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const c = canvas.getContext('2d')!;
+  const g = c.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.12, 'rgba(150,230,255,1)');
+  g.addColorStop(0.3, 'rgba(0,190,255,0.9)');
+  g.addColorStop(0.58, 'rgba(0,110,255,0.35)');
+  g.addColorStop(1, 'rgba(0,50,255,0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Голубой Ring из SlaveProtonBomb.html
 export function createCyanRingTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 256;
   const c = canvas.getContext('2d')!;
-  const g = c.createRadialGradient(128, 128, 70, 128, 128, 122);
-  g.addColorStop(0, 'rgba(0, 229, 255, 0)');
-  g.addColorStop(0.2, 'rgba(0, 229, 255, 0.4)');
-  g.addColorStop(0.45, 'rgba(180, 250, 255, 1)');
-  g.addColorStop(0.55, 'rgba(180, 250, 255, 1)');
-  g.addColorStop(0.8, 'rgba(0, 140, 255, 0.45)');
-  g.addColorStop(1, 'rgba(0, 40, 180, 0)');
+  const g = c.createRadialGradient(128, 128, 50, 128, 128, 125);
+  g.addColorStop(0, 'rgba(0,200,255,0)');
+  g.addColorStop(0.25, 'rgba(50,180,255,0.4)');
+  g.addColorStop(0.42, 'rgba(140,240,255,1)');
+  g.addColorStop(0.60, 'rgba(0,160,255,0.8)');
+  g.addColorStop(0.82, 'rgba(0,100,255,0.2)');
+  g.addColorStop(1, 'rgba(0,40,255,0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Красный Glow из SlaveRocket.html
+export function createRedGlowTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const c = canvas.getContext('2d')!;
+  const g = c.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, 'rgba(255,120,120,1)');
+  g.addColorStop(0.25, 'rgba(255,20,20,1)');
+  g.addColorStop(0.55, 'rgba(180,0,0,0.5)');
+  g.addColorStop(1, 'rgba(60,0,0,0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Красный Ring из SlaveRocket.html
+export function createRedRingTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const c = canvas.getContext('2d')!;
+  const g = c.createRadialGradient(128, 128, 50, 128, 128, 128);
+  g.addColorStop(0, 'rgba(255,0,0,0)');
+  g.addColorStop(0.3, 'rgba(255,40,40,0.6)');
+  g.addColorStop(0.6, 'rgba(220,0,0,0.8)');
+  g.addColorStop(1, 'rgba(60,0,0,0)');
   c.fillStyle = g;
   c.fillRect(0, 0, 256, 256);
   const tex = new THREE.CanvasTexture(canvas);
