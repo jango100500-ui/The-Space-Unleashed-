@@ -20,6 +20,8 @@ interface GameUIProps {
   joystickOffset: { x: number; y: number };
   ability1Cooldown: number;
   ability2Cooldown: number;
+  ability3Cooldown?: number;
+  hasAbility3?: boolean;
   inBiomeTransition: boolean;
   biomeTitle: string;
   biomeSubtext: string;
@@ -57,6 +59,7 @@ interface GameUIProps {
   onFirePointerCancel: (e: React.PointerEvent<HTMLButtonElement>) => void;
   onTriggerAbility1: () => void;
   onTriggerAbility2: () => void;
+  onTriggerAbility3?: () => void;
 }
 
 export default function GameUI(props: GameUIProps) {
@@ -120,7 +123,7 @@ export default function GameUI(props: GameUIProps) {
         .tfu-pad-bottom:active { transform: translateX(-50%) scale(0.94); }
         .tfu-pad-timer-text { font-family: monospace; font-size: 16px; font-weight: 900; color: #ffffff; }
         
-        /* Плашки комбо и буйства: синий цвет прицела, без свечения и без увеличения */
+        /* Плашки комбо (синяя) и буйства (жёлтая): без свечения и без масштабирования */
         .hud-target-overlay {
           position: absolute;
           transform: translate(-50%, -100%);
@@ -146,10 +149,10 @@ export default function GameUI(props: GameUIProps) {
           font-size: 11px;
           font-weight: 900;
           letter-spacing: 3px;
-          color: #64b5f6;
+          color: #f1c40f;
           text-transform: uppercase;
           text-shadow: 0 1px 3px #000000;
-          animation: fadeBlinkAnim 0.38s infinite alternate ease-in-out;
+          animation: fadeBlinkAnim 0.35s infinite alternate ease-in-out;
         }
         @keyframes fadeBlinkAnim {
           from { opacity: 0.35; }
@@ -199,7 +202,7 @@ export default function GameUI(props: GameUIProps) {
           <div key={gt.id} className="generator-reticle" style={{ left: `${gt.x}px`, top: `${gt.y}px` }} />
         ))}
 
-      {/* Индикаторы комбо и буйства: цвет как у прицела, плавное мигание без скейла */}
+      {/* Индикаторы над прицелом */}
       {!props.inBiomeTransition && !props.isPaused && !props.isConsoleOpen && !props.bossCutsceneActive && !props.playerStunned && !props.endGameModal && (
         <div
           className="hud-target-overlay"
@@ -396,9 +399,13 @@ export default function GameUI(props: GameUIProps) {
           <button
             type="button"
             className="tfu-pad-btn tfu-pad-left"
-            onPointerDown={(e) => { e.stopPropagation(); }}
+            onPointerDown={(e) => { e.stopPropagation(); if (props.onTriggerAbility3) props.onTriggerAbility3(); }}
           >
-            <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" /></svg>
+            {props.ability3Cooldown && props.ability3Cooldown > 0 ? (
+              <span className="tfu-pad-timer-text">{props.ability3Cooldown}</span>
+            ) : (
+              <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" /></svg>
+            )}
           </button>
 
           <button
