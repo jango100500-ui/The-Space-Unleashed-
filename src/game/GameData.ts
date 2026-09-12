@@ -70,6 +70,13 @@ export interface RageEffectIndicator {
   maxLife: number;
 }
 
+export interface RocketTrailParticle {
+  sprite: THREE.Sprite;
+  life: number;
+  maxLife: number;
+  initialScale: number;
+}
+
 export interface SlaveRocket {
   mesh: THREE.Mesh;
   pos: THREE.Vector3;
@@ -80,15 +87,16 @@ export interface SlaveRocket {
   speed: number;
   life: number;
   curveTimer: number;
+  trailTimer: number;
 }
 
-export interface SlaveMine {
+export interface SlaveIonCharge {
   mesh: THREE.Mesh;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   life: number;
-  state: 'slowing' | 'armed' | 'detonated';
   timer: number;
+  state: 'flying' | 'slowing' | 'detonated';
 }
 
 export interface BossZoneAttack {
@@ -153,6 +161,7 @@ export interface RetroExplosionInstance {
   light?: THREE.PointLight;
   age: number;
   duration: number;
+  isCyan?: boolean;
   isGreenish?: boolean;
 }
 
@@ -291,6 +300,25 @@ export function createExplosionGlowTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+// Голубая текстура свечения для Ионного заряда Раба-1
+export function createCyanGlowTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const c = canvas.getContext('2d')!;
+  const g = c.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, 'rgba(230, 255, 255, 1)');
+  g.addColorStop(0.2, 'rgba(0, 229, 255, 0.95)');
+  g.addColorStop(0.5, 'rgba(0, 150, 255, 0.7)');
+  g.addColorStop(0.75, 'rgba(0, 80, 200, 0.25)');
+  g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 export function createExplosionRingTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
@@ -303,6 +331,26 @@ export function createExplosionRingTexture(): THREE.CanvasTexture {
   g.addColorStop(0.55, 'rgba(255, 220, 120, 1)');
   g.addColorStop(0.8, 'rgba(255, 80, 0, 0.4)');
   g.addColorStop(1, 'rgba(255, 30, 0, 0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Голубая кольцевая текстура воронки для Ионного заряда
+export function createCyanRingTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const c = canvas.getContext('2d')!;
+  const g = c.createRadialGradient(128, 128, 70, 128, 128, 122);
+  g.addColorStop(0, 'rgba(0, 229, 255, 0)');
+  g.addColorStop(0.2, 'rgba(0, 229, 255, 0.4)');
+  g.addColorStop(0.45, 'rgba(180, 250, 255, 1)');
+  g.addColorStop(0.55, 'rgba(180, 250, 255, 1)');
+  g.addColorStop(0.8, 'rgba(0, 140, 255, 0.45)');
+  g.addColorStop(1, 'rgba(0, 40, 180, 0)');
   c.fillStyle = g;
   c.fillRect(0, 0, 256, 256);
   const tex = new THREE.CanvasTexture(canvas);
@@ -350,7 +398,6 @@ export function createExclamationTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-// Текстура синей иконки щита для способности Раба-1
 export function createShieldIconTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 128;
