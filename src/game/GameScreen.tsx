@@ -320,7 +320,7 @@ export default function GameScreen({
       mountRef.current.appendChild(renderer.domElement);
     }
 
-    // === РЕТРО-ОСВЕЩЕНИЕ (Яркое, плоское, без черных теней и стали) ===
+    // Ретро-свет: яркий рассеянный свет без черных провалов и металлического PBR
     const ambientLight = new THREE.AmbientLight(0xffffff, 2.2);
     scene.add(ambientLight);
 
@@ -332,7 +332,6 @@ export default function GameScreen({
     sunLight.position.set(40, 100, 50);
     scene.add(sunLight);
 
-    // Убираем у всех моделей зеркальный/темный PBR металл, делая их чистыми и яркими
     const applyRetroShipMaterial = (obj: THREE.Object3D) => {
       obj.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
@@ -492,7 +491,7 @@ export default function GameScreen({
     const shieldRippleGeo = new THREE.RingGeometry(0.4, 2.1, 24);
     const shieldRippleMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
 
-    // === ТЕКСТУРЫ ДЛЯ НОВОГО РЕТРО-ВЗРЫВА ===
+    // === ТЕКСТУРЫ ВЗРЫВА ИЗ РЕФЕРЕНСА ===
     const sharedGlowTexture = createExplosionGlowTexture();
     const sharedRingTexture = createExplosionRingTexture();
     const ringPlaneGeo = new THREE.PlaneGeometry(1, 1);
@@ -517,7 +516,7 @@ export default function GameScreen({
       shieldImpacts.push({ mesh: sMesh, life: 0.24, maxLife: 0.24 });
     };
 
-    // Новый ретро-взрыв на спрайтах (аккуратный, сочный, без пересвета)
+    // Взрыв по формуле из референса, масштаб подогнан под бой
     const spawnRetroExplosion = (pos: THREE.Vector3, scale = 1.0, withLight = true, isGreenish = false) => {
       const expGroup = new THREE.Group();
       expGroup.position.copy(pos);
@@ -527,12 +526,12 @@ export default function GameScreen({
         map: sharedGlowTexture,
         color: isGreenish ? 0x22ff44 : 0xff3300,
         transparent: true,
-        opacity: 0.85,
+        opacity: 0.9,
         blending: THREE.AdditiveBlending,
         depthWrite: false
       });
       const outerCore = new THREE.Sprite(outerMat);
-      outerCore.scale.set(2.0 * scale, 2.0 * scale, 1);
+      outerCore.scale.set(1.6 * scale, 1.6 * scale, 1);
       expGroup.add(outerCore);
 
       const coreMat = new THREE.SpriteMaterial({
@@ -544,7 +543,7 @@ export default function GameScreen({
         depthWrite: false
       });
       const core = new THREE.Sprite(coreMat);
-      core.scale.set(1.2 * scale, 1.2 * scale, 1);
+      core.scale.set(0.9 * scale, 0.9 * scale, 1);
       expGroup.add(core);
 
       const innerMat = new THREE.SpriteMaterial({
@@ -556,25 +555,25 @@ export default function GameScreen({
         depthWrite: false
       });
       const innerCore = new THREE.Sprite(innerMat);
-      innerCore.scale.set(0.6 * scale, 0.6 * scale, 1);
+      innerCore.scale.set(0.45 * scale, 0.45 * scale, 1);
       expGroup.add(innerCore);
 
       const ringMat = new THREE.MeshBasicMaterial({
         map: sharedRingTexture,
         color: isGreenish ? 0x44ff66 : 0xffddaa,
         transparent: true,
-        opacity: 0.9,
+        opacity: 0.95,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
         depthWrite: false
       });
       const ringMesh = new THREE.Mesh(ringPlaneGeo, ringMat);
       ringMesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-      ringMesh.scale.set(1.5 * scale, 1.5 * scale, 1);
+      ringMesh.scale.set(1.0 * scale, 1.0 * scale, 1);
       expGroup.add(ringMesh);
 
       const smoke: ExplosionSmokeParticle[] = [];
-      const particleCount = withLight ? 14 : 8;
+      const particleCount = withLight ? 16 : 10;
       for (let i = 0; i < particleCount; i++) {
         const sMat = new THREE.SpriteMaterial({
           map: sharedGlowTexture,
@@ -585,15 +584,15 @@ export default function GameScreen({
           depthWrite: false
         });
         const sprite = new THREE.Sprite(sMat);
-        const pScale = (1.8 + Math.random() * 2.2) * scale;
+        const pScale = (1.5 + Math.random() * 1.8) * scale;
         sprite.scale.set(pScale, pScale, 1);
         expGroup.add(sprite);
 
         const dir = new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2).normalize();
         smoke.push({
           sprite,
-          velocity: dir.multiplyScalar((18 + Math.random() * 28) * scale),
-          life: 0.95,
+          velocity: dir.multiplyScalar((15 + Math.random() * 24) * scale),
+          life: 1.1,
           age: 0,
           initialScale: pScale
         });
@@ -611,14 +610,14 @@ export default function GameScreen({
         smoke,
         shockwaveMesh: ringMesh,
         shockwaveAge: 0,
-        shockwaveLife: 0.65,
-        shockwaveMaxScale: 28 * scale,
+        shockwaveLife: 0.75,
+        shockwaveMaxScale: 26 * scale,
         outerCore,
         core,
         innerCore,
         light: expLight,
         age: 0,
-        duration: 1.1,
+        duration: 1.2,
         isGreenish
       });
 
@@ -807,7 +806,6 @@ export default function GameScreen({
       });
     };
 
-    // Спавн отдельного истребителя
     const createEnemyMesh = (isElite: boolean, isRaid: boolean): THREE.Group => {
       const allowTie2 = stageRef.current >= 2 && Math.random() < 0.45;
       const useTie2Mesh = isRaid || allowTie2;
@@ -824,33 +822,29 @@ export default function GameScreen({
       return baseMesh;
     };
 
-    // === СПАВН ЗВЕНЬЯМИ ПО 3 ИСТРЕБИТЕЛЯ ===
+    // Спавн звеньями по 2-4 штуки с жестким лимитом 10 на поле
     const spawnSquad = (forcedSide?: number, isRaid = false) => {
+      if (enemies.length >= 10) return; // Лимит в 10 истребителей
+
       const side = forcedSide !== undefined ? forcedSide : (Math.random() > 0.5 ? 1 : -1);
-      const formationType = Math.floor(Math.random() * 3); // 0: Клин, 1: Клещи, 2: Эшелон
+      const availableCapacity = 10 - enemies.length;
+      const squadCount = Math.min(availableCapacity, Math.floor(2 + Math.random() * 3)); // 2..4 штуки
 
       const baseCenterLane = side * (10 + Math.random() * 10);
       const baseVertLane = defaultShipPos.y + (Math.random() - 0.5) * 8;
       const spawnZ = -250 - Math.random() * 25;
 
-      const squadOffsets = [
-        new THREE.Vector3(0, 0, 0),                       // Лидер
-        new THREE.Vector3(-4.8 * side, 1.4, -9),          // Ведомый левый
-        new THREE.Vector3(4.8 * side, 1.4, -9)            // Ведомый правый
+      const offsets = [
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(-4.8 * side, 1.5, -9),
+        new THREE.Vector3(4.8 * side, 1.5, -9),
+        new THREE.Vector3(0, 3.2, -16)
       ];
 
-      if (formationType === 1) { // Клещи
-        squadOffsets[1].set(-8.5 * side, -1.2, -5);
-        squadOffsets[2].set(8.5 * side, 2.5, -12);
-      } else if (formationType === 2) { // Эшелон
-        squadOffsets[1].set(3.5 * side, 1.8, -8);
-        squadOffsets[2].set(7.0 * side, 3.6, -16);
-      }
-
-      for (let idx = 0; idx < 3; idx++) {
-        const offset = squadOffsets[idx];
+      for (let idx = 0; idx < squadCount; idx++) {
+        const offset = offsets[idx];
         const isLeader = idx === 0;
-        const isElite = !isRaid && (isLeader || Math.random() < 0.35);
+        const isElite = !isRaid && (isLeader || Math.random() < 0.3);
         const mesh = createEnemyMesh(isElite, isRaid);
 
         const startX = side * (60 + Math.random() * 18) + offset.x;
@@ -858,7 +852,7 @@ export default function GameScreen({
         const startZ = spawnZ + offset.z;
 
         const hp = isRaid ? 7 : (isElite ? 6 : 4);
-        const shootCd = 0.75 + idx * 0.25 + Math.random() * 0.4;
+        const shootCd = 0.8 + idx * 0.25 + Math.random() * 0.4;
 
         enemies.push({
           mesh,
@@ -874,8 +868,7 @@ export default function GameScreen({
           hp,
           isElite,
           isRaid,
-          hitFlashTimer: 0,
-          squadRole: isLeader ? 'leader' : idx === 1 ? 'left_wing' : 'right_wing',
+          squadRole: isLeader ? 'leader' : 'left_wing',
           squadOffset: offset
         });
       }
@@ -930,9 +923,9 @@ export default function GameScreen({
         maxHullHp: 140,
         shootCooldown: 1.2,
         squadCooldown: 16.0,
-        bombardCooldown: 5.5,
-        zoneCooldown: 10.0,
-        tractorCooldown: 14.0,
+        bombardCooldown: 5.5, // Понижен
+        zoneCooldown: 11.5,   // Понижен на 2.5 сек
+        tractorCooldown: 15.0,// Понижен на 3.0 сек
         destroyed: false,
         phase2Active: false,
         raidActive: false,
@@ -943,8 +936,7 @@ export default function GameScreen({
     let stageIdx = 0;
     const stageRef = { current: 0 };
     let stageTimer = 0;
-    // 2.35 минуты = 141 секунда на этап
-    const STAGE_DURATION = 141;
+    const STAGE_DURATION = 141; // 2.35 минуты
 
     let squadSpawnTimer = 0;
     let fireCooldown = 0;
@@ -1065,7 +1057,7 @@ export default function GameScreen({
 
       if (forcePlayer) {
         endL.copy(shipPos);
-        playerStunDuration = 3.0; // Ровно 3 секунды
+        playerStunDuration = 3.0;
         setPlayerStunned(true);
         shakeIntensity = 1.2;
         applyDamageToPlayer(8);
@@ -1082,7 +1074,7 @@ export default function GameScreen({
         } else if (roll < 0.30 && !playerHitByLightningOnce) {
           playerHitByLightningOnce = true;
           endL.copy(shipPos);
-          playerStunDuration = 3.0; // Ровно 3 секунды
+          playerStunDuration = 3.0;
           setPlayerStunned(true);
           shakeIntensity = 1.2;
           applyDamageToPlayer(8);
@@ -1228,7 +1220,6 @@ export default function GameScreen({
         xwingGainRef.current.gain.value = (isDeadRef.current || showVictoryCutsceneRef.current) ? 0 : 0.14;
       }
 
-      // === ПРОГРЕСС ЭТАПА (141 секунда) ===
       if (!bossSpawned && stageIdx < 4 && !isDeadRef.current && !showVictoryCutsceneRef.current) {
         stageTimer += dt;
         const pFrac = Math.min(1, stageTimer / STAGE_DURATION);
@@ -1647,7 +1638,7 @@ export default function GameScreen({
         playBuffer(audioBuffers.xwingShot, 0.28);
       }
 
-      // === СПАВН ЗВЕНЬЯМИ (Каждые ~7.8 секунд) ===
+      // Спавн фоновых исидов: ТОЛЬКО вне босса и когда на поле меньше 6 (максимум до 10)
       if (!inBiomeTransitionRef.current && !bossData && !isDeadRef.current) {
         squadSpawnTimer += dt;
         const dynamicSquadInterval = Math.max(6.5, 9.0 - stageIdx * 0.6);
@@ -1692,22 +1683,21 @@ export default function GameScreen({
               }
             });
 
-            // Корректный спавн рейда без бага быстрого скипа
-            let spawnedCount = 0;
-            for (let k = 0; k < 7; k++) {
+            // Налёт: вызываем ровно 10 истребителей, без фонового спавна игры
+            enemies.length = 0; // Чистим старых
+            for (let k = 0; k < 4; k++) {
               setTimeout(() => {
                 if (!isDisposed) {
-                  spawnSquad(k % 2 === 0 ? -1 : 1, false);
-                  spawnedCount += 3;
+                  spawnSquad(k % 2 === 0 ? -1 : 1, true);
                 }
-              }, k * 350);
+              }, k * 450);
             }
 
             setTimeout(() => {
               if (!isDisposed) {
                 raidSpawnFinished = true;
               }
-            }, 2600);
+            }, 2200);
           } else {
             setBossShieldsDown(false);
             setBossBarMode('shield');
@@ -1719,7 +1709,6 @@ export default function GameScreen({
           const remainingEnemies = enemies.length;
           setBossBarPercent(Math.floor(Math.min(100, Math.max(0, (remainingEnemies / raidTotalEnemies) * 100))));
 
-          // Проверяем завершение только КОГДА ВСЕ ВРАГИ РЕАЛЬНО ЗАСПАВНИЛИСЬ
           if (raidSpawnFinished && remainingEnemies === 0 && !bossData.raidCompleted) {
             bossData.raidActive = false;
             bossData.raidCompleted = true;
@@ -1729,10 +1718,10 @@ export default function GameScreen({
             currentScore += 2500;
             setScore(currentScore);
 
-            bossData.zoneCooldown = 12.0;
-            bossData.tractorCooldown = 16.0;
+            bossData.zoneCooldown = 11.5;
+            bossData.tractorCooldown = 15.0;
             bossData.squadCooldown = 16.0;
-            bossData.bombardCooldown = 8.0;
+            bossData.bombardCooldown = 6.0;
             bossData.shootCooldown = 1.4;
 
             bossData.group.traverse((c) => {
@@ -1777,8 +1766,9 @@ export default function GameScreen({
             bossData.squadCooldown -= dt;
             bossData.bombardCooldown -= dt;
 
+            // Зонная атака (кулдаун понижен на 2.5 сек)
             if (bossData.zoneCooldown <= 0) {
-              bossData.zoneCooldown = 14.0 + Math.random() * 4.0;
+              bossData.zoneCooldown = 11.5 + Math.random() * 3.5;
               const centerLane = (Math.random() - 0.5) * 12;
               const widthZone = 8.5;
               zoneAttack.active = true;
@@ -1799,7 +1789,8 @@ export default function GameScreen({
                 widthPct: Math.max(5, Math.min(100, widthNorm * 100))
               });
             } else if (bossData.tractorCooldown <= 0) {
-              bossData.tractorCooldown = 18.0 + Math.random() * 4.0;
+              // Притягивающий луч (кулдаун понижен на 3 сек)
+              bossData.tractorCooldown = 15.0 + Math.random() * 3.5;
               const centerLane = (Math.random() - 0.5) * 8;
               const widthTractor = 13.0;
               tractorBeam.active = true;
@@ -1820,14 +1811,14 @@ export default function GameScreen({
                 widthPct: Math.max(5, Math.min(100, widthNorm * 100))
               });
             } else if (bossData.squadCooldown <= 0 && enemies.length === 0) {
-              bossData.squadCooldown = 18.0 + Math.random() * 4.0;
+              bossData.squadCooldown = 16.0 + Math.random() * 4.0;
               isBossExecutingSpecial = true;
               spawnSquad(Math.random() > 0.5 ? 1 : -1);
               setTimeout(() => {
                 isBossExecutingSpecial = false;
               }, 1200);
             } else if (bossData.bombardCooldown <= 0) {
-              bossData.bombardCooldown = 8.0;
+              bossData.bombardCooldown = 6.0; // Понижен
               isBossExecutingSpecial = true;
               for (let b = 0; b < 4; b++) {
                 setTimeout(() => {
@@ -1889,7 +1880,7 @@ export default function GameScreen({
                 if (godModeRef.current) {
                   spawnShieldImpact(shipPos);
                 } else {
-                  playerStunDuration = 3.0; // Ровно 3 секунды
+                  playerStunDuration = 3.0;
                   setPlayerStunned(true);
                   shakeIntensity = 1.0;
                   playTone(180, 60, 0.4, 0.3, 'sawtooth');
@@ -1922,28 +1913,12 @@ export default function GameScreen({
         }
       }
 
-      // === ОБНОВЛЕНИЕ ИСТРЕБИТЕЛЕЙ (УМНОЕ ПОВЕДЕНИЕ + СБРОС HIT FLASH) ===
+      // === ИСИДЫ: НИКОГДА НЕ ВРЕЗАЮТСЯ И НЕ ПРОЛЕТАЮТ СКВОЗЬ ИГРОКА ===
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
         const jitterX = Math.sin(timestamp * 0.015 + e.seed) * 0.12;
         const jitterY = Math.cos(timestamp * 0.018 + e.seed * 2) * 0.09;
         const jitterRoll = Math.sin(timestamp * 0.012 + e.seed) * 0.06;
-
-        // Сброс алой вспышки попадания
-        if (e.hitFlashTimer !== undefined && e.hitFlashTimer > 0) {
-          e.hitFlashTimer -= dt;
-          if (e.hitFlashTimer <= 0) {
-            e.mesh.traverse((c) => {
-              if ((c as THREE.Mesh).isMesh) {
-                const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
-                if (m && m.emissive) {
-                  m.emissive.setHex(0x000000);
-                  m.emissiveIntensity = 0;
-                }
-              }
-            });
-          }
-        }
 
         if (e.state === 'disabled') {
           e.pos.z += e.speed * dt;
@@ -1955,7 +1930,7 @@ export default function GameScreen({
           if (e.disabledTimer !== undefined) {
             e.disabledTimer -= dt;
             if (e.disabledTimer <= 0) {
-              spawnRetroExplosion(e.pos, 2.0, true, false);
+              spawnRetroExplosion(e.pos, 1.8, true, false);
               if (Math.random() < 0.25) {
                 spawnDatapad(e.pos);
               }
@@ -1977,18 +1952,19 @@ export default function GameScreen({
           e.mesh.lookAt(e.pos.clone().add(moveDir));
           e.mesh.rotation.z = -(e.targetX - e.pos.x) * 0.05 + jitterRoll;
 
-          const distToCam = e.pos.distanceTo(camera.position);
-          if (distToCam < 18) {
-            const flybyFactor = Math.pow(1 - distToCam / 18, 2);
-            shakeIntensity = Math.max(shakeIntensity, flybyFactor * 0.7);
+          // Дистанция уклонения: не подлетают ближе чем Z = -24 до корабля игрока
+          if (e.pos.z >= shipPos.z - 24) {
+            e.state = 'looping_out';
+            e.loopProgress = 0;
+            // Закладывают уход строго в сторону от игрока
+            e.side = e.pos.x >= shipPos.x ? 1 : -1;
           }
 
           if (!isDeadRef.current && !showVictoryCutsceneRef.current) {
             e.shootCooldown -= dt;
-            if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 18 && e.pos.z > -160) {
+            if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 26 && e.pos.z > -160) {
               e.shootCooldown = e.isRaid ? 0.9 : e.isElite ? 0.8 + Math.random() * 0.5 : 1.1 + Math.random() * 0.7;
 
-              // Упреждающий огонь по траектории игрока
               const leadTarget = shipPos.clone().add(new THREE.Vector3(shipVx * 0.32, shipVy * 0.32, 0));
               const spreadX = (Math.random() - 0.5) * (e.isElite ? 2.5 : 3.8);
               const spreadY = (Math.random() - 0.5) * (e.isElite ? 1.8 : 2.6);
@@ -1997,46 +1973,31 @@ export default function GameScreen({
 
               const baseLaserDir = new THREE.Vector3().subVectors(leadTarget, e.pos).normalize();
 
-              const fireSalvo = (offsetZ = 0) => {
-                for (const s of [-0.32, 0.32]) {
-                  const lMesh = new THREE.Mesh(greenLaserGeo, greenLaserMat);
-                  lMesh.position.set(e.pos.x + s, e.pos.y - 0.05, e.pos.z + 0.8 + offsetZ);
-                  lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), baseLaserDir);
-                  scene.add(lMesh);
-                  lasers.push({ mesh: lMesh, vel: baseLaserDir.clone().multiplyScalar(160), life: 2.2, isEnemy: true });
-                }
-              };
-
-              fireSalvo(0);
-
-              if (e.isRaid) {
-                setTimeout(() => {
-                  if (!isDisposed && e.hp > 0 && !bossCutsceneActiveRef.current && !showVictoryCutsceneRef.current) {
-                    fireSalvo(-0.5);
-                  }
-                }, 110);
+              for (const s of [-0.32, 0.32]) {
+                const lMesh = new THREE.Mesh(greenLaserGeo, greenLaserMat);
+                lMesh.position.set(e.pos.x + s, e.pos.y - 0.05, e.pos.z + 0.8);
+                lMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), baseLaserDir);
+                scene.add(lMesh);
+                lasers.push({ mesh: lMesh, vel: baseLaserDir.clone().multiplyScalar(160), life: 2.2, isEnemy: true });
               }
 
+              const distToCam = e.pos.distanceTo(camera.position);
               const distVolume = Math.max(0, Math.min(0.25, (1 - distToCam / 135) * 0.25));
               if (distVolume > 0.02) {
                 playBuffer(audioBuffers.tieShot, distVolume, true);
               }
             }
           }
-
-          if (e.pos.z > camera.position.z + 16) {
-            e.state = 'looping_out';
-            e.loopProgress = 0;
-          }
         } else if (e.state === 'looping_out') {
-          e.loopProgress += dt * 0.7;
-          e.pos.x += e.side * 36 * dt;
-          e.pos.y += Math.sin(e.loopProgress * 3) * 4 * dt;
-          e.pos.z += 18 * (1 - e.loopProgress) * dt;
+          // Маневр ухода в сторону и вверх перед игроком
+          e.loopProgress += dt * 0.85;
+          e.pos.x += e.side * 42 * dt;
+          e.pos.y += 12 * dt;
+          e.pos.z -= 10 * dt; // Сразу начинают отворачивать назад
 
           e.mesh.position.set(e.pos.x + jitterX, e.pos.y + jitterY, e.pos.z);
-          e.mesh.rotation.z = e.side * 0.6 + jitterRoll;
-          e.mesh.rotation.y = e.side * e.loopProgress * 1.5;
+          e.mesh.rotation.z = e.side * 0.7 + jitterRoll;
+          e.mesh.rotation.y = e.side * e.loopProgress * 1.6;
 
           if (e.loopProgress >= 1.0) {
             e.state = 'looping_back';
@@ -2062,7 +2023,7 @@ export default function GameScreen({
         }
       }
 
-      // === ПОЛЕТ И КОЛЛИЗИИ ЛАЗЕРОВ ===
+      // === ПОЛЕТ ЛАЗЕРОВ (БЕЗ КРАСНЫХ БЛИКОВ ПРИ ПОПАДАНИИ) ===
       for (let i = lasers.length - 1; i >= 0; i--) {
         const l = lasers[i];
         l.life -= dt;
@@ -2102,20 +2063,8 @@ export default function GameScreen({
               currentScore += dealt * 30;
               setScore(currentScore);
 
-              // === АЛАЯ ВСПЫШКА ПОПАДАНИЯ (HIT FLASH) ===
-              e.hitFlashTimer = 0.06;
-              e.mesh.traverse((c) => {
-                if ((c as THREE.Mesh).isMesh) {
-                  const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
-                  if (m && m.emissive) {
-                    m.emissive.setHex(0xff2a3a);
-                    m.emissiveIntensity = 1.5;
-                  }
-                }
-              });
-
               if (e.hp <= 0) {
-                spawnRetroExplosion(e.pos, 1.3);
+                spawnRetroExplosion(e.pos, 1.25);
                 shakeIntensity = Math.max(shakeIntensity, 0.8);
 
                 currentKills += 1;
@@ -2200,7 +2149,7 @@ export default function GameScreen({
         }
       }
 
-      // === ДАТАПАДЫ (Аптечки) ===
+      // === ДАТАПАДЫ ===
       for (let i = datapads.length - 1; i >= 0; i--) {
         const dp = datapads[i];
         dp.mesh.rotation.x += dp.rotSpeed.x * dt;
@@ -2247,7 +2196,7 @@ export default function GameScreen({
         }
       }
 
-      // === ЭФФЕКТЫ ЩИТА ===
+      // === ЩИТЫ ===
       for (let i = shieldImpacts.length - 1; i >= 0; i--) {
         const si = shieldImpacts[i];
         si.life -= dt;
@@ -2262,29 +2211,33 @@ export default function GameScreen({
         }
       }
 
-      // === АНИМАЦИЯ НОВЫХ РЕТРО-ВЗРЫВОВ ===
+      // === ТОЧНАЯ АНИМАЦИЯ ВЗРЫВА ИЗ РЕФЕРЕНСА ===
       for (let eIdx = activeExplosions.length - 1; eIdx >= 0; eIdx--) {
         const exp = activeExplosions[eIdx];
         exp.age += dt;
         const p = THREE.MathUtils.clamp(exp.age / exp.duration, 0, 1);
 
-        // Ядра вспышки
+        // Расширение и угасание ядер по степенной формуле
+        const expansion = 1 - Math.pow(1 - p, 1.8);
         const alpha = Math.max(0, 1.0 - p);
-        (exp.outerCore.material as THREE.SpriteMaterial).opacity = alpha * 0.85;
+
+        exp.outerCore.scale.set(1.6 + expansion * 6.5, 1.6 + expansion * 6.5, 1);
+        exp.core.scale.set(0.9 + expansion * 4.2, 0.9 + expansion * 4.2, 1);
+        exp.innerCore.scale.set(0.45 + expansion * 2.2, 0.45 + expansion * 2.2, 1);
+
+        (exp.outerCore.material as THREE.SpriteMaterial).opacity = alpha * 0.9;
         (exp.core.material as THREE.SpriteMaterial).opacity = Math.pow(alpha, 1.2) * 0.95;
         (exp.innerCore.material as THREE.SpriteMaterial).opacity = Math.pow(alpha, 1.5);
 
-        const expExpansion = 1 - Math.pow(1 - p, 1.8);
-        exp.outerCore.scale.addScalar(expExpansion * 4.0 * dt);
-        exp.core.scale.addScalar(expExpansion * 2.5 * dt);
-
-        // Ударное кольцо
+        // Ударное кольцо: квадратичное расширение 1 - (1 - p)^2
         if (exp.shockwaveMesh) {
           exp.shockwaveAge += dt;
           const sP = THREE.MathUtils.clamp(exp.shockwaveAge / exp.shockwaveLife, 0, 1);
-          const currentScale = (1 - Math.pow(1 - sP, 2.0)) * exp.shockwaveMaxScale;
+          const ringExpansion = 1 - Math.pow(1 - sP, 2.0);
+          const currentScale = ringExpansion * exp.shockwaveMaxScale;
+
           exp.shockwaveMesh.scale.set(currentScale, currentScale, 1);
-          (exp.shockwaveMesh.material as THREE.MeshBasicMaterial).opacity = Math.pow(1 - sP, 1.2) * 0.9;
+          (exp.shockwaveMesh.material as THREE.MeshBasicMaterial).opacity = Math.pow(1 - sP, 1.2) * 0.95;
 
           if (sP >= 1.0) {
             exp.group.remove(exp.shockwaveMesh);
@@ -2293,11 +2246,12 @@ export default function GameScreen({
           }
         }
 
-        // Дым и искры
+        // Дым и искры: разлёт с затуханием скорости 0.95
+        const globalFade = THREE.MathUtils.clamp(1.0 - (exp.age / exp.duration), 0, 1);
         for (let sIdx = exp.smoke.length - 1; sIdx >= 0; sIdx--) {
           const s = exp.smoke[sIdx];
           s.age += dt;
-          if (s.age >= s.life || alpha <= 0) {
+          if (s.age >= s.life || globalFade <= 0) {
             exp.group.remove(s.sprite);
             (s.sprite.material as THREE.Material).dispose();
             exp.smoke.splice(sIdx, 1);
@@ -2305,14 +2259,14 @@ export default function GameScreen({
           }
           s.velocity.multiplyScalar(0.95);
           s.sprite.position.addScaledVector(s.velocity, dt);
-          const sProg = s.age / s.life;
-          const currentScale = s.initialScale + sProg * 6.5;
+          const sLife = s.age / s.life;
+          const currentScale = s.initialScale + sLife * 5.5;
           s.sprite.scale.set(currentScale, currentScale, 1);
-          (s.sprite.material as THREE.SpriteMaterial).opacity = (1 - sProg) * 0.65;
+          (s.sprite.material as THREE.SpriteMaterial).opacity = 0.65 * globalFade;
         }
 
         if (exp.light) {
-          exp.light.intensity = alpha * 5.0;
+          exp.light.intensity = alpha * 6.0;
         }
 
         if (exp.age >= exp.duration) {
