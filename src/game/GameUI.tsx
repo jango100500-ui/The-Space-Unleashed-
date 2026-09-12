@@ -35,6 +35,9 @@ interface GameUIProps {
   bossBarPercent: number;
   bossCutsceneActive: boolean;
   playerStunned: boolean;
+  comboStreak: number;
+  isRageActive: boolean;
+  crosshairScreenPos: { x: number; y: number };
   zoneAttackUi: { visible: boolean; leftPct: number; widthPct: number };
   tractorBeamUi: { visible: boolean; leftPct: number; widthPct: number };
   generatorTargets: GeneratorScreenTarget[];
@@ -57,6 +60,13 @@ interface GameUIProps {
 }
 
 export default function GameUI(props: GameUIProps) {
+  // Цветовая гамма комбо под шкалу Разрушителя
+  const getComboColor = (streak: number) => {
+    if (streak >= 9) return '#ff3838'; // Рубиново-красный (х9 - х11)
+    if (streak >= 6) return '#f1c40f'; // Золотой (х6 - х8)
+    return '#00d2d3';                  // Неоново-бирюзовый (х3 - х5)
+  };
+
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', backgroundColor: '#000000' }}>
       <style>{`
@@ -72,7 +82,7 @@ export default function GameUI(props: GameUIProps) {
         .tfu-shield-frame { width: min(220px, 30vw); height: 9px; background-color: rgba(5, 30, 48, 0.75); border: 1px solid #00e5ff; box-shadow: 0 0 0 1px #000; padding: 1px; clip-path: polygon(6px 0%, calc(100% - 6px) 0%, 100% 100%, 0% 100%); position: relative; }
         .tfu-hp-fill { height: 100%; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.35) 0px, rgba(0,0,0,0.35) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #d31820 0%, #ff3b30 45%, #b50e17 55%, #66050b 100%); clip-path: polygon(6px 0%, calc(100% - 6px) 0%, 100% 100%, 0% 100%); transition: width 0.15s ease-out; }
         .tfu-shield-fill { height: 100%; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.3) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #0284c7 0%, #00e5ff 50%, #0369a1 100%); clip-path: polygon(4px 0%, calc(100% - 4px) 0%, 100% 100%, 0% 100%); transition: width 0.15s ease-out; }
-        .tfu-hp-heal-sector { position: absolute; top: 1px; bottom: 1px; background: #4cd137; opacity: 0.85; transition: all 0.2s ease-out; }
+        .tfu-hp-heal-sector { position: absolute; top: 1px; bottom: 1px; background: #ff2a3a; opacity: 0.9; transition: all 0.2s ease-out; }
         .tfu-progress-tracker { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; }
         .tracker-node { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #5a738e; background: #09131d; transition: all 0.2s; }
         .tracker-node.active { border-color: #64b5f6; background: #2196f3; }
@@ -116,6 +126,46 @@ export default function GameUI(props: GameUIProps) {
         .tfu-pad-bottom { bottom: 0; left: 50%; transform: translateX(-50%); }
         .tfu-pad-bottom:active { transform: translateX(-50%) scale(0.94); }
         .tfu-pad-timer-text { font-family: monospace; font-size: 16px; font-weight: 900; color: #ffffff; }
+        
+        /* Плашки комбо и буйства над прицелом */
+        .hud-target-overlay {
+          position: absolute;
+          transform: translate(-50%, -100%);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 2px;
+          pointer-events: none;
+          z-index: 25;
+        }
+        .hud-combo-label {
+          font-family: Arial, sans-serif;
+          font-size: 13px;
+          font-weight: 900;
+          letter-spacing: 2.5px;
+          text-transform: uppercase;
+          text-shadow: 0 0 10px currentColor, 0 1px 4px #000;
+          animation: comboPulseAnim 0.22s infinite alternate;
+        }
+        .hud-rage-label {
+          font-family: Arial, sans-serif;
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 3px;
+          color: #f1c40f;
+          text-transform: uppercase;
+          text-shadow: 0 0 10px rgba(241, 196, 15, 0.8), 0 1px 3px #000;
+          animation: ragePulseAnim 0.35s infinite alternate;
+        }
+        @keyframes comboPulseAnim {
+          from { transform: scale(1); opacity: 0.88; }
+          to { transform: scale(1.08); opacity: 1; }
+        }
+        @keyframes ragePulseAnim {
+          from { opacity: 0.65; transform: scale(0.98); }
+          to { opacity: 1; transform: scale(1.05); }
+        }
+
         .zone-attack-indicator { position: absolute; top: 0; bottom: 0; background: rgba(255, 30, 30, 0.2); border-left: 2px dashed rgba(255, 80, 80, 0.65); border-right: 2px dashed rgba(255, 80, 80, 0.65); pointer-events: none; z-index: 8; animation: zoneBlink 0.22s infinite alternate; }
         .tractor-beam-indicator { position: absolute; top: 0; bottom: 0; background: rgba(255, 10, 10, 0.28); border-left: 3px solid rgba(255, 60, 60, 0.85); border-right: 3px solid rgba(255, 60, 60, 0.85); pointer-events: none; z-index: 8; animation: tractorBlink 0.18s infinite alternate; }
         @keyframes zoneBlink { from { opacity: 0.15; } to { opacity: 0.55; } }
@@ -158,6 +208,29 @@ export default function GameUI(props: GameUIProps) {
         props.generatorTargets.map((gt) => (
           <div key={gt.id} className="generator-reticle" style={{ left: `${gt.x}px`, top: `${gt.y}px` }} />
         ))}
+
+      {/* Индикаторы комбо и буйства над прицелом */}
+      {!props.inBiomeTransition && !props.isPaused && !props.isConsoleOpen && !props.bossCutsceneActive && !props.playerStunned && !props.endGameModal && (
+        <div
+          className="hud-target-overlay"
+          style={{
+            left: `${props.crosshairScreenPos.x}px`,
+            top: `${props.crosshairScreenPos.y - 18}px`
+          }}
+        >
+          {props.isRageActive && (
+            <div className="hud-rage-label">БУЙСТВО</div>
+          )}
+          {props.comboStreak >= 3 && (
+            <div
+              className="hud-combo-label"
+              style={{ color: getComboColor(props.comboStreak) }}
+            >
+              КОМБО Х{props.comboStreak}
+            </div>
+          )}
+        </div>
+      )}
 
       {props.zoneAttackUi.visible && (
         <div className="zone-attack-indicator" style={{ left: `${props.zoneAttackUi.leftPct}%`, width: `${props.zoneAttackUi.widthPct}%` }} />
