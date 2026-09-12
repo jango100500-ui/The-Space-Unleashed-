@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -6,7 +7,9 @@ import {
   Enemy, Laser, ExplosionPart, ShockwaveRing, FlashCore, ShieldImpactEffect,
   DatapadItem, ShieldGenerator, BossZoneAttack, BossTractorBeam, BossState,
   PlanetItem, BiomeRunStep, generateBiomeRun, createProceduralPlanetTexture,
-  availablePlanets, BiomeType, GeneratorScreenTarget, BossDebris
+  createProceduralNoiseTexture, availablePlanets, BiomeType, GeneratorScreenTarget,
+  BossDebris, AsteroidItem, TrashItem, DerelictTie, IonicCloudItem,
+  ASTEROID_TEXTURE_URLS, TRASH_TEXTURE_URLS
 } from './GameData.ts';
 import { HANGAR_SHIPS } from '../components/HangarScreen.tsx';
 import VictoryCutscene from '../cutscenes/VictoryCutscene.tsx';
@@ -219,6 +222,29 @@ export default function GameScreen({
     }
   };
 
+  const playClapSound = (volume = 0.38) => {
+    const clapKeys = ['clap1', 'clap2', 'clap3', 'clap4'];
+    const chosen = clapKeys[Math.floor(Math.random() * clapKeys.length)];
+    const buf = assets.audioBuffers[chosen];
+    if (buf) {
+      playBuffer(buf, volume);
+    } else {
+      playTone(180, 80, 0.15, volume * 0.7, 'square');
+    }
+  };
+
+  const playThunderSound = (distToPlayer: number) => {
+    const tKeys = ['thunder1', 'thunder2'];
+    const chosen = tKeys[Math.floor(Math.random() * tKeys.length)];
+    const buf = assets.audioBuffers[chosen];
+    const vol = THREE.MathUtils.clamp(Math.max(0, 1 - distToPlayer / 280) * 0.32, 0.05, 0.32);
+    if (buf) {
+      playBuffer(buf, vol, true);
+    } else {
+      playTone(90, 40, 2.5, vol, 'sine');
+    }
+  };
+
   useEffect(() => {
     inputRef.current.fire = isFiring;
   }, [isFiring]);
@@ -282,7 +308,8 @@ export default function GameScreen({
     const height = window.innerHeight;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(biomeRunRef.current[0].fogColor, 0.00035);
+    const baseFogDensity = 0.00035;
+    scene.fog = new THREE.FogExp2(biomeRunRef.current[0].fogColor, baseFogDensity);
 
     const camera = new THREE.PerspectiveCamera(54, width / height, 0.1, 8000);
     const cameraBase = new THREE.Vector3(0, 3.2, 13.0);
@@ -365,9 +392,41 @@ export default function GameScreen({
       planetMeshes.push(planet);
     };
 
+    let junkyardDreadnought: THREE.Group | null = null;
+    const spawnJunkyardDreadnought = () => {
+      if (junkyardDreadnought) {
+        scene.remove(junkyardDreadnought);
+        junkyardDreadnought = null;
+      }
+      const dr = models.destroyer.clone();
+      dr.scale.setScalar(18.0);
+      dr.position.set(-180, -40, -1200);
+      dr.rotation.set(0.42, 2.3, -0.55);
+      dr.traverse((c) => {
+        if ((c as THREE.Mesh).isMesh) {
+          const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
+          if (m) {
+            m.roughness = 0.9;
+            m.metalness = 0.1;
+          }
+        }
+      });
+      scene.add(dr);
+      junkyardDreadnought = dr;
+    };
+
+    const clearJunkyardDreadnought = () => {
+      if (junkyardDreadnought) {
+        scene.remove(junkyardDreadnought);
+        junkyardDreadnought = null;
+      }
+    };
+
     const firstStep = biomeRunRef.current[0];
     if (firstStep.type === 'planet' && firstStep.planet) {
       spawnPlanet(firstStep.planet);
+    } else if (firstStep.type === 'junkyard') {
+      spawnJunkyardDreadnought();
     }
 
     const defaultShipPos = new THREE.Vector3(0, -1.2, 0);
@@ -483,6 +542,26 @@ export default function GameScreen({
       new THREE.MeshLambertMaterial({ color: 0x635b54 })
     ];
 
+    const asteroidTextures: THREE.Texture[] = ASTEROID_TEXTURE_URLS.map((url, idx) => {
+      const fb = createProceduralNoiseTexture('#555555', '#242424');
+      textureLoader.load(url, (tex) => {
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        asteroidTextures[idx] = tex;
+      });
+      return fb;
+    });
+
+    const trashTextures: THREE.Texture[] = TRASH_TEXTURE_URLS.map((url, idx) => {
+      const fb = createProceduralNoiseTexture('#3e444b', '#1a1f26');
+      textureLoader.load(url, (tex) => {
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        trashTextures[idx] = tex;
+      });
+      return fb;
+    });
+
     const lasers: Laser[] = [];
     const protonBombs: ProtonBomb[] = [];
     const wingmanFlyers: WingmanFlyer[] = [];
@@ -493,6 +572,11 @@ export default function GameScreen({
     const shieldImpacts: ShieldImpactEffect[] = [];
     const datapads: DatapadItem[] = [];
     const bossSpaceDebris: BossDebris[] = [];
+
+    const asteroids: AsteroidItem[] = [];
+    const trashItems: TrashItem[] = [];
+    const derelictTies: DerelictTie[] = [];
+    const ionicClouds: IonicCloudItem[] = [];
 
     const zoneAttack: BossZoneAttack = { active: false, timer: 0, duration: 1.6, xMin: -4, xMax: 4, fired: false };
     const tractorBeam: BossTractorBeam = { active: false, timer: 0, duration: 1.8, xMin: -6, xMax: 6, fired: false };
@@ -723,6 +807,119 @@ export default function GameScreen({
       });
     };
 
+    const spawnAsteroid = () => {
+      const radius = 1.3 + Math.random() * 2.1;
+      const geo = new THREE.DodecahedronGeometry(radius, 1);
+      const tex = asteroidTextures[Math.floor(Math.random() * asteroidTextures.length)];
+      const mat = new THREE.MeshLambertMaterial({ map: tex });
+      const mesh = new THREE.Mesh(geo, mat);
+
+      const startX = (Math.random() - 0.5) * 55;
+      const startY = defaultShipPos.y + (Math.random() - 0.5) * 22;
+      const startZ = -360 - Math.random() * 60;
+      mesh.position.set(startX, startY, startZ);
+      scene.add(mesh);
+
+      const speed = 55 + Math.random() * 50;
+      asteroids.push({
+        mesh,
+        pos: mesh.position,
+        vel: new THREE.Vector3((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 3, speed),
+        rotSpeed: new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2),
+        radius,
+        hp: 3
+      });
+    };
+
+    const spawnTrashItem = () => {
+      const shapeType = Math.floor(Math.random() * 4);
+      let geo: THREE.BufferGeometry;
+      let rad = 1.4;
+
+      if (shapeType === 0) {
+        geo = new THREE.BoxGeometry(0.5, 0.5, 3.4);
+        rad = 1.6;
+      } else if (shapeType === 1) {
+        geo = new THREE.BoxGeometry(2.4, 0.16, 2.0);
+        rad = 1.5;
+      } else if (shapeType === 2) {
+        geo = new THREE.CylinderGeometry(0.35, 0.35, 2.8, 8);
+        rad = 1.4;
+      } else {
+        geo = new THREE.DodecahedronGeometry(1.5, 0);
+        rad = 1.5;
+      }
+
+      const tex = trashTextures[Math.floor(Math.random() * trashTextures.length)];
+      const mat = new THREE.MeshLambertMaterial({ map: tex });
+      const mesh = new THREE.Mesh(geo, mat);
+
+      const startX = (Math.random() - 0.5) * 60;
+      const startY = defaultShipPos.y + (Math.random() - 0.5) * 24;
+      const startZ = -340 - Math.random() * 60;
+      mesh.position.set(startX, startY, startZ);
+      scene.add(mesh);
+
+      const speed = 40 + Math.random() * 55;
+      trashItems.push({
+        mesh,
+        pos: mesh.position,
+        vel: new THREE.Vector3((Math.random() - 0.5) * 5, (Math.random() - 0.5) * 4, speed),
+        rotSpeed: new THREE.Vector3((Math.random() - 0.5) * 2.5, (Math.random() - 0.5) * 2.5, (Math.random() - 0.5) * 2.5),
+        radius: rad
+      });
+    };
+
+    const spawnDerelictTie = () => {
+      const tie = models.tie.clone();
+      tie.scale.setScalar(0.42);
+      tie.traverse((c) => {
+        if ((c as THREE.Mesh).isMesh) {
+          const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
+          if (m) {
+            m.roughness = 0.95;
+            m.metalness = 0.05;
+            m.color.setHex(0x30353c);
+          }
+        }
+      });
+
+      const startX = (Math.random() - 0.5) * 35;
+      const startY = defaultShipPos.y + (Math.random() - 0.5) * 16;
+      const startZ = -320;
+      tie.position.set(startX, startY, startZ);
+      scene.add(tie);
+
+      derelictTies.push({
+        mesh: tie,
+        pos: tie.position,
+        vel: new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 45),
+        rotSpeed: new THREE.Vector3(0.4, 0.6, 0.2),
+        radius: 2.2,
+        hp: 2
+      });
+    };
+
+    const spawnIonicCloud = (posZ: number) => {
+      const cloudRadius = 32 + Math.random() * 14;
+      const geo = new THREE.SphereGeometry(cloudRadius, 16, 12);
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0x8822aa,
+        transparent: true,
+        opacity: 0.16,
+        depthWrite: false
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set((Math.random() - 0.5) * 30, defaultShipPos.y + (Math.random() - 0.5) * 12, posZ);
+      scene.add(mesh);
+      ionicClouds.push({
+        mesh,
+        pos: mesh.position,
+        radius: cloudRadius,
+        cloudLength: cloudRadius * 1.8
+      });
+    };
+
     let enemySpawnCounter = 0;
 
     const spawnEnemy = (forcedSide?: number, isRaid = false) => {
@@ -837,6 +1034,10 @@ export default function GameScreen({
     const STAGE_DURATION = 140;
 
     let spawnTimer = 0;
+    let asteroidSpawnTimer = 0;
+    let trashSpawnTimer = 0;
+    let derelictSpawnTimer = 0;
+
     let fireCooldown = 0;
     let shakeIntensity = 0;
     let currentHp = 100;
@@ -962,6 +1163,9 @@ export default function GameScreen({
       const startL = new THREE.Vector3((Math.random() - 0.5) * 120, 50 + Math.random() * 25, -120 - Math.random() * 150);
       let endL = new THREE.Vector3((Math.random() - 0.5) * 140, -40 - Math.random() * 25, -70 - Math.random() * 140);
 
+      const dist = shipPos.distanceTo(startL);
+      playThunderSound(dist);
+
       if (forcePlayer) {
         endL.copy(shipPos);
         playerStunDuration = 4.5;
@@ -1058,10 +1262,24 @@ export default function GameScreen({
       if (forceBiomeRef.current) {
         const forcedType = forceBiomeRef.current;
         forceBiomeRef.current = null;
-        const targetColor = forcedType === 'ionic_vapors' ? 0x240620 : 0x0d121c;
-        const titleText = forcedType === 'ionic_vapors' ? 'ИОННЫЕ ИСПАРЕНИЯ' : 'ТУМАННОСТЬ';
+        let targetColor = 0x0c111a;
+        let titleText = 'ТУМАННОСТЬ';
+        if (forcedType === 'ionic_vapors') {
+          targetColor = 0x220524;
+          titleText = 'ИОННЫЕ ИСПАРЕНИЯ';
+        } else if (forcedType === 'asteroid_field') {
+          targetColor = 0x070a10;
+          titleText = 'ПОЛЕ АСТЕРОИДОВ';
+        } else if (forcedType === 'junkyard') {
+          targetColor = 0x0b0d10;
+          titleText = 'КОСМИЧЕСКАЯ СВАЛКА';
+        }
         biomeRunRef.current[stageIdx] = { type: forcedType, title: titleText, fogColor: targetColor };
         clearAllPlanets();
+        clearJunkyardDreadnought();
+        if (forcedType === 'junkyard') {
+          spawnJunkyardDreadnought();
+        }
         (scene.fog as THREE.FogExp2).color.setHex(targetColor);
         renderer.setClearColor(targetColor);
         setBiomeTitle(titleText);
@@ -1081,7 +1299,7 @@ export default function GameScreen({
       }
 
       const currentStep = biomeRunRef.current[stageIdx] || biomeRunRef.current[0];
-      const hasLightningBiome = !bossData && !bossCutsceneActiveRef.current && (currentStep.type === 'nebula_storm' || currentStep.type === 'ionic_vapors');
+      const hasLightningBiome = !bossData && !bossCutsceneActiveRef.current && (currentStep.type === 'nebula_storm');
 
       if (hasLightningBiome && !inBiomeTransitionRef.current && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
         lightningTimer += dt;
@@ -1091,6 +1309,49 @@ export default function GameScreen({
           triggerLightning();
         }
       }
+
+      if (currentStep.type === 'asteroid_field' && !inBiomeTransitionRef.current && !bossData && !showHallwayCutscene) {
+        asteroidSpawnTimer += dt;
+        if (asteroidSpawnTimer >= 1.6) {
+          asteroidSpawnTimer = 0;
+          if (asteroids.length < 9) {
+            spawnAsteroid();
+          }
+        }
+      }
+
+      if (currentStep.type === 'junkyard' && !inBiomeTransitionRef.current && !bossData && !showHallwayCutscene) {
+        trashSpawnTimer += dt;
+        if (trashSpawnTimer >= 1.2) {
+          trashSpawnTimer = 0;
+          if (trashItems.length < 14) {
+            spawnTrashItem();
+          }
+        }
+        derelictSpawnTimer += dt;
+        if (derelictSpawnTimer >= 18.0) {
+          derelictSpawnTimer = 0;
+          if (derelictTies.length < 2) {
+            spawnDerelictTie();
+          }
+        }
+      }
+
+      let insideAnyCloud = false;
+      if (currentStep.type === 'ionic_vapors' && !inBiomeTransitionRef.current && !bossData) {
+        if (ionicClouds.length === 0) {
+          spawnIonicCloud(-220);
+          spawnIonicCloud(-460);
+        }
+        for (const ic of ionicClouds) {
+          if (Math.abs(ic.pos.z - shipPos.z) < ic.cloudLength * 0.5 && Math.hypot(ic.pos.x - shipPos.x, ic.pos.y - shipPos.y) < ic.radius) {
+            insideAnyCloud = true;
+          }
+        }
+      }
+
+      const targetFogDensity = insideAnyCloud ? baseFogDensity * 1.35 : baseFogDensity;
+      (scene.fog as THREE.FogExp2).density = THREE.MathUtils.lerp((scene.fog as THREE.FogExp2).density, targetFogDensity, dt * 2.0);
 
       if (playerStunDuration > 0) {
         playerStunDuration -= dt;
@@ -1155,12 +1416,18 @@ export default function GameScreen({
             renderer.setClearColor(fogTarget);
 
             clearAllPlanets();
+            clearJunkyardDreadnought();
+            for (const ic of ionicClouds) scene.remove(ic.mesh);
+            ionicClouds.length = 0;
+
             if (step.type === 'planet' && step.planet) {
               spawnPlanet(step.planet);
+            } else if (step.type === 'junkyard') {
+              spawnJunkyardDreadnought();
             }
           }
         }
-      } else if (!bossSpawned && stageIdx >= 4 && !bossCutsceneActiveRef.current && !isDeadRef.current && !showVictoryCutsceneRef.current) {
+      } else if (!bossSpawned && stageIdx >= 4 && !bossCutsceneActiveRef.current && !isDeadRef.current) {
         applyStageHeal(25);
         bossSpawned = true;
         bossCutsceneActiveRef.current = true;
@@ -1245,6 +1512,11 @@ export default function GameScreen({
           pl.geometry.dispose();
           planetMeshes.splice(i, 1);
         }
+      }
+
+      if (junkyardDreadnought && !(isDeadRef.current || isEndingSequenceRef.current)) {
+        junkyardDreadnought.position.z += 18 * dt;
+        junkyardDreadnought.rotation.z += 0.0004 * dt;
       }
 
       const input = (isDeadRef.current || inBiomeTransitionRef.current || playerStunDuration > 0 || showHallwayCutscene || showVictoryCutsceneRef.current)
@@ -1519,10 +1791,118 @@ export default function GameScreen({
         }
       }
 
+      for (let aIdx = asteroids.length - 1; aIdx >= 0; aIdx--) {
+        const ast = asteroids[aIdx];
+        ast.pos.addScaledVector(ast.vel, dt);
+        ast.mesh.rotation.x += ast.rotSpeed.x * dt;
+        ast.mesh.rotation.y += ast.rotSpeed.y * dt;
+        ast.mesh.rotation.z += ast.rotSpeed.z * dt;
+
+        if (!isDeadRef.current && ast.pos.distanceTo(shipPos) < ast.radius + 1.1) {
+          applyDamageToPlayer(12);
+          playClapSound(0.48);
+          spawnRetroExplosion(ast.pos, 1.4);
+          scene.remove(ast.mesh);
+          ast.mesh.geometry.dispose();
+          asteroids.splice(aIdx, 1);
+          continue;
+        }
+
+        for (let eIdx = enemies.length - 1; eIdx >= 0; eIdx--) {
+          const e = enemies[eIdx];
+          const distToTie = e.pos.distanceTo(ast.pos);
+          if (distToTie < ast.radius + 3.8 && e.state === 'attacking') {
+            if (Math.random() < 0.10) {
+              e.hp = 0;
+              e.state = 'disabled';
+              e.disabledTimer = 0.2;
+              spawnRetroExplosion(e.pos, 2.0);
+              ast.hp -= 2;
+            } else {
+              const avoidDir = (e.pos.x > ast.pos.x ? 1 : -1);
+              e.pos.x += avoidDir * 18 * dt;
+            }
+          }
+        }
+
+        if (ast.hp <= 0 || ast.pos.z > camera.position.z + 20) {
+          if (ast.hp <= 0) {
+            spawnRetroExplosion(ast.pos, 1.3);
+            currentScore += 25;
+            setScore(currentScore);
+          }
+          scene.remove(ast.mesh);
+          ast.mesh.geometry.dispose();
+          asteroids.splice(aIdx, 1);
+        }
+      }
+
+      for (let tIdx = trashItems.length - 1; tIdx >= 0; tIdx--) {
+        const tr = trashItems[tIdx];
+        tr.pos.addScaledVector(tr.vel, dt);
+        tr.mesh.rotation.x += tr.rotSpeed.x * dt;
+        tr.mesh.rotation.y += tr.rotSpeed.y * dt;
+
+        if (!isDeadRef.current && tr.pos.distanceTo(shipPos) < tr.radius + 1.0) {
+          applyDamageToPlayer(8);
+          playClapSound(0.42);
+          const pushDir = new THREE.Vector3().subVectors(tr.pos, shipPos).normalize();
+          tr.vel.addScaledVector(pushDir, 35);
+        }
+
+        if (tr.pos.z > camera.position.z + 20) {
+          scene.remove(tr.mesh);
+          tr.mesh.geometry.dispose();
+          trashItems.splice(tIdx, 1);
+        }
+      }
+
+      for (let dIdx = derelictTies.length - 1; dIdx >= 0; dIdx--) {
+        const dtie = derelictTies[dIdx];
+        dtie.pos.addScaledVector(dtie.vel, dt);
+        dtie.mesh.rotation.x += dtie.rotSpeed.x * dt;
+        dtie.mesh.rotation.y += dtie.rotSpeed.y * dt;
+
+        if (dtie.hp <= 0) {
+          spawnRetroExplosion(dtie.pos, 2.6);
+          currentScore += 150;
+          setScore(currentScore);
+
+          let affectedTrash = 0;
+          for (const tr of trashItems) {
+            if (tr.pos.distanceTo(dtie.pos) < 26 && affectedTrash < 3) {
+              const impulse = new THREE.Vector3().subVectors(tr.pos, dtie.pos).normalize().multiplyScalar(45);
+              tr.vel.add(impulse);
+              affectedTrash++;
+            }
+          }
+
+          scene.remove(dtie.mesh);
+          derelictTies.splice(dIdx, 1);
+          continue;
+        }
+
+        if (dtie.pos.z > camera.position.z + 20) {
+          scene.remove(dtie.mesh);
+          derelictTies.splice(dIdx, 1);
+        }
+      }
+
+      for (let cIdx = ionicClouds.length - 1; cIdx >= 0; cIdx--) {
+        const c = ionicClouds[cIdx];
+        c.pos.z += 16 * dt;
+        c.mesh.position.copy(c.pos);
+        if (c.pos.z > camera.position.z + c.radius + 20) {
+          scene.remove(c.mesh);
+          c.mesh.geometry.dispose();
+          ionicClouds.splice(cIdx, 1);
+        }
+      }
+
       fireCooldown -= dt;
       const calcFireCooldown = THREE.MathUtils.clamp(0.35 - (shipConf.fireRate / 60) * 0.18, 0.14, 0.32);
 
-      if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0 && !isDeadRef.current && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
+      if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0 && !isDeadRef.current && !showHallwayCutscene) {
         fireCooldown = calcFireCooldown;
 
         const leftOffset = new THREE.Vector3(-0.46, 0, -0.3).applyQuaternion(shipHolder.quaternion);
@@ -1551,7 +1931,7 @@ export default function GameScreen({
 
       const maxSimultaneousEnemies = Math.min(8, 3 + stageIdx);
 
-      if (!inBiomeTransitionRef.current && !bossData && !showHallwayCutscene && !isDeadRef.current && !showVictoryCutsceneRef.current) {
+      if (!inBiomeTransitionRef.current && !bossData && !showHallwayCutscene && !isDeadRef.current) {
         spawnTimer += dt;
         const dynamicSpawnInterval = Math.max(1.7, 3.8 - stageIdx * 0.55);
         if (spawnTimer > dynamicSpawnInterval) {
@@ -1649,7 +2029,7 @@ export default function GameScreen({
         }
 
         const newTargetList: GeneratorScreenTarget[] = [];
-        if (!bossData.phase2Active && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
+        if (!bossData.phase2Active && !showHallwayCutscene) {
           for (const gen of bossData.generators) {
             if (!gen.destroyed) {
               const worldGPos = gen.localPos.clone().applyMatrix4(bossData.group.matrixWorld);
@@ -1664,7 +2044,7 @@ export default function GameScreen({
         }
         setGeneratorTargets(newTargetList);
 
-        if (!bossData.raidActive && !bossCutsceneActiveRef.current && !inBiomeTransitionRef.current && !showHallwayCutscene && !isDeadRef.current && !showVictoryCutsceneRef.current) {
+        if (!bossData.raidActive && !bossCutsceneActiveRef.current && !inBiomeTransitionRef.current && !showHallwayCutscene && !isDeadRef.current) {
           const isSpecialBusy = zoneAttack.active || tractorBeam.active || isBossExecutingSpecial;
 
           if (!isSpecialBusy) {
@@ -1869,7 +2249,7 @@ export default function GameScreen({
             shakeIntensity = Math.max(shakeIntensity, flybyFactor * 0.7);
           }
 
-          if (!showHallwayCutscene && !isDeadRef.current && !showVictoryCutsceneRef.current) {
+          if (!showHallwayCutscene && !isDeadRef.current) {
             e.shootCooldown -= dt;
             if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 18 && e.pos.z > -160) {
               e.shootCooldown = e.isRaid ? 0.9 : e.isElite ? 0.8 + Math.random() * 0.5 : 1.1 + Math.random() * 0.7;
@@ -1893,7 +2273,7 @@ export default function GameScreen({
 
               if (e.isRaid) {
                 setTimeout(() => {
-                  if (!isDisposed && e.hp > 0 && !bossCutsceneActiveRef.current && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
+                  if (!isDisposed && e.hp > 0 && !bossCutsceneActiveRef.current && !showHallwayCutscene) {
                     fireSalvo(-0.5);
                   }
                 }, 110);
@@ -1983,6 +2363,32 @@ export default function GameScreen({
           }
 
           if (!hitAny) {
+            for (let aIdx = asteroids.length - 1; aIdx >= 0; aIdx--) {
+              const ast = asteroids[aIdx];
+              if (l.mesh.position.distanceTo(ast.pos) < ast.radius + 0.6) {
+                l.life = 0;
+                hitAny = true;
+                ast.hp -= 1;
+                spawnRetroExplosion(l.mesh.position, 0.7, false);
+                break;
+              }
+            }
+          }
+
+          if (!hitAny) {
+            for (let dtIdx = derelictTies.length - 1; dtIdx >= 0; dtIdx--) {
+              const dtie = derelictTies[dtIdx];
+              if (l.mesh.position.distanceTo(dtie.pos) < dtie.radius + 0.8) {
+                l.life = 0;
+                hitAny = true;
+                dtie.hp -= 1;
+                spawnRetroExplosion(l.mesh.position, 0.8, false);
+                break;
+              }
+            }
+          }
+
+          if (!hitAny) {
             for (let j = enemies.length - 1; j >= 0; j--) {
               const e = enemies[j];
               if (l.mesh.position.distanceTo(e.pos) < 3.8) {
@@ -2017,7 +2423,7 @@ export default function GameScreen({
             }
           }
 
-          if (!hitAny && bossData && !bossData.destroyed && !bossData.raidActive && !bossCutsceneActiveRef.current && !showVictoryCutsceneRef.current) {
+          if (!hitAny && bossData && !bossData.destroyed && !bossData.raidActive && !bossCutsceneActiveRef.current) {
             bossData.group.updateMatrixWorld(true);
             const hasGenerators = bossData.generators.some((g) => !g.destroyed);
 
@@ -2226,8 +2632,22 @@ export default function GameScreen({
         }
         scene.remove(w.mesh);
       });
+      asteroids.forEach((a) => {
+        scene.remove(a.mesh);
+        a.mesh.geometry.dispose();
+      });
+      trashItems.forEach((t) => {
+        scene.remove(t.mesh);
+        t.mesh.geometry.dispose();
+      });
+      derelictTies.forEach((d) => scene.remove(d.mesh));
+      ionicClouds.forEach((c) => {
+        scene.remove(c.mesh);
+        c.mesh.geometry.dispose();
+      });
       enemies.forEach((e) => scene.remove(e.mesh));
       planetMeshes.forEach((pl) => scene.remove(pl));
+      clearJunkyardDreadnought();
       debrisList.forEach((d) => scene.remove(d.mesh));
       shockwaves.forEach((s) => scene.remove(s.mesh));
       datapads.forEach((dp) => scene.remove(dp.mesh));
@@ -2389,6 +2809,24 @@ export default function GameScreen({
     } else if (code === '2827sjksos29p') {
       forceBiomeRef.current = 'ionic_vapors';
       setConsoleFeedback('ИОННЫЕ ИСПАРЕНИЯ АКТИВИРОВАНЫ');
+      setTimeout(() => {
+        setIsConsoleOpen(false);
+        setIsPaused(false);
+        setConsoleInput('');
+        setConsoleFeedback('');
+      }, 500);
+    } else if (code === 'astfield77') {
+      forceBiomeRef.current = 'asteroid_field';
+      setConsoleFeedback('ПОЛЕ АСТЕРОИДОВ АКТИВИРОВАНО');
+      setTimeout(() => {
+        setIsConsoleOpen(false);
+        setIsPaused(false);
+        setConsoleInput('');
+        setConsoleFeedback('');
+      }, 500);
+    } else if (code === 'junkyard88') {
+      forceBiomeRef.current = 'junkyard';
+      setConsoleFeedback('СВАЛКА АКТИВИРОВАНА');
       setTimeout(() => {
         setIsConsoleOpen(false);
         setIsPaused(false);
