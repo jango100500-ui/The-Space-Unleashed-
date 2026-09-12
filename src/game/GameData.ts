@@ -30,6 +30,9 @@ export interface Enemy {
   isElite: boolean;
   isRaid: boolean;
   disabledTimer?: number;
+  hitFlashTimer?: number;
+  squadRole?: 'leader' | 'left_wing' | 'right_wing';
+  squadOffset?: THREE.Vector3;
 }
 
 export interface Laser {
@@ -39,47 +42,11 @@ export interface Laser {
   isEnemy: boolean;
 }
 
-export interface ExplosionPart {
-  mesh: THREE.Mesh;
-  vel: THREE.Vector3;
-  life: number;
-  maxLife: number;
-  spin: THREE.Vector3;
-}
-
-export interface ShockwaveRing {
-  mesh: THREE.Mesh;
-  life: number;
-  maxLife: number;
-  scaleSpeed: number;
-}
-
-export interface FlashCore {
-  mesh: THREE.Mesh;
-  light?: THREE.PointLight;
-  life: number;
-  maxLife: number;
-}
-
-export interface ShieldImpactEffect {
-  mesh: THREE.Mesh;
-  life: number;
-  maxLife: number;
-}
-
 export interface DatapadItem {
   mesh: THREE.Group;
   pos: THREE.Vector3;
   rotSpeed: THREE.Vector3;
   healPercent: number;
-}
-
-export interface BossDebris {
-  mesh: THREE.Mesh;
-  pos: THREE.Vector3;
-  vel: THREE.Vector3;
-  rotSpeed: THREE.Vector3;
-  radius: number;
 }
 
 export interface BossZoneAttack {
@@ -117,37 +84,35 @@ export interface BossState {
   raidCompleted: boolean;
 }
 
-export interface AsteroidItem {
+export interface ShieldImpactEffect {
   mesh: THREE.Mesh;
-  pos: THREE.Vector3;
-  vel: THREE.Vector3;
-  rotSpeed: THREE.Vector3;
-  radius: number;
-  hp: number;
+  life: number;
+  maxLife: number;
 }
 
-export interface TrashItem {
-  mesh: THREE.Mesh;
-  pos: THREE.Vector3;
-  vel: THREE.Vector3;
-  rotSpeed: THREE.Vector3;
-  radius: number;
+// Новый ретро-взрыв на спрайтах (адаптирован из референса)
+export interface ExplosionSmokeParticle {
+  sprite: THREE.Sprite;
+  velocity: THREE.Vector3;
+  life: number;
+  age: number;
+  initialScale: number;
 }
 
-export interface DerelictTie {
-  mesh: THREE.Group;
-  pos: THREE.Vector3;
-  vel: THREE.Vector3;
-  rotSpeed: THREE.Vector3;
-  radius: number;
-  hp: number;
-}
-
-export interface IonicCloudItem {
-  mesh: THREE.Mesh;
-  pos: THREE.Vector3;
-  radius: number;
-  cloudLength: number;
+export interface RetroExplosionInstance {
+  group: THREE.Group;
+  smoke: ExplosionSmokeParticle[];
+  shockwaveMesh: THREE.Mesh | null;
+  shockwaveAge: number;
+  shockwaveLife: number;
+  shockwaveMaxScale: number;
+  outerCore: THREE.Sprite;
+  core: THREE.Sprite;
+  innerCore: THREE.Sprite;
+  light?: THREE.PointLight;
+  age: number;
+  duration: number;
+  isGreenish?: boolean;
 }
 
 export interface PlanetItem {
@@ -155,7 +120,7 @@ export interface PlanetItem {
   url: string;
 }
 
-export type BiomeType = 'deep_space' | 'planet' | 'ionic_vapors' | 'nebula_storm' | 'asteroid_field' | 'junkyard';
+export type BiomeType = 'deep_space' | 'planet' | 'ionic_vapors' | 'nebula_storm';
 
 export interface BiomeRunStep {
   type: BiomeType;
@@ -163,23 +128,6 @@ export interface BiomeRunStep {
   fogColor: number;
   planet?: PlanetItem;
 }
-
-export const ASTEROID_TEXTURE_URLS = [
-  '/mocs/asteroid1.png',
-  '/mocs/asteroid2.png',
-  '/mocs/asteroid3.png',
-  '/mocs/asteroid4.png',
-  '/mocs/asteroid5.png'
-];
-
-export const TRASH_TEXTURE_URLS = [
-  '/mocs/trash1.png',
-  '/mocs/trash2.png',
-  '/mocs/trash3.png',
-  '/mocs/trash4.png',
-  '/mocs/trash5.png',
-  '/mocs/trash6.png'
-];
 
 export const globPlanetFiles = import.meta.glob<string>(
   ['/public/planets/*.{png,PNG,jpg,jpeg,webp}', '../../public/planets/*.{png,PNG,jpg,jpeg,webp}'],
@@ -221,13 +169,11 @@ export function generateBiomeRun(planets: PlanetItem[]): BiomeRunStep[] {
     if (i === 0) {
       if (Math.random() < 0.4 && isAllowedDeepSpace) {
         chosenType = 'deep_space';
-      } else if (Math.random() < 0.5) {
-        chosenType = 'asteroid_field';
       } else {
         chosenType = 'planet';
       }
     } else {
-      const candidates: BiomeType[] = ['planet', 'ionic_vapors', 'nebula_storm', 'asteroid_field', 'junkyard'];
+      const candidates: BiomeType[] = ['planet', 'ionic_vapors', 'nebula_storm'];
       if (isAllowedDeepSpace && prevType !== 'deep_space') {
         candidates.push('deep_space');
       }
@@ -239,13 +185,9 @@ export function generateBiomeRun(planets: PlanetItem[]): BiomeRunStep[] {
       deepSpaceCount++;
       run.push({ type: 'deep_space', title: 'ГЛУБОКИЙ КОСМОС', fogColor: 0x000103 });
     } else if (chosenType === 'ionic_vapors') {
-      run.push({ type: 'ionic_vapors', title: 'ИОННЫЕ ИСПАРЕНИЯ', fogColor: 0x220524 });
+      run.push({ type: 'ionic_vapors', title: 'ИОННЫЕ ИСПАРЕНИЯ', fogColor: 0x1f0724 });
     } else if (chosenType === 'nebula_storm') {
-      run.push({ type: 'nebula_storm', title: 'ТУМАННОСТЬ', fogColor: 0x0c111a });
-    } else if (chosenType === 'asteroid_field') {
-      run.push({ type: 'asteroid_field', title: 'ПОЛЕ АСТЕРОИДОВ', fogColor: 0x070a10 });
-    } else if (chosenType === 'junkyard') {
-      run.push({ type: 'junkyard', title: 'КОСМИЧЕСКАЯ СВАЛКА', fogColor: 0x0b0d10 });
+      run.push({ type: 'nebula_storm', title: 'ТУМАННОСТЬ', fogColor: 0x0a1018 });
     } else {
       const p = shuffledPlanets[pIdx % shuffledPlanets.length];
       pIdx++;
@@ -290,26 +232,39 @@ export function createProceduralPlanetTexture(name: string): THREE.CanvasTexture
   return tex;
 }
 
-export function createProceduralNoiseTexture(baseColor: string, detailColor: string): THREE.CanvasTexture {
+// Общие текстуры для нового ретро-взрыва (генерируются 1 раз)
+export function createExplosionGlowTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const c = canvas.getContext('2d')!;
+  const g = c.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, 'rgba(255, 255, 250, 1)');
+  g.addColorStop(0.18, 'rgba(255, 180, 40, 0.9)');
+  g.addColorStop(0.42, 'rgba(255, 70, 0, 0.65)');
+  g.addColorStop(0.72, 'rgba(160, 20, 0, 0.25)');
+  g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+export function createExplosionRingTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 256;
-  const ctx = canvas.getContext('2d')!;
-
-  ctx.fillStyle = baseColor;
-  ctx.fillRect(0, 0, 256, 256);
-
-  for (let i = 0; i < 280; i++) {
-    const x = Math.random() * 256;
-    const y = Math.random() * 256;
-    const s = 2 + Math.random() * 8;
-    ctx.fillStyle = detailColor;
-    ctx.fillRect(x, y, s, s);
-  }
-
+  const c = canvas.getContext('2d')!;
+  const g = c.createRadialGradient(128, 128, 70, 128, 128, 122);
+  g.addColorStop(0, 'rgba(255, 140, 0, 0)');
+  g.addColorStop(0.25, 'rgba(255, 140, 0, 0.35)');
+  g.addColorStop(0.5, 'rgba(255, 210, 110, 0.85)');
+  g.addColorStop(0.75, 'rgba(255, 80, 0, 0.35)');
+  g.addColorStop(1, 'rgba(255, 30, 0, 0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 256, 256);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
   return tex;
 }
