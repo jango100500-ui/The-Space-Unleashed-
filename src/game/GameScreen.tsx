@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -7,8 +6,9 @@ import {
   Enemy, Laser, ShieldGenerator, BossZoneAttack, BossTractorBeam, BossState,
   PlanetItem, BiomeRunStep, generateBiomeRun, createProceduralPlanetTexture,
   availablePlanets, BiomeType, GeneratorScreenTarget, ShieldImpactEffect,
-  DatapadItem, HealEffectParticle, RageEffectIndicator, createExplosionGlowTexture,
-  createExplosionRingTexture, createPlusSignTexture, createExclamationTexture,
+  DatapadItem, HealEffectParticle, ShieldBuffParticle, RageEffectIndicator,
+  SlaveRocket, SlaveMine, createExplosionGlowTexture, createExplosionRingTexture,
+  createPlusSignTexture, createExclamationTexture, createShieldIconTexture,
   ExplosionSmokeParticle, RetroExplosionInstance
 } from './GameData.ts';
 import { HANGAR_SHIPS } from '../components/HangarScreen.tsx';
@@ -30,6 +30,8 @@ interface ProtonBomb {
   speed: number;
   life: number;
   trailTimer: number;
+  soundSource: AudioBufferSourceNode | null;
+  soundGain: GainNode | null;
 }
 
 interface WingmanFlyer {
@@ -83,18 +85,29 @@ export default function GameScreen({
 
   const [ability1Cooldown, setAbility1Cooldown] = useState<number>(0);
   const [ability2Cooldown, setAbility2Cooldown] = useState<number>(0);
+  const [ability3Cooldown, setAbility3Cooldown] = useState<number>(0);
 
   const ability1CooldownRef = useRef<number>(0);
   const ability2CooldownRef = useRef<number>(0);
+  const ability3CooldownRef = useRef<number>(0);
+
   const triggerBombRef = useRef<boolean>(false);
   const triggerBrotherHelpRef = useRef<boolean>(false);
   const triggerRepairRef = useRef<boolean>(false);
   const triggerRageRef = useRef<boolean>(false);
+  const triggerSlaveRocketsRef = useRef<boolean>(false);
+  const triggerSlaveShieldRef = useRef<boolean>(false);
+  const triggerSlaveMineRef = useRef<boolean>(false);
 
   // Буйство Y-Wing
   const isRageActiveRef = useRef<boolean>(false);
   const rageTimerRef = useRef<number>(0);
   const [isRageActive, setIsRageActive] = useState<boolean>(false);
+
+  // Бафф Раба-1
+  const isSlaveShieldActiveRef = useRef<boolean>(false);
+  const slaveShieldTimerRef = useRef<number>(0);
+  const hasStunImmunityRef = useRef<boolean>(false);
 
   // Комбо
   const [comboStreak, setComboStreak] = useState<number>(0);
@@ -245,7 +258,6 @@ export default function GameScreen({
     }
   };
 
-  // Случайный звук починки Y-Wing (HealSound1 - HealSound4)
   const playRandomHealSound = () => {
     const healKeys = ['heal1', 'heal2', 'heal3', 'heal4'];
     const chosen = healKeys[Math.floor(Math.random() * healKeys.length)];
@@ -257,7 +269,6 @@ export default function GameScreen({
     }
   };
 
-  // Звук братской помощи X-Wing (brother1 или brother2)
   const playBrotherHelpSound = () => {
     const chosen = Math.random() > 0.5 ? assets.audioBuffers.brother1 : assets.audioBuffers.brother2;
     if (chosen) {
@@ -265,12 +276,12 @@ export default function GameScreen({
     }
   };
 
-  // Громкость молнии увеличена в 2.5 раза
-  const playThunderSound = (distToPlayer: number) => {
+  // Молния громкая и мощная, особенно при ударе по игроку
+  const playThunderSound = (distToPlayer: number, isDirectHit = false) => {
     const tKeys = ['thunder1', 'thunder2'];
     const chosen = tKeys[Math.floor(Math.random() * tKeys.length)];
     const buf = assets.audioBuffers[chosen];
-    const vol = THREE.MathUtils.clamp((1 - distToPlayer / 340) * 0.65, 0.15, 0.60);
+    const vol = isDirectHit ? 1.0 : THREE.MathUtils.clamp((1 - distToPlayer / 340) * 0.95, 0.35, 0.90);
     if (buf) {
       playBuffer(buf, vol, true);
     } else {
@@ -313,7 +324,7 @@ export default function GameScreen({
     inputRef.current.fire = isFiring;
   }, [isFiring]);
 
-  // Треугольник
+  // Способность 1 (Треугольник)
   const handleTriggerAbility1 = () => {
     if (isPausedRef.current || playerStunned || ability1CooldownRef.current > 0 || isDeadRef.current || showVictoryCutscene) return;
     if (selectedShipId === 'xwing') {
@@ -321,13 +332,17 @@ export default function GameScreen({
       setAbility1Cooldown(25);
       triggerBrotherHelpRef.current = true;
     } else if (selectedShipId === 'ywing') {
-      ability1CooldownRef.current = 125.0; // КД 125 секунд
+      ability1CooldownRef.current = 125.0;
       setAbility1Cooldown(125);
       triggerRepairRef.current = true;
+    } else if (selectedShipId === 'slave1') {
+      ability1CooldownRef.current = 24.0;
+      setAbility1Cooldown(24);
+      triggerSlaveRocketsRef.current = true;
     }
   };
 
-  // Круг
+  // Способность 2 (Круг)
   const handleTriggerAbility2 = () => {
     if (isPausedRef.current || playerStunned || ability2CooldownRef.current > 0 || isDeadRef.current || showVictoryCutscene) return;
     if (selectedShipId === 'xwing') {
@@ -338,6 +353,21 @@ export default function GameScreen({
       ability2CooldownRef.current = 30.0;
       setAbility2Cooldown(30);
       triggerRageRef.current = true;
+    } else if (selectedShipId === 'slave1') {
+      // 8 сек действия + 40 сек КД
+      ability2CooldownRef.current = 48.0;
+      setAbility2Cooldown(48);
+      triggerSlaveShieldRef.current = true;
+    }
+  };
+
+  // Способность 3 (Квадрат, для Раба-1)
+  const handleTriggerAbility3 = () => {
+    if (isPausedRef.current || playerStunned || ability3CooldownRef.current > 0 || isDeadRef.current || showVictoryCutscene) return;
+    if (selectedShipId === 'slave1') {
+      ability3CooldownRef.current = 28.0;
+      setAbility3Cooldown(28);
+      triggerSlaveMineRef.current = true;
     }
   };
 
@@ -580,19 +610,35 @@ export default function GameScreen({
     const bombGeo = new THREE.SphereGeometry(0.35, 16, 16);
     const bombMat = new THREE.MeshBasicMaterial({ color: 0xff3388 });
 
+    // Меши для ракет Раба-1
+    const slaveRocketGeo = new THREE.SphereGeometry(0.24, 12, 12);
+    const slaveRocketMat = new THREE.MeshBasicMaterial({ color: 0xff2222 });
+
+    // Меш для синей мины Раба-1
+    const slaveMineGeo = new THREE.SphereGeometry(0.55, 16, 16);
+    const slaveMineMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff });
+
     const shieldRippleGeo = new THREE.RingGeometry(0.4, 2.1, 24);
     const shieldRippleMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
+
+    // Горизонтальная воронка мины
+    const mineVortexGeo = new THREE.RingGeometry(0.5, 34.0, 32);
+    const mineVortexMat = new THREE.MeshBasicMaterial({ color: 0x00b4d8, side: THREE.DoubleSide, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
 
     const sharedGlowTexture = createExplosionGlowTexture();
     const sharedRingTexture = createExplosionRingTexture();
     const sharedPlusTexture = createPlusSignTexture();
     const sharedExclamationTexture = createExclamationTexture();
+    const sharedShieldIconTexture = createShieldIconTexture();
     const ringPlaneGeo = new THREE.PlaneGeometry(1, 1);
 
     const lasers: Laser[] = [];
     const protonBombs: ProtonBomb[] = [];
+    const slaveRockets: SlaveRocket[] = [];
+    const slaveMines: SlaveMine[] = [];
     const bombTrailParticles: BombParticle[] = [];
     const healEffectParticles: HealEffectParticle[] = [];
+    const shieldBuffParticles: ShieldBuffParticle[] = [];
     let rageIndicator: RageEffectIndicator | null = null;
 
     const wingmanFlyers: WingmanFlyer[] = [];
@@ -641,6 +687,39 @@ export default function GameScreen({
           vel: new THREE.Vector3((Math.random() - 0.5) * 1.5, 2.5 + Math.random() * 2.0, (Math.random() - 0.5) * 1.5),
           life: 0.7 + Math.random() * 0.35,
           maxLife: 0.7 + Math.random() * 0.35
+        });
+      }
+    };
+
+    // Спавн синих иконок щита для Раба-1
+    const spawnShieldBuffIcons = (count = 12) => {
+      for (let i = 0; i < count; i++) {
+        const mat = new THREE.SpriteMaterial({
+          map: sharedShieldIconTexture,
+          transparent: true,
+          opacity: 0.95,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+        const sprite = new THREE.Sprite(mat);
+        const scale = 0.55 + Math.random() * 0.3;
+        sprite.scale.set(scale, scale, 1);
+
+        const offset = new THREE.Vector3(
+          (Math.random() - 0.5) * 3.6,
+          (Math.random() - 0.5) * 2.0,
+          (Math.random() - 0.5) * 2.8
+        );
+        const startPos = shipPos.clone().add(offset);
+        sprite.position.copy(startPos);
+        scene.add(sprite);
+
+        shieldBuffParticles.push({
+          sprite,
+          pos: startPos,
+          vel: new THREE.Vector3((Math.random() - 0.5) * 1.8, 2.0 + Math.random() * 2.2, (Math.random() - 0.5) * 1.8),
+          life: 0.8 + Math.random() * 0.3,
+          maxLife: 0.8 + Math.random() * 0.3
         });
       }
     };
@@ -777,6 +856,7 @@ export default function GameScreen({
       playBuffer(audioBuffers.explode, 0.42, true);
     };
 
+    // Запуск протонной бомбы X-Wing с динамическим звуком
     const spawnProtonBomb = (origin: THREE.Vector3) => {
       let chosenTargetPos: THREE.Vector3 | null = null;
       let chosenTargetRef: Enemy | null = null;
@@ -809,6 +889,23 @@ export default function GameScreen({
 
       const initDir = new THREE.Vector3().subVectors(chosenTargetPos, origin).normalize();
 
+      // Динамический звук proton3
+      let pSrc: AudioBufferSourceNode | null = null;
+      let pGain: GainNode | null = null;
+      const pBuf = audioBuffers.proton3 || audioBuffers.proton;
+      if (pBuf && !isPausedRef.current) {
+        try {
+          pSrc = audioCtx.createBufferSource();
+          pSrc.buffer = pBuf;
+          pSrc.loop = true;
+          pGain = audioCtx.createGain();
+          pGain.gain.value = 0.55;
+          pSrc.connect(pGain);
+          pGain.connect(audioCtx.destination);
+          pSrc.start(0);
+        } catch {}
+      }
+
       protonBombs.push({
         mesh: bMesh,
         vel: initDir.multiplyScalar(28),
@@ -816,17 +913,82 @@ export default function GameScreen({
         targetRef: chosenTargetRef,
         speed: 28,
         life: 5.5,
-        trailTimer: 0
+        trailTimer: 0,
+        soundSource: pSrc,
+        soundGain: pGain
+      });
+    };
+
+    // Запуск 6 маневренных ракет Раба-1 (способность 1)
+    const fireSlaveRockets = () => {
+      const liveEnemies = enemies.filter((e) => e.state === 'attacking' && e.pos.z < shipPos.z - 4);
+
+      for (let rIdx = 0; rIdx < 6; rIdx++) {
+        setTimeout(() => {
+          if (isDisposed) return;
+
+          // Распределение по целям: 2 ракеты на истребитель
+          let targetRef: Enemy | null = null;
+          let targetPos = shipPos.clone().add(new THREE.Vector3(0, 0, -200));
+
+          if (liveEnemies.length > 0) {
+            const targetIndex = Math.floor(rIdx / 2) % liveEnemies.length;
+            targetRef = liveEnemies[targetIndex];
+            targetPos = targetRef.pos.clone();
+          } else if (bossData && !bossData.destroyed) {
+            const liveGens = bossData.generators.filter((g) => !g.destroyed);
+            if (liveGens.length > 0) {
+              targetPos = liveGens[rIdx % liveGens.length].localPos.clone().applyMatrix4(bossData.group.matrixWorld);
+            } else {
+              targetPos = bossData.pos.clone().add(new THREE.Vector3(0, 4, 30));
+            }
+          }
+
+          const rMesh = new THREE.Mesh(slaveRocketGeo, slaveRocketMat);
+          const launchSide = (rIdx % 2 === 0 ? 1 : -1);
+          const start = shipPos.clone().add(new THREE.Vector3(launchSide * 1.4, -0.4, -0.5));
+          rMesh.position.copy(start);
+          scene.add(rMesh);
+
+          // Случайная дуга вылета
+          const curveAxis = new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 0).normalize();
+          const initialVel = new THREE.Vector3(launchSide * 18, (Math.random() - 0.5) * 12, -45);
+
+          slaveRockets.push({
+            mesh: rMesh,
+            pos: start,
+            vel: initialVel,
+            targetRef,
+            targetPos,
+            curveAxis,
+            speed: 55,
+            life: 4.5,
+            curveTimer: 0.65
+          });
+
+          // Индивидуальный звук на каждую ракету
+          playBuffer(audioBuffers.slave12, 0.48);
+        }, rIdx * 95);
+      }
+    };
+
+    // Сброс дистанционной синей мины Раба-1 (способность 3)
+    const dropSlaveMine = () => {
+      const mMesh = new THREE.Mesh(slaveMineGeo, slaveMineMat);
+      const start = shipPos.clone().add(new THREE.Vector3(0, -0.6, -2.0));
+      mMesh.position.copy(start);
+      scene.add(mMesh);
+
+      slaveMines.push({
+        mesh: mMesh,
+        pos: start,
+        vel: new THREE.Vector3(0, 0, -85), // Летит вперед и плавно тормозит
+        life: 2.6,
+        state: 'slowing',
+        timer: 0
       });
 
-      // Звук proton3 для торпеды
-      if (audioBuffers.proton3) {
-        playBuffer(audioBuffers.proton3, 0.5);
-      } else if (audioBuffers.proton) {
-        playBuffer(audioBuffers.proton, 0.45);
-      } else {
-        playTone(300, 150, 0.4, 0.35, 'sawtooth');
-      }
+      playBuffer(audioBuffers.slave1, 0.45);
     };
 
     const triggerBrotherHelpAttack = () => {
@@ -862,7 +1024,6 @@ export default function GameScreen({
         targetEnemies.push(null);
       }
 
-      // Звук братской помощи (brother1 или brother2)
       playBrotherHelpSound();
 
       for (let s = 0; s < 6; s++) {
@@ -911,7 +1072,6 @@ export default function GameScreen({
           let fSrc: AudioBufferSourceNode | null = null;
           let fGn: GainNode | null = null;
 
-          // Звук xwing-flyby для пролетающих ведомых
           const flybyBuf = audioBuffers.xwingFlyby || audioBuffers.xwingEngine;
           if (flybyBuf && !isPausedRef.current) {
             try {
@@ -981,7 +1141,6 @@ export default function GameScreen({
       return baseMesh;
     };
 
-    // Спавн звеньев: разделение на лево и право при пачке > 2
     const spawnSquad = (forcedSide?: number, forcedCount?: number, forceTie2?: boolean) => {
       if (enemies.length >= 10) return;
 
@@ -990,7 +1149,6 @@ export default function GameScreen({
       const spawnZ = -250 - Math.random() * 25;
 
       for (let idx = 0; idx < count; idx++) {
-        // Разделяем стороны, чтобы не летели одной кучей
         const side = forcedSide !== undefined ? (idx % 2 === 0 ? forcedSide : -forcedSide) : (idx % 2 === 0 ? 1 : -1);
         const isTie2 = forceTie2 !== undefined ? forceTie2 : (stageRef.current >= 2 && Math.random() < 0.35);
         const mesh = createEnemyMesh(isTie2);
@@ -1118,7 +1276,6 @@ export default function GameScreen({
       shipHolder.visible = false;
       crosshairTex.visible = false;
 
-      // Доход при поражении
       const earned = Math.min(2200, Math.floor(currentScore * 0.025 + currentKills * 12 + currentStagesDone * 180));
       setCreditsEarned(earned);
       if (onAddCreditsRef.current) {
@@ -1150,7 +1307,6 @@ export default function GameScreen({
       currentScore += 5000;
       setScore(currentScore);
 
-      // Доход победы строго в коридоре 3000 – 4500 кредитов
       const baseEarned = Math.floor(currentScore * 0.045 + currentKills * 16 + currentStagesDone * 240 + 800);
       const earned = THREE.MathUtils.clamp(baseEarned, 3150, 4450);
       setCreditsEarned(earned);
@@ -1174,9 +1330,10 @@ export default function GameScreen({
         return;
       }
 
-      // При буйстве входящий урон режется на 50%
       if (isRageActiveRef.current) {
         dmg = Math.max(1, Math.floor(dmg * 0.5));
+      } else if (isSlaveShieldActiveRef.current) {
+        dmg = Math.max(1, Math.floor(dmg * 0.4)); // -60% входящего урона у Раба-1
       }
 
       if (currentShield > 0) {
@@ -1212,14 +1369,16 @@ export default function GameScreen({
       let endL = new THREE.Vector3((Math.random() - 0.5) * 140, -40 - Math.random() * 25, -70 - Math.random() * 140);
 
       const dist = shipPos.distanceTo(startL);
-      playThunderSound(dist);
 
       if (forcePlayer) {
         endL.copy(shipPos);
-        playerStunDuration = 3.0;
-        setPlayerStunned(true);
-        startNoSignalSound();
-        shakeIntensity = 1.2;
+        playThunderSound(0, true); // Максимально громкий удар по игроку
+        if (!hasStunImmunityRef.current) {
+          playerStunDuration = 3.0;
+          setPlayerStunned(true);
+          startNoSignalSound();
+        }
+        shakeIntensity = 1.4;
         applyDamageToPlayer(8);
       } else {
         const roll = Math.random();
@@ -1230,15 +1389,21 @@ export default function GameScreen({
             victim.state = 'disabled';
             victim.disabledTimer = 1.4;
             endL.copy(victim.pos);
+            playThunderSound(dist, false);
           }
         } else if (roll < 0.30 && !playerHitByLightningOnce) {
           playerHitByLightningOnce = true;
           endL.copy(shipPos);
-          playerStunDuration = 3.0;
-          setPlayerStunned(true);
-          startNoSignalSound();
-          shakeIntensity = 1.2;
+          playThunderSound(0, true);
+          if (!hasStunImmunityRef.current) {
+            playerStunDuration = 3.0;
+            setPlayerStunned(true);
+            startNoSignalSound();
+          }
+          shakeIntensity = 1.4;
           applyDamageToPlayer(8);
+        } else {
+          playThunderSound(dist, false);
         }
       }
 
@@ -1287,7 +1452,7 @@ export default function GameScreen({
 
       const dt = realDt;
 
-      // Окно комбо увеличено до 2.8 секунды
+      // Комбо
       if (comboTimerRef.current > 0) {
         comboTimerRef.current -= dt;
         if (comboTimerRef.current <= 0) {
@@ -1296,6 +1461,7 @@ export default function GameScreen({
         }
       }
 
+      // Кулдауны способностей
       if (ability1CooldownRef.current > 0) {
         ability1CooldownRef.current = Math.max(0, ability1CooldownRef.current - dt);
         setAbility1Cooldown(Math.ceil(ability1CooldownRef.current));
@@ -1304,7 +1470,12 @@ export default function GameScreen({
         ability2CooldownRef.current = Math.max(0, ability2CooldownRef.current - dt);
         setAbility2Cooldown(Math.ceil(ability2CooldownRef.current));
       }
+      if (ability3CooldownRef.current > 0) {
+        ability3CooldownRef.current = Math.max(0, ability3CooldownRef.current - dt);
+        setAbility3Cooldown(Math.ceil(ability3CooldownRef.current));
+      }
 
+      // Буйство Y-Wing
       if (isRageActiveRef.current) {
         rageTimerRef.current -= dt;
         if (rageTimerRef.current <= 0) {
@@ -1313,7 +1484,15 @@ export default function GameScreen({
         }
       }
 
-      // Активация «Починки корпуса» Y-Wing (КД 125 сек)
+      // Бафф Раба-1
+      if (isSlaveShieldActiveRef.current) {
+        slaveShieldTimerRef.current -= dt;
+        if (slaveShieldTimerRef.current <= 0) {
+          isSlaveShieldActiveRef.current = false;
+        }
+      }
+
+      // Активация «Починки корпуса» Y-Wing
       if (triggerRepairRef.current) {
         triggerRepairRef.current = false;
         const healAmt = Math.max(1, Math.round(currentHp * 0.8));
@@ -1357,6 +1536,40 @@ export default function GameScreen({
         });
         triggerRageVisual();
         playTone(320, 580, 0.35, 0.35, 'sawtooth');
+      }
+
+      // Активация ракет Раба-1
+      if (triggerSlaveRocketsRef.current) {
+        triggerSlaveRocketsRef.current = false;
+        fireSlaveRockets();
+      }
+
+      // Активация щита Раба-1
+      if (triggerSlaveShieldRef.current) {
+        triggerSlaveShieldRef.current = false;
+        isSlaveShieldActiveRef.current = true;
+        hasStunImmunityRef.current = true; // Перманентный иммунитет к стану
+        slaveShieldTimerRef.current = 8.0;
+
+        shipHolder.traverse((c) => {
+          if ((c as THREE.Mesh).isMesh) {
+            const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
+            if (m && m.emissive) {
+              m.emissive.setHex(0x00b4d8);
+              setTimeout(() => {
+                if (m && m.emissive) m.emissive.setHex(0x000000);
+              }, 260);
+            }
+          }
+        });
+        spawnShieldBuffIcons(14);
+        playBuffer(audioBuffers.slave1, 0.5);
+      }
+
+      // Сброс мины Раба-1
+      if (triggerSlaveMineRef.current) {
+        triggerSlaveMineRef.current = false;
+        dropSlaveMine();
       }
 
       if (skipToStage4Ref.current) {
@@ -1413,7 +1626,6 @@ export default function GameScreen({
         }
       }
 
-      // Окончание стана: глушим звук «нет сигнала»
       if (playerStunDuration > 0) {
         playerStunDuration -= dt;
         shipPitch += dt * 1.2;
@@ -1609,7 +1821,7 @@ export default function GameScreen({
         camera.position.y = THREE.MathUtils.lerp(camera.position.y, cameraBase.y + (shipPos.y - defaultShipPos.y) * 0.32, 1 - Math.exp(-6.0 * dt));
       }
 
-      // Приоритет прицела: сначала близкие враги, затем босс
+      // Приоритет прицела
       let autoTargetPos: THREE.Vector3 | null = null;
       let bestScore = 9999;
 
@@ -1685,7 +1897,6 @@ export default function GameScreen({
           crosshairTex.scale.setScalar(1.0);
         }
 
-        // Проекция координат прицела в 2D-экран для UI комбо и буйства
         const proj = crosshairTex.position.clone().project(camera);
         setCrosshairScreenPos({
           x: (proj.x * 0.5 + 0.5) * window.innerWidth,
@@ -1703,7 +1914,7 @@ export default function GameScreen({
         triggerBrotherHelpAttack();
       }
 
-      // Обновление ведомых братской помощи
+      // Обновление ведомых
       for (let wIdx = wingmanFlyers.length - 1; wIdx >= 0; wIdx--) {
         const wf = wingmanFlyers[wIdx];
         wf.life -= dt;
@@ -1718,7 +1929,6 @@ export default function GameScreen({
 
         wf.mesh.position.copy(wf.pos);
 
-        // Динамический зацикленный звук пролёта
         if (wf.flybyGain) {
           const distToCam = wf.pos.distanceTo(camera.position);
           const dynamicVol = THREE.MathUtils.clamp(Math.pow(1 - Math.min(1, distToCam / 85), 1.6) * 0.55, 0.0, 0.55);
@@ -1734,11 +1944,18 @@ export default function GameScreen({
         }
       }
 
-      // Протонные бомбы + шлейф
+      // === ПРОТОННЫЕ БОМБЫ С ДИНАМИЧЕСКИМ ЗВУКОМ И ШЛЕЙФОМ ===
       for (let bIdx = protonBombs.length - 1; bIdx >= 0; bIdx--) {
         const bomb = protonBombs[bIdx];
         bomb.life -= dt;
         bomb.trailTimer += dt;
+
+        // Динамический объём звука: чем дальше, тем слабее слышно
+        if (bomb.soundGain) {
+          const distToCam = bomb.mesh.position.distanceTo(camera.position);
+          const dynamicVol = THREE.MathUtils.clamp((1 - distToCam / 220) * 0.55, 0.0, 0.55);
+          bomb.soundGain.gain.value = dynamicVol;
+        }
 
         if (bomb.trailTimer >= 0.035) {
           bomb.trailTimer = 0;
@@ -1862,11 +2079,160 @@ export default function GameScreen({
         }
 
         if (bombHit || bomb.life <= 0 || distToTarget < 1.2) {
+          if (bomb.soundSource) {
+            try { bomb.soundSource.stop(); } catch {}
+          }
           if (!bombHit && distToTarget < 1.8) {
             spawnRetroExplosion(bomb.mesh.position, 2.4, true, false);
           }
           scene.remove(bomb.mesh);
           protonBombs.splice(bIdx, 1);
+        }
+      }
+
+      // === ОБНОВЛЕНИЕ 6 РАКЕТ РАБА-1 ===
+      for (let srIdx = slaveRockets.length - 1; srIdx >= 0; srIdx--) {
+        const sr = slaveRockets[srIdx];
+        sr.life -= dt;
+        sr.curveTimer -= dt;
+
+        if (sr.targetRef && sr.targetRef.hp > 0 && sr.targetRef.state === 'attacking') {
+          sr.targetPos.copy(sr.targetRef.pos);
+        }
+
+        const toTarget = new THREE.Vector3().subVectors(sr.targetPos, sr.pos);
+        const dist = toTarget.length();
+
+        // Полёт по маневренной случайной дуге
+        if (sr.curveTimer > 0) {
+          sr.vel.addScaledVector(sr.curveAxis, 32 * dt);
+        } else {
+          sr.speed = THREE.MathUtils.lerp(sr.speed, 260, dt * 5.0);
+          const aimDir = toTarget.normalize();
+          sr.vel.lerp(aimDir.multiplyScalar(sr.speed), dt * 12.0);
+        }
+
+        sr.pos.addScaledVector(sr.vel, dt);
+        sr.mesh.position.copy(sr.pos);
+
+        let hit = false;
+        if (sr.targetRef && sr.targetRef.hp > 0 && sr.pos.distanceTo(sr.targetRef.pos) < 3.2) {
+          hit = true;
+          sr.targetRef.hp -= 2; // 1 ракета сносит 50% HP обычного истребителя
+          currentDamage += 50;
+          setDamageDealt(currentDamage);
+          if (sr.targetRef.hp <= 0) {
+            spawnRetroExplosion(sr.targetRef.pos, 1.25);
+            sr.targetRef.hp = 0;
+            currentKills += 1;
+            setEnemiesKilled(currentKills);
+            currentScore += 120;
+            setScore(currentScore);
+            scene.remove(sr.targetRef.mesh);
+            const idxInList = enemies.indexOf(sr.targetRef);
+            if (idxInList >= 0) enemies.splice(idxInList, 1);
+          } else {
+            spawnRetroExplosion(sr.pos, 0.7, false);
+          }
+        }
+
+        if (!hit && sr.curveTimer <= 0) {
+          for (let j = enemies.length - 1; j >= 0; j--) {
+            const e = enemies[j];
+            if (e.state === 'attacking' && sr.pos.distanceTo(e.pos) < 3.0) {
+              hit = true;
+              e.hp -= 2;
+              currentDamage += 50;
+              setDamageDealt(currentDamage);
+              if (e.hp <= 0) {
+                spawnRetroExplosion(e.pos, 1.25);
+                currentKills += 1;
+                setEnemiesKilled(currentKills);
+                currentScore += 120;
+                setScore(currentScore);
+                scene.remove(e.mesh);
+                enemies.splice(j, 1);
+              } else {
+                spawnRetroExplosion(sr.pos, 0.7, false);
+              }
+              break;
+            }
+          }
+        }
+
+        if (hit || sr.life <= 0 || (sr.curveTimer <= 0 && dist < 1.5)) {
+          spawnRetroExplosion(sr.pos, 0.8, false);
+          scene.remove(sr.mesh);
+          slaveRockets.splice(srIdx, 1);
+        }
+      }
+
+      // === ОБНОВЛЕНИЕ СИНЕЙ МИНЫ РАБА-1 ===
+      for (let smIdx = slaveMines.length - 1; smIdx >= 0; smIdx--) {
+        const sm = slaveMines[smIdx];
+        sm.life -= dt;
+        sm.timer += dt;
+
+        // Плавное торможение на протяжении 2 сек
+        if (sm.timer <= 2.0) {
+          sm.vel.multiplyScalar(0.92);
+        } else if (sm.state === 'slowing') {
+          sm.state = 'armed';
+          sm.vel.set(0, 0, 0);
+        }
+
+        sm.pos.addScaledVector(sm.vel, dt);
+        sm.mesh.position.copy(sm.pos);
+        sm.mesh.rotation.y += dt * 3.5;
+
+        // Взрыв через 0.5 сек после остановки
+        if (sm.timer >= 2.5 && sm.state === 'armed') {
+          sm.state = 'detonated';
+          playBuffer(assets.audioBuffers.mine, 0.75);
+
+          // Горизонтальная широкая воронка взрыва
+          const vortexMesh = new THREE.Mesh(mineVortexGeo, mineVortexMat.clone());
+          vortexMesh.position.copy(sm.pos);
+          vortexMesh.rotation.x = -Math.PI / 2;
+          scene.add(vortexMesh);
+
+          setTimeout(() => {
+            scene.remove(vortexMesh);
+            vortexMesh.geometry.dispose();
+            (vortexMesh.material as THREE.Material).dispose();
+          }, 450);
+
+          spawnRetroExplosion(sm.pos, 1.6, true, false);
+          shakeIntensity = Math.max(shakeIntensity, 0.75);
+
+          // Урон и откидывание врагов воронкой (на игрока и босса не действует)
+          for (let j = enemies.length - 1; j >= 0; j--) {
+            const e = enemies[j];
+            const distToMine = e.pos.distanceTo(sm.pos);
+            if (distToMine < 28) {
+              const damage = Math.max(2, Math.floor((1 - distToMine / 28) * 6));
+              e.hp -= damage;
+              currentDamage += damage * 30;
+              setDamageDealt(currentDamage);
+
+              // Разлёт врагов от центра без управления
+              const pushDir = new THREE.Vector3().subVectors(e.pos, sm.pos).normalize();
+              e.pos.addScaledVector(pushDir, 18);
+              e.state = 'looping_out';
+              e.loopProgress = 0;
+
+              if (e.hp <= 0) {
+                spawnRetroExplosion(e.pos, 1.25);
+                currentKills += 1;
+                setEnemiesKilled(currentKills);
+                scene.remove(e.mesh);
+                enemies.splice(j, 1);
+              }
+            }
+          }
+
+          scene.remove(sm.mesh);
+          slaveMines.splice(smIdx, 1);
         }
       }
 
@@ -1886,7 +2252,7 @@ export default function GameScreen({
         }
       }
 
-      // Светящиеся красные плюсики
+      // Красные плюсики лечения
       for (let hpIdx = healEffectParticles.length - 1; hpIdx >= 0; hpIdx--) {
         const hpP = healEffectParticles[hpIdx];
         hpP.life -= dt;
@@ -1900,6 +2266,23 @@ export default function GameScreen({
           scene.remove(hpP.sprite);
           (hpP.sprite.material as THREE.Material).dispose();
           healEffectParticles.splice(hpIdx, 1);
+        }
+      }
+
+      // Синие иконки щита Раба-1
+      for (let sbIdx = shieldBuffParticles.length - 1; sbIdx >= 0; sbIdx--) {
+        const sbP = shieldBuffParticles[sbIdx];
+        sbP.life -= dt;
+        sbP.pos.addScaledVector(sbP.vel, dt);
+        sbP.sprite.position.copy(sbP.pos);
+
+        const progress = Math.max(0, sbP.life / sbP.maxLife);
+        (sbP.sprite.material as THREE.SpriteMaterial).opacity = progress * 0.95;
+
+        if (sbP.life <= 0) {
+          scene.remove(sbP.sprite);
+          (sbP.sprite.material as THREE.Material).dispose();
+          shieldBuffParticles.splice(sbIdx, 1);
         }
       }
 
@@ -1924,8 +2307,9 @@ export default function GameScreen({
       if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0 && !isDeadRef.current) {
         fireCooldown = calcFireCooldown;
 
-        const leftOffset = new THREE.Vector3(-0.46, 0, -0.3).applyQuaternion(shipHolder.quaternion);
-        const rightOffset = new THREE.Vector3(0.46, 0, -0.3).applyQuaternion(shipHolder.quaternion);
+        const isSlave = selectedShipId === 'slave1';
+        const leftOffset = new THREE.Vector3(isSlave ? -0.7 : -0.46, isSlave ? -0.2 : 0, -0.3).applyQuaternion(shipHolder.quaternion);
+        const rightOffset = new THREE.Vector3(isSlave ? 0.7 : 0.46, isSlave ? -0.2 : 0, -0.3).applyQuaternion(shipHolder.quaternion);
 
         const leftPos = shipPos.clone().add(leftOffset);
         const rightPos = shipPos.clone().add(rightOffset);
@@ -1945,7 +2329,11 @@ export default function GameScreen({
         scene.add(lMesh2);
         lasers.push({ mesh: lMesh2, vel: rightDir.multiplyScalar(640), life: 1.0, isEnemy: false });
 
-        playBuffer(audioBuffers.xwingShot, 0.28);
+        if (isSlave) {
+          playBuffer(audioBuffers.slave1, 0.38);
+        } else {
+          playBuffer(audioBuffers.xwingShot, 0.28);
+        }
       }
 
       if (!inBiomeTransitionRef.current && !bossData && !isDeadRef.current) {
@@ -2181,7 +2569,7 @@ export default function GameScreen({
               if (shipPos.x >= tractorBeam.xMin && shipPos.x <= tractorBeam.xMax) {
                 if (godModeRef.current) {
                   spawnShieldImpact(shipPos);
-                } else {
+                } else if (!hasStunImmunityRef.current) {
                   playerStunDuration = 3.0;
                   setPlayerStunned(true);
                   startNoSignalSound();
@@ -2372,7 +2760,6 @@ export default function GameScreen({
                 spawnRetroExplosion(e.pos, 1.25);
                 shakeIntensity = Math.max(shakeIntensity, 0.8);
 
-                // Окно комбо 2.8 с
                 comboStreakRef.current += 1;
                 comboTimerRef.current = 2.8;
 
@@ -2470,7 +2857,7 @@ export default function GameScreen({
         }
       }
 
-      // Подбор датападов
+      // Датапады
       for (let i = datapads.length - 1; i >= 0; i--) {
         const dp = datapads[i];
         dp.mesh.rotation.x += dp.rotSpeed.x * dt;
@@ -2630,7 +3017,14 @@ export default function GameScreen({
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
       lasers.forEach((l) => scene.remove(l.mesh));
-      protonBombs.forEach((b) => scene.remove(b.mesh));
+      protonBombs.forEach((b) => {
+        if (b.soundSource) {
+          try { b.soundSource.stop(); } catch {}
+        }
+        scene.remove(b.mesh);
+      });
+      slaveRockets.forEach((sr) => scene.remove(sr.mesh));
+      slaveMines.forEach((sm) => scene.remove(sm.mesh));
       bombTrailParticles.forEach((tp) => {
         scene.remove(tp.sprite);
         (tp.sprite.material as THREE.Material).dispose();
@@ -2638,6 +3032,10 @@ export default function GameScreen({
       healEffectParticles.forEach((hpP) => {
         scene.remove(hpP.sprite);
         (hpP.sprite.material as THREE.Material).dispose();
+      });
+      shieldBuffParticles.forEach((sbP) => {
+        scene.remove(sbP.sprite);
+        (sbP.sprite.material as THREE.Material).dispose();
       });
       if (rageIndicator) {
         scene.remove(rageIndicator.sprite);
@@ -2665,10 +3063,17 @@ export default function GameScreen({
       crosshairGeo.dispose();
       crosshairMat.dispose();
       ringPlaneGeo.dispose();
+      slaveRocketGeo.dispose();
+      slaveRocketMat.dispose();
+      slaveMineGeo.dispose();
+      slaveMineMat.dispose();
+      mineVortexGeo.dispose();
+      mineVortexMat.dispose();
       sharedGlowTexture.dispose();
       sharedRingTexture.dispose();
       sharedPlusTexture.dispose();
       sharedExclamationTexture.dispose();
+      sharedShieldIconTexture.dispose();
       stopNoSignalSound();
       if (bossData) {
         scene.remove(bossData.group);
@@ -2907,6 +3312,8 @@ export default function GameScreen({
         joystickOffset={joystickOffset}
         ability1Cooldown={ability1Cooldown}
         ability2Cooldown={ability2Cooldown}
+        ability3Cooldown={ability3Cooldown}
+        hasAbility3={selectedShipId === 'slave1'}
         inBiomeTransition={inBiomeTransition}
         biomeTitle={biomeTitle}
         biomeSubtext={biomeSubtext}
@@ -2944,6 +3351,7 @@ export default function GameScreen({
         onFirePointerCancel={handleFirePointerCancel}
         onTriggerAbility1={handleTriggerAbility1}
         onTriggerAbility2={handleTriggerAbility2}
+        onTriggerAbility3={handleTriggerAbility3}
       />
 
       {showVictoryCutscene && (
