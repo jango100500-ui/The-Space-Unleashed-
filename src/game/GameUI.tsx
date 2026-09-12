@@ -1,5 +1,4 @@
 import React from 'react';
-import HallwayCutscene from '../cutscenes/HallwayCutscene.tsx';
 import type { PreloadedAssets } from '../App.tsx';
 import type { GeneratorScreenTarget } from './GameData.ts';
 
@@ -28,7 +27,6 @@ interface GameUIProps {
   isConsoleOpen: boolean;
   consoleInput: string;
   consoleFeedback: string;
-  showHallwayCutscene: boolean;
   currentStage: number;
   stageProgressPercent: number;
   bossActive: boolean;
@@ -51,12 +49,11 @@ interface GameUIProps {
   onQuit: () => void;
   onConsoleInputChange: (val: string) => void;
   onApplyCheat: () => void;
-  onFirePointerDown: () => void;
-  onFirePointerUp: () => void;
-  onFirePointerCancel: () => void;
+  onFirePointerDown: (e: React.PointerEvent<HTMLButtonElement>) => void;
+  onFirePointerUp: (e: React.PointerEvent<HTMLButtonElement>) => void;
+  onFirePointerCancel: (e: React.PointerEvent<HTMLButtonElement>) => void;
   onTriggerAbility1: () => void;
   onTriggerAbility2: () => void;
-  onHallwayComplete: () => void;
 }
 
 export default function GameUI(props: GameUIProps) {
@@ -182,10 +179,6 @@ export default function GameUI(props: GameUIProps) {
         <div className="biome-text">ЗВЕЗДНЫЙ РАЗРУШИТЕЛЬ</div>
         <div className="biome-subtext">ВЫХОДИТ ИЗ ГИПЕРПРОСТРАНСТВА</div>
       </div>
-
-      {props.showHallwayCutscene && (
-        <HallwayCutscene assets={props.assets} onComplete={props.onHallwayComplete} />
-      )}
 
       {props.playerStunned && <div className="no-signal-indicator">НЕТ СИГНАЛА</div>}
 
@@ -363,9 +356,9 @@ export default function GameUI(props: GameUIProps) {
           <button
             type="button"
             className="tfu-pad-btn tfu-pad-bottom"
-            onPointerDown={(e) => { e.stopPropagation(); props.onFirePointerDown(); }}
-            onPointerUp={(e) => { e.stopPropagation(); props.onFirePointerUp(); }}
-            onPointerCancel={(e) => { e.stopPropagation(); props.onFirePointerCancel(); }}
+            onPointerDown={props.onFirePointerDown}
+            onPointerUp={props.onFirePointerUp}
+            onPointerCancel={props.onFirePointerCancel}
           >
             <svg viewBox="0 0 24 24"><path d="M6 6L18 18M18 6L6 18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" /></svg>
           </button>
