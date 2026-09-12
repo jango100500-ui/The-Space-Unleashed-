@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { PreloadedAssets } from '../App.tsx';
+import {
+  createExplosionGlowTexture,
+  createExplosionRingTexture,
+  RetroExplosionInstance,
+  ExplosionSmokeParticle
+} from '../game/GameData.ts';
 
 interface VictoryCutsceneProps {
   assets: PreloadedAssets;
@@ -41,10 +47,11 @@ export default function VictoryCutscene({ assets, onComplete }: VictoryCutsceneP
       mountRef.current.appendChild(renderer.domElement);
     }
 
-    const ambient = new THREE.AmbientLight(0x667788, 2.4);
+    // Ретро-освещение
+    const ambient = new THREE.AmbientLight(0xffffff, 2.2);
     scene.add(ambient);
 
-    const sun = new THREE.DirectionalLight(0xfffae8, 4.5);
+    const sun = new THREE.DirectionalLight(0xffffff, 1.8);
     sun.position.set(100, 150, 90);
     scene.add(sun);
 
@@ -64,31 +71,126 @@ export default function VictoryCutscene({ assets, onComplete }: VictoryCutsceneP
     destroyer.scale.setScalar(8.0);
     destroyer.position.set(0, 12, -260);
     destroyer.rotation.set(0, Math.PI, 0);
+
+    // Убираем черный PBR-глянец
+    destroyer.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const m = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
+        if (m) {
+          m.roughness = 1.0;
+          m.metalness = 0.0;
+          m.needsUpdate = true;
+        }
+      }
+    });
     scene.add(destroyer);
 
-    const flashCoreGeo = new THREE.IcosahedronGeometry(2.4, 1);
-    const flashCoreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const shockRingGeo = new THREE.RingGeometry(0.6, 2.2, 18);
-    const shockRingMat = new THREE.MeshBasicMaterial({ color: 0xff8822, side: THREE.DoubleSide, transparent: true, opacity: 0.95 });
+    // === ТЕКСТУРЫ НОВОГО ВЗРЫВА ===
+    const sharedGlowTexture = createExplosionGlowTexture();
+    const sharedRingTexture = createExplosionRingTexture();
+    const ringPlaneGeo = new THREE.PlaneGeometry(1, 1);
 
-    const explosions: { mesh: THREE.Mesh; ring: THREE.Mesh; light?: THREE.PointLight; life: number; maxLife: number; scaleSpeed: number }[] = [];
+    const explosions: RetroExplosionInstance[] = [];
 
     const spawnExplosion = (pos: THREE.Vector3, scale = 1.0) => {
-      const flash = new THREE.Mesh(flashCoreGeo, flashCoreMat);
-      flash.position.copy(pos);
-      flash.scale.setScalar(2.4 * scale);
-      scene.add(flash);
+      const expGroup = new THREE.Group();
+      expGroup.position.copy(pos);
+      scene.add(expGroup);
 
-      const ring = new THREE.Mesh(shockRingGeo, shockRingMat.clone());
-      ring.position.copy(pos);
-      ring.rotation.set((Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 1.2, Math.random() * Math.PI);
-      scene.add(ring);
+      const outerMat = new THREE.SpriteMaterial({
+        map: sharedGlowTexture,
+        color: 0xff3300,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const outerCore = new THREE.Sprite(outerMat);
+      outerCore.scale.set(2.0 * scale, 2.0 * scale, 1);
+      expGroup.add(outerCore);
 
-      const light = new THREE.PointLight(0xff6622, 6.0 * scale, 90 * scale);
+      const coreMat = new THREE.SpriteMaterial({
+        map: sharedGlowTexture,
+        color: 0xffaa00,
+        transparent: true,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const core = new THREE.Sprite(coreMat);
+      core.scale.set(1.0 * scale, 1.0 * scale, 1);
+      expGroup.add(core);
+
+      const innerMat = new THREE.SpriteMaterial({
+        map: sharedGlowTexture,
+        color: 0xffffff,
+        transparent: true,
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const innerCore = new THREE.Sprite(innerMat);
+      innerCore.scale.set(0.5 * scale, 0.5 * scale, 1);
+      expGroup.add(innerCore);
+
+      const ringMat = new THREE.MeshBasicMaterial({
+        map: sharedRingTexture,
+        color: 0xffddaa,
+        transparent: true,
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      const ringMesh = new THREE.Mesh(ringPlaneGeo, ringMat);
+      ringMesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      ringMesh.scale.set(1.0 * scale, 1.0 * scale, 1);
+      expGroup.add(ringMesh);
+
+      const smoke: ExplosionSmokeParticle[] = [];
+      const particleCount = 18;
+      for (let i = 0; i < particleCount; i++) {
+        const sMat = new THREE.SpriteMaterial({
+          map: sharedGlowTexture,
+          color: 0xff5500,
+          transparent: true,
+          opacity: 0.65,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+        const sprite = new THREE.Sprite(sMat);
+        const pScale = (2.2 + Math.random() * 2.5) * scale;
+        sprite.scale.set(pScale, pScale, 1);
+        expGroup.add(sprite);
+
+        const dir = new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2).normalize();
+        smoke.push({
+          sprite,
+          velocity: dir.multiplyScalar((16 + Math.random() * 26) * scale),
+          life: 1.3,
+          age: 0,
+          initialScale: pScale
+        });
+      }
+
+      const light = new THREE.PointLight(0xff6622, 12.0 * scale, 120 * scale);
       light.position.copy(pos);
       scene.add(light);
 
-      explosions.push({ mesh: flash, ring, light, life: 0.5, maxLife: 0.5, scaleSpeed: 38.0 * scale });
+      explosions.push({
+        group: expGroup,
+        smoke,
+        shockwaveMesh: ringMesh,
+        shockwaveAge: 0,
+        shockwaveLife: 0.9,
+        shockwaveMaxScale: 40.0 * scale,
+        outerCore,
+        core,
+        innerCore,
+        light,
+        age: 0,
+        duration: 1.4
+      });
 
       if (assets.audioBuffers.explode) {
         try {
@@ -138,7 +240,7 @@ export default function VictoryCutscene({ assets, onComplete }: VictoryCutsceneP
         nextExplosionTime += 0.95 + Math.random() * 0.25;
         const pt = destroyerKeyPoints[Math.floor(Math.random() * destroyerKeyPoints.length)];
         const jitter = new THREE.Vector3((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 24);
-        spawnExplosion(pt.clone().add(jitter), 1.6 + Math.random() * 0.6);
+        spawnExplosion(pt.clone().add(jitter), 1.8 + Math.random() * 0.6);
       }
 
       if (elapsed >= 4.2 && !curtainVisible) {
@@ -150,19 +252,62 @@ export default function VictoryCutscene({ assets, onComplete }: VictoryCutsceneP
         return;
       }
 
+      // Анимация взрывов по формуле референса
       for (let i = explosions.length - 1; i >= 0; i--) {
-        const ex = explosions[i];
-        ex.life -= dt;
-        const progress = 1 - ex.life / ex.maxLife;
-        ex.ring.scale.setScalar(1.0 + progress * ex.scaleSpeed);
-        (ex.ring.material as THREE.MeshBasicMaterial).opacity = Math.max(0, ex.life / ex.maxLife);
-        if (ex.light) {
-          ex.light.intensity = (ex.life / ex.maxLife) * 6.0;
+        const exp = explosions[i];
+        exp.age += dt;
+        const p = THREE.MathUtils.clamp(exp.age / exp.duration, 0, 1);
+
+        const alpha = Math.max(0, 1.0 - p);
+        (exp.outerCore.material as THREE.SpriteMaterial).opacity = alpha * 0.9;
+        (exp.core.material as THREE.SpriteMaterial).opacity = Math.pow(alpha, 1.2) * 0.95;
+        (exp.innerCore.material as THREE.SpriteMaterial).opacity = Math.pow(alpha, 1.5);
+
+        const expExpansion = 1 - Math.pow(1 - p, 1.8);
+        exp.outerCore.scale.addScalar(expExpansion * 5.0 * dt);
+        exp.core.scale.addScalar(expExpansion * 3.0 * dt);
+
+        if (exp.shockwaveMesh) {
+          exp.shockwaveAge += dt;
+          const sP = THREE.MathUtils.clamp(exp.shockwaveAge / exp.shockwaveLife, 0, 1);
+          const currentScale = (1 - Math.pow(1 - sP, 2.0)) * exp.shockwaveMaxScale;
+          exp.shockwaveMesh.scale.set(currentScale, currentScale, 1);
+          (exp.shockwaveMesh.material as THREE.MeshBasicMaterial).opacity = Math.pow(1 - sP, 1.2) * 0.95;
+
+          if (sP >= 1.0) {
+            exp.group.remove(exp.shockwaveMesh);
+            (exp.shockwaveMesh.material as THREE.Material).dispose();
+            exp.shockwaveMesh = null;
+          }
         }
-        if (ex.life <= 0) {
-          scene.remove(ex.mesh);
-          scene.remove(ex.ring);
-          if (ex.light) scene.remove(ex.light);
+
+        for (let sIdx = exp.smoke.length - 1; sIdx >= 0; sIdx--) {
+          const s = exp.smoke[sIdx];
+          s.age += dt;
+          if (s.age >= s.life || alpha <= 0) {
+            exp.group.remove(s.sprite);
+            (s.sprite.material as THREE.Material).dispose();
+            exp.smoke.splice(sIdx, 1);
+            continue;
+          }
+          s.velocity.multiplyScalar(0.95);
+          s.sprite.position.addScaledVector(s.velocity, dt);
+          const sProg = s.age / s.life;
+          const currentScale = s.initialScale + sProg * 9.0;
+          s.sprite.scale.set(currentScale, currentScale, 1);
+          (s.sprite.material as THREE.SpriteMaterial).opacity = (1 - sProg) * 0.65;
+        }
+
+        if (exp.light) {
+          exp.light.intensity = alpha * 12.0;
+        }
+
+        if (exp.age >= exp.duration) {
+          scene.remove(exp.group);
+          if (exp.light) scene.remove(exp.light);
+          (exp.outerCore.material as THREE.Material).dispose();
+          (exp.core.material as THREE.Material).dispose();
+          (exp.innerCore.material as THREE.Material).dispose();
           explosions.splice(i, 1);
         }
       }
@@ -187,10 +332,12 @@ export default function VictoryCutscene({ assets, onComplete }: VictoryCutsceneP
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
       explosions.forEach((e) => {
-        scene.remove(e.mesh);
-        scene.remove(e.ring);
+        scene.remove(e.group);
         if (e.light) scene.remove(e.light);
       });
+      ringPlaneGeo.dispose();
+      sharedGlowTexture.dispose();
+      sharedRingTexture.dispose();
       if (renderer.domElement && renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
