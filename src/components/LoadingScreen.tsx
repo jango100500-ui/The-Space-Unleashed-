@@ -18,6 +18,7 @@ const SOUND_LIST = [
   { key: 'proton', url: '/sounds/proton.mp3' },
   { key: 'thunder1', url: '/sounds/thunder1.mp3' },
   { key: 'thunder2', url: '/sounds/thunder2.mp3' },
+  { key: 'nosignal', url: '/sounds/nosignal.mp3' },
   { key: 'clap1', url: '/sounds/clap1.mp3' },
   { key: 'clap2', url: '/sounds/clap2.mp3' },
   { key: 'clap3', url: '/sounds/clap3.mp3' },
@@ -82,29 +83,28 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
       let loadedDestroyer: THREE.Group | null = null;
       let loadedDatapad: THREE.Group | null = null;
       let loadedCr90: THREE.Group | null = null;
-      let loadedPilot: THREE.Group | null = null;
       const audioBuffers: Record<string, AudioBuffer> = {};
 
       try {
         setStatusText('ЗАГРУЗКА T-65B X-WING...');
-        setProgress(8);
+        setProgress(10);
         loadedXwing = await loadModel('/models/x-wing.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(8 + p * 10));
+          if (!isDisposed) setProgress(Math.floor(10 + p * 12));
         });
 
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА СИД-ИСТРЕБИТЕЛЕЙ...');
-        setProgress(18);
+        setProgress(24);
         loadedTie = await loadModel('/models/tie.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(18 + p * 10));
+          if (!isDisposed) setProgress(Math.floor(24 + p * 12));
         });
 
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА TIE/IN INTERCEPTOR...');
-        setProgress(28);
+        setProgress(38);
         try {
           loadedTie2 = await loadModel('/models/tie2.glb', (p) => {
-            if (!isDisposed) setProgress(Math.floor(28 + p * 10));
+            if (!isDisposed) setProgress(Math.floor(38 + p * 12));
           });
         } catch {
           loadedTie2 = loadedTie ? loadedTie.clone() : null;
@@ -112,17 +112,17 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
 
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА ЗВЁЗДНОГО РАЗРУШИТЕЛЯ...');
-        setProgress(38);
+        setProgress(52);
         loadedDestroyer = await loadModel('/models/star-destroyer.glb', (p) => {
-          if (!isDisposed) setProgress(Math.floor(38 + p * 12));
+          if (!isDisposed) setProgress(Math.floor(52 + p * 14));
         });
 
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА КОРВЕТА CR90...');
-        setProgress(50);
+        setProgress(68);
         try {
           loadedCr90 = await loadModel('/models/cr90.glb', (p) => {
-            if (!isDisposed) setProgress(Math.floor(50 + p * 8));
+            if (!isDisposed) setProgress(Math.floor(68 + p * 8));
           });
         } catch {
           const g = new THREE.Group();
@@ -132,7 +132,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
 
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА ДАТАПАДОВ...');
-        setProgress(60);
+        setProgress(76);
         try {
           loadedDatapad = await loadModel('/models/datapad.glb', () => {});
         } catch {
@@ -141,26 +141,9 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
           loadedDatapad = g;
         }
 
-        // Загрузка пилота для регдолла
-        if (isDisposed) return;
-        setStatusText('ЗАГРУЗКА МОДЕЛИ ПИЛОТА...');
-        setProgress(68);
-        try {
-          loadedPilot = await loadModel('/models/pilot.glb', () => {});
-        } catch {
-          // Процедурный манекен, если файл pilot.glb ещё не скопирован
-          const g = new THREE.Group();
-          const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshLambertMaterial({ color: 0x111111 }));
-          head.position.y = 0.55;
-          const body = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.55, 0.22), new THREE.MeshLambertMaterial({ color: 0x1a1a1a }));
-          body.position.y = 0.2;
-          g.add(head, body);
-          loadedPilot = g;
-        }
-
         if (isDisposed) return;
         setStatusText('ЗАГРУЗКА АУДИОСИСТЕМ...');
-        setProgress(75);
+        setProgress(84);
 
         for (let i = 0; i < SOUND_LIST.length; i++) {
           const item = SOUND_LIST[i];
@@ -171,7 +154,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
             audioBuffers[item.key] = dummyBuf;
           }
           if (isDisposed) return;
-          setProgress(Math.floor(75 + ((i + 1) / SOUND_LIST.length) * 20));
+          setProgress(Math.floor(84 + ((i + 1) / SOUND_LIST.length) * 16));
         }
 
         if (isDisposed) return;
@@ -192,8 +175,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
                 tie2: loadedTie2 || loadedTie.clone(),
                 destroyer: loadedDestroyer,
                 datapad: loadedDatapad || undefined,
-                cr90: loadedCr90 || undefined,
-                pilot: loadedPilot || undefined
+                cr90: loadedCr90 || undefined
               },
               audioBuffers,
               audioCtx
@@ -213,7 +195,6 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
         const fbDestroyer = loadedDestroyer || createBox(40, 10, 70, 0x7f8c8d);
         const fbDatapad = loadedDatapad || createBox(0.35, 0.06, 0.5, 0x3399ff);
         const fbCr90 = loadedCr90 || createBox(4, 3, 24, 0xdddddd);
-        const fbPilot = loadedPilot || createBox(0.35, 0.8, 0.25, 0x111111);
 
         setProgress(100);
         setStatusText('РЕЗЕРВНЫЙ СТАРТ');
@@ -228,8 +209,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
                 tie2: fbTie2,
                 destroyer: fbDestroyer,
                 datapad: fbDatapad,
-                cr90: fbCr90,
-                pilot: fbPilot
+                cr90: fbCr90
               },
               audioBuffers,
               audioCtx
