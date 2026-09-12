@@ -14,6 +14,7 @@ export interface PreloadedModels {
   destroyer: THREE.Group;
   datapad?: THREE.Group;
   cr90?: THREE.Group;
+  pilot?: THREE.Group;
 }
 
 export interface PreloadedAssets {
