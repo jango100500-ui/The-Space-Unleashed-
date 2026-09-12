@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -265,6 +264,17 @@ export default function GameScreen({
     triggerBombRef.current = true;
   };
 
+  const handleVictoryCutsceneDone = useCallback(() => {
+    setShowVictoryCutscene(false);
+    setCurtainVisible(true);
+    isPausedRef.current = true;
+    if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
+    if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
+    setTimeout(() => {
+      setEndGameModal('victory');
+    }, 450);
+  }, []);
+
   useEffect(() => {
     let animId: number;
     let isDisposed = false;
@@ -406,8 +416,8 @@ export default function GameScreen({
         if ((c as THREE.Mesh).isMesh) {
           const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
           if (m) {
-            m.roughness = 0.9;
-            m.metalness = 0.1;
+            m.roughness = 0.95;
+            m.metalness = 0.05;
           }
         }
       });
@@ -1112,18 +1122,6 @@ export default function GameScreen({
       }
 
       setShowVictoryCutscene(true);
-    };
-
-    const handleVictoryCutsceneDone = () => {
-      setShowVictoryCutscene(false);
-      setCurtainVisible(true);
-      isPausedRef.current = true;
-      if (xwingGainRef.current) xwingGainRef.current.gain.value = 0;
-      if (tieEngineGainRef.current) tieEngineGainRef.current.gain.value = 0;
-      setTimeout(() => {
-        if (isDisposed) return;
-        setEndGameModal('victory');
-      }, 450);
     };
 
     const applyDamageToPlayer = (dmg: number) => {
@@ -2029,7 +2027,7 @@ export default function GameScreen({
         }
 
         const newTargetList: GeneratorScreenTarget[] = [];
-        if (!bossData.phase2Active && !showHallwayCutscene) {
+        if (!bossData.phase2Active && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
           for (const gen of bossData.generators) {
             if (!gen.destroyed) {
               const worldGPos = gen.localPos.clone().applyMatrix4(bossData.group.matrixWorld);
@@ -2044,7 +2042,7 @@ export default function GameScreen({
         }
         setGeneratorTargets(newTargetList);
 
-        if (!bossData.raidActive && !bossCutsceneActiveRef.current && !inBiomeTransitionRef.current && !showHallwayCutscene && !isDeadRef.current) {
+        if (!bossData.raidActive && !bossCutsceneActiveRef.current && !inBiomeTransitionRef.current && !showHallwayCutscene && !isDeadRef.current && !showVictoryCutsceneRef.current) {
           const isSpecialBusy = zoneAttack.active || tractorBeam.active || isBossExecutingSpecial;
 
           if (!isSpecialBusy) {
@@ -2249,7 +2247,7 @@ export default function GameScreen({
             shakeIntensity = Math.max(shakeIntensity, flybyFactor * 0.7);
           }
 
-          if (!showHallwayCutscene && !isDeadRef.current) {
+          if (!showHallwayCutscene && !isDeadRef.current && !showVictoryCutsceneRef.current) {
             e.shootCooldown -= dt;
             if (e.shootCooldown <= 0 && e.pos.z < shipPos.z - 18 && e.pos.z > -160) {
               e.shootCooldown = e.isRaid ? 0.9 : e.isElite ? 0.8 + Math.random() * 0.5 : 1.1 + Math.random() * 0.7;
@@ -2273,7 +2271,7 @@ export default function GameScreen({
 
               if (e.isRaid) {
                 setTimeout(() => {
-                  if (!isDisposed && e.hp > 0 && !bossCutsceneActiveRef.current && !showHallwayCutscene) {
+                  if (!isDisposed && e.hp > 0 && !bossCutsceneActiveRef.current && !showHallwayCutscene && !showVictoryCutsceneRef.current) {
                     fireSalvo(-0.5);
                   }
                 }, 110);
@@ -2423,7 +2421,7 @@ export default function GameScreen({
             }
           }
 
-          if (!hitAny && bossData && !bossData.destroyed && !bossData.raidActive && !bossCutsceneActiveRef.current) {
+          if (!hitAny && bossData && !bossData.destroyed && !bossData.raidActive && !bossCutsceneActiveRef.current && !showVictoryCutsceneRef.current) {
             bossData.group.updateMatrixWorld(true);
             const hasGenerators = bossData.generators.some((g) => !g.destroyed);
 
