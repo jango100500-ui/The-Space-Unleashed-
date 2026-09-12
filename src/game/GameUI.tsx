@@ -39,6 +39,7 @@ interface GameUIProps {
   playerStunned: boolean;
   comboStreak: number;
   isRageActive: boolean;
+  isResistanceActive: boolean;
   crosshairScreenPos: { x: number; y: number };
   zoneAttackUi: { visible: boolean; leftPct: number; widthPct: number };
   tractorBeamUi: { visible: boolean; leftPct: number; widthPct: number };
@@ -123,7 +124,7 @@ export default function GameUI(props: GameUIProps) {
         .tfu-pad-bottom:active { transform: translateX(-50%) scale(0.94); }
         .tfu-pad-timer-text { font-family: monospace; font-size: 16px; font-weight: 900; color: #ffffff; }
         
-        /* Плашки комбо (синяя) и буйства (жёлтая): без свечения и без масштабирования */
+        /* Плашки индикаторов над прицелом */
         .hud-target-overlay {
           position: absolute;
           transform: translate(-50%, -100%);
@@ -149,7 +150,17 @@ export default function GameUI(props: GameUIProps) {
           font-size: 11px;
           font-weight: 900;
           letter-spacing: 3px;
-          color: #f1c40f;
+          color: #f1c40f; /* Теплый жёлтый */
+          text-transform: uppercase;
+          text-shadow: 0 1px 3px #000000;
+          animation: fadeBlinkAnim 0.35s infinite alternate ease-in-out;
+        }
+        .hud-resistance-label {
+          font-family: Arial, sans-serif;
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 3px;
+          color: #00e5ff; /* Синий цвет щита */
           text-transform: uppercase;
           text-shadow: 0 1px 3px #000000;
           animation: fadeBlinkAnim 0.35s infinite alternate ease-in-out;
@@ -213,6 +224,9 @@ export default function GameUI(props: GameUIProps) {
         >
           {props.isRageActive && (
             <div className="hud-rage-label">БУЙСТВО</div>
+          )}
+          {props.isResistanceActive && (
+            <div className="hud-resistance-label">СОПРОТИВЛЕНИЕ</div>
           )}
           {props.comboStreak >= 3 && (
             <div className="hud-combo-label">
