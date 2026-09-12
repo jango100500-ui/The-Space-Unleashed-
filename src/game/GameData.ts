@@ -56,10 +56,39 @@ export interface HealEffectParticle {
   maxLife: number;
 }
 
+export interface ShieldBuffParticle {
+  sprite: THREE.Sprite;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  life: number;
+  maxLife: number;
+}
+
 export interface RageEffectIndicator {
   sprite: THREE.Sprite;
   life: number;
   maxLife: number;
+}
+
+export interface SlaveRocket {
+  mesh: THREE.Mesh;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  targetRef: Enemy | null;
+  targetPos: THREE.Vector3;
+  curveAxis: THREE.Vector3;
+  speed: number;
+  life: number;
+  curveTimer: number;
+}
+
+export interface SlaveMine {
+  mesh: THREE.Mesh;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  life: number;
+  state: 'slowing' | 'armed' | 'detonated';
+  timer: number;
 }
 
 export interface BossZoneAttack {
@@ -281,7 +310,6 @@ export function createExplosionRingTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-// Текстура плюса для эффекта починки и датападов
 export function createPlusSignTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 128;
@@ -289,13 +317,11 @@ export function createPlusSignTexture(): THREE.CanvasTexture {
   const ctx = canvas.getContext('2d')!;
   ctx.clearRect(0, 0, 128, 128);
 
-  ctx.fillStyle = '#ff3344';
-  ctx.shadowColor = '#ff2233';
+  ctx.fillStyle = '#ff2a3a';
+  ctx.shadowColor = '#ff1122';
   ctx.shadowBlur = 12;
 
-  // Вертикальная палочка
   ctx.fillRect(52, 20, 24, 88);
-  // Горизонтальная палочка
   ctx.fillRect(20, 52, 88, 24);
 
   const tex = new THREE.CanvasTexture(canvas);
@@ -303,7 +329,6 @@ export function createPlusSignTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-// Текстура желтого восклицательного знака «!» для «Буйства»
 export function createExclamationTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 128;
@@ -311,14 +336,41 @@ export function createExclamationTexture(): THREE.CanvasTexture {
   const ctx = canvas.getContext('2d')!;
   ctx.clearRect(0, 0, 128, 128);
 
-  ctx.fillStyle = '#ffdd00';
-  ctx.shadowColor = '#ffaa00';
+  ctx.fillStyle = '#f1c40f';
+  ctx.shadowColor = '#d68910';
   ctx.shadowBlur = 14;
 
   ctx.font = '900 96px Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('!', 64, 64);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Текстура синей иконки щита для способности Раба-1
+export function createShieldIconTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, 128, 128);
+
+  ctx.fillStyle = '#00e5ff';
+  ctx.shadowColor = '#00b4d8';
+  ctx.shadowBlur = 14;
+
+  ctx.beginPath();
+  ctx.moveTo(64, 18);
+  ctx.lineTo(104, 34);
+  ctx.lineTo(104, 76);
+  ctx.quadraticCurveTo(104, 108, 64, 120);
+  ctx.quadraticCurveTo(24, 108, 24, 76);
+  ctx.lineTo(24, 34);
+  ctx.closePath();
+  ctx.fill();
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
