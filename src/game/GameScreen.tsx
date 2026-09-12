@@ -38,8 +38,8 @@ interface WingmanFlyer {
   vel: THREE.Vector3;
   side: number;
   life: number;
-  engineGain: GainNode | null;
-  engineSource: AudioBufferSourceNode | null;
+  flybyGain: GainNode | null;
+  flybySource: AudioBufferSourceNode | null;
 }
 
 interface GameScreenProps {
@@ -91,12 +91,12 @@ export default function GameScreen({
   const triggerRepairRef = useRef<boolean>(false);
   const triggerRageRef = useRef<boolean>(false);
 
-  // Состояние «Буйства» Y-Wing
+  // Буйство Y-Wing
   const isRageActiveRef = useRef<boolean>(false);
   const rageTimerRef = useRef<number>(0);
   const [isRageActive, setIsRageActive] = useState<boolean>(false);
 
-  // Система комбо (х3 - х11)
+  // Комбо
   const [comboStreak, setComboStreak] = useState<number>(0);
   const comboStreakRef = useRef<number>(0);
   const comboTimerRef = useRef<number>(0);
@@ -251,13 +251,21 @@ export default function GameScreen({
     const chosen = healKeys[Math.floor(Math.random() * healKeys.length)];
     const buf = assets.audioBuffers[chosen];
     if (buf) {
-      playBuffer(buf, 0.48);
+      playBuffer(buf, 0.5);
     } else {
       playTone(260, 520, 0.35, 0.3, 'sine');
     }
   };
 
-  // Громкость грома увеличена в 2.5 раза
+  // Звук братской помощи X-Wing (brother1 или brother2)
+  const playBrotherHelpSound = () => {
+    const chosen = Math.random() > 0.5 ? assets.audioBuffers.brother1 : assets.audioBuffers.brother2;
+    if (chosen) {
+      playBuffer(chosen, 0.65);
+    }
+  };
+
+  // Громкость молнии увеличена в 2.5 раза
   const playThunderSound = (distToPlayer: number) => {
     const tKeys = ['thunder1', 'thunder2'];
     const chosen = tKeys[Math.floor(Math.random() * tKeys.length)];
@@ -605,7 +613,6 @@ export default function GameScreen({
       shieldImpacts.push({ mesh: sMesh, life: 0.24, maxLife: 0.24 });
     };
 
-    // Красные светящиеся плюсики вокруг корабля (починка Y-Wing / датапады)
     const spawnHealPluses = (count = 10) => {
       for (let i = 0; i < count; i++) {
         const mat = new THREE.SpriteMaterial({
@@ -638,7 +645,6 @@ export default function GameScreen({
       }
     };
 
-    // Индикатор «!» над кораблем при буйстве
     const triggerRageVisual = () => {
       if (rageIndicator) {
         scene.remove(rageIndicator.sprite);
@@ -813,7 +819,10 @@ export default function GameScreen({
         trailTimer: 0
       });
 
-      if (audioBuffers.proton) {
+      // Звук proton3 для торпеды
+      if (audioBuffers.proton3) {
+        playBuffer(audioBuffers.proton3, 0.5);
+      } else if (audioBuffers.proton) {
         playBuffer(audioBuffers.proton, 0.45);
       } else {
         playTone(300, 150, 0.4, 0.35, 'sawtooth');
@@ -852,6 +861,9 @@ export default function GameScreen({
         targetEnemies.push(null);
         targetEnemies.push(null);
       }
+
+      // Звук братской помощи (brother1 или brother2)
+      playBrotherHelpSound();
 
       for (let s = 0; s < 6; s++) {
         setTimeout(() => {
@@ -896,23 +908,25 @@ export default function GameScreen({
           w.rotation.set(-0.04, 0, side * 0.05);
           scene.add(w);
 
-          let engSrc: AudioBufferSourceNode | null = null;
-          let engGn: GainNode | null = null;
+          let fSrc: AudioBufferSourceNode | null = null;
+          let fGn: GainNode | null = null;
 
-          if (audioBuffers.xwingEngine && !isPausedRef.current) {
+          // Звук xwing-flyby для пролетающих ведомых
+          const flybyBuf = audioBuffers.xwingFlyby || audioBuffers.xwingEngine;
+          if (flybyBuf && !isPausedRef.current) {
             try {
-              engSrc = audioCtx.createBufferSource();
-              engSrc.buffer = audioBuffers.xwingEngine;
-              engSrc.loop = true;
-              engGn = audioCtx.createGain();
-              engGn.gain.value = 0.01;
-              engSrc.connect(engGn);
+              fSrc = audioCtx.createBufferSource();
+              fSrc.buffer = flybyBuf;
+              fSrc.loop = true;
+              fGn = audioCtx.createGain();
+              fGn.gain.value = 0.01;
+              fSrc.connect(fGn);
               if (spaceMuffleFilterRef.current) {
-                engGn.connect(spaceMuffleFilterRef.current);
+                fGn.connect(spaceMuffleFilterRef.current);
               } else {
-                engGn.connect(audioCtx.destination);
+                fGn.connect(audioCtx.destination);
               }
-              engSrc.start(0);
+              fSrc.start(0);
             } catch {}
           }
 
@@ -922,8 +936,8 @@ export default function GameScreen({
             vel: new THREE.Vector3(0, 0, -190),
             side,
             life: 2.8,
-            engineGain: engGn,
-            engineSource: engSrc
+            flybyGain: fGn,
+            flybySource: fSrc
           });
         };
         createFlyer(-1);
@@ -976,7 +990,7 @@ export default function GameScreen({
       const spawnZ = -250 - Math.random() * 25;
 
       for (let idx = 0; idx < count; idx++) {
-        // Разделение по сторонам
+        // Разделяем стороны, чтобы не летели одной кучей
         const side = forcedSide !== undefined ? (idx % 2 === 0 ? forcedSide : -forcedSide) : (idx % 2 === 0 ? 1 : -1);
         const isTie2 = forceTie2 !== undefined ? forceTie2 : (stageRef.current >= 2 && Math.random() < 0.35);
         const mesh = createEnemyMesh(isTie2);
@@ -1104,7 +1118,7 @@ export default function GameScreen({
       shipHolder.visible = false;
       crosshairTex.visible = false;
 
-      // Сбалансированный доход при поражении (в зависимости от прогресса)
+      // Доход при поражении
       const earned = Math.min(2200, Math.floor(currentScore * 0.025 + currentKills * 12 + currentStagesDone * 180));
       setCreditsEarned(earned);
       if (onAddCreditsRef.current) {
@@ -1136,7 +1150,7 @@ export default function GameScreen({
       currentScore += 5000;
       setScore(currentScore);
 
-      // Строго в коридоре 3000 – 4500 кредитов за победу
+      // Доход победы строго в коридоре 3000 – 4500 кредитов
       const baseEarned = Math.floor(currentScore * 0.045 + currentKills * 16 + currentStagesDone * 240 + 800);
       const earned = THREE.MathUtils.clamp(baseEarned, 3150, 4450);
       setCreditsEarned(earned);
@@ -1160,7 +1174,7 @@ export default function GameScreen({
         return;
       }
 
-      // При буйстве Y-Wing входящий урон режется на 50%
+      // При буйстве входящий урон режется на 50%
       if (isRageActiveRef.current) {
         dmg = Math.max(1, Math.floor(dmg * 0.5));
       }
@@ -1273,7 +1287,7 @@ export default function GameScreen({
 
       const dt = realDt;
 
-      // Таймер комбо (окно 1.65 сек)
+      // Окно комбо увеличено до 2.8 секунды
       if (comboTimerRef.current > 0) {
         comboTimerRef.current -= dt;
         if (comboTimerRef.current <= 0) {
@@ -1282,7 +1296,6 @@ export default function GameScreen({
         }
       }
 
-      // Таймеры способностей
       if (ability1CooldownRef.current > 0) {
         ability1CooldownRef.current = Math.max(0, ability1CooldownRef.current - dt);
         setAbility1Cooldown(Math.ceil(ability1CooldownRef.current));
@@ -1292,7 +1305,6 @@ export default function GameScreen({
         setAbility2Cooldown(Math.ceil(ability2CooldownRef.current));
       }
 
-      // Состояние буйства Y-Wing
       if (isRageActiveRef.current) {
         rageTimerRef.current -= dt;
         if (rageTimerRef.current <= 0) {
@@ -1301,7 +1313,7 @@ export default function GameScreen({
         }
       }
 
-      // Активация «Починки корпуса» Y-Wing (80% от текущего HP, КД 125 сек)
+      // Активация «Починки корпуса» Y-Wing (КД 125 сек)
       if (triggerRepairRef.current) {
         triggerRepairRef.current = false;
         const healAmt = Math.max(1, Math.round(currentHp * 0.8));
@@ -1310,7 +1322,6 @@ export default function GameScreen({
         setHealBonus(healAmt);
         setTimeout(() => setHealBonus(0), 1000);
 
-        // Подсвечивание красным и плюсики
         shipHolder.traverse((c) => {
           if ((c as THREE.Mesh).isMesh) {
             const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
@@ -1326,7 +1337,7 @@ export default function GameScreen({
         playRandomHealSound();
       }
 
-      // Активация «Буйства» Y-Wing (на 8 сек удвоенный урон и 50% защита)
+      // Активация «Буйства» Y-Wing
       if (triggerRageRef.current) {
         triggerRageRef.current = false;
         isRageActiveRef.current = true;
@@ -1402,7 +1413,7 @@ export default function GameScreen({
         }
       }
 
-      // Окончание стана: немедленно глушим nosignal
+      // Окончание стана: глушим звук «нет сигнала»
       if (playerStunDuration > 0) {
         playerStunDuration -= dt;
         shipPitch += dt * 1.2;
@@ -1692,6 +1703,7 @@ export default function GameScreen({
         triggerBrotherHelpAttack();
       }
 
+      // Обновление ведомых братской помощи
       for (let wIdx = wingmanFlyers.length - 1; wIdx >= 0; wIdx--) {
         const wf = wingmanFlyers[wIdx];
         wf.life -= dt;
@@ -1706,15 +1718,16 @@ export default function GameScreen({
 
         wf.mesh.position.copy(wf.pos);
 
-        if (wf.engineGain) {
+        // Динамический зацикленный звук пролёта
+        if (wf.flybyGain) {
           const distToCam = wf.pos.distanceTo(camera.position);
-          const dynamicVol = THREE.MathUtils.clamp(Math.pow(1 - Math.min(1, distToCam / 75), 1.8) * 0.4, 0.02, 0.38);
-          wf.engineGain.gain.value = dynamicVol;
+          const dynamicVol = THREE.MathUtils.clamp(Math.pow(1 - Math.min(1, distToCam / 85), 1.6) * 0.55, 0.0, 0.55);
+          wf.flybyGain.gain.value = dynamicVol;
         }
 
         if (wf.life <= 0) {
-          if (wf.engineSource) {
-            try { wf.engineSource.stop(); } catch {}
+          if (wf.flybySource) {
+            try { wf.flybySource.stop(); } catch {}
           }
           scene.remove(wf.mesh);
           wingmanFlyers.splice(wIdx, 1);
@@ -1890,7 +1903,7 @@ export default function GameScreen({
         }
       }
 
-      // Индикатор «!»
+      // Индикатор «!» над кораблем
       if (rageIndicator) {
         rageIndicator.life -= dt;
         rageIndicator.sprite.position.set(shipPos.x, shipPos.y + 1.8, shipPos.z);
@@ -1977,7 +1990,6 @@ export default function GameScreen({
               }
             });
 
-            // Налёт: ровно 5 обычных и 5 перехватчиков с двух сторон
             enemies.length = 0;
             setTimeout(() => { if (!isDisposed) spawnSquad(undefined, 3, false); }, 100);
             setTimeout(() => { if (!isDisposed) spawnSquad(undefined, 2, false); }, 550);
@@ -2203,6 +2215,7 @@ export default function GameScreen({
         }
       }
 
+      // Обновление истребителей
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
         const jitterX = Math.sin(timestamp * 0.015 + e.seed) * 0.12;
@@ -2313,6 +2326,7 @@ export default function GameScreen({
         }
       }
 
+      // Полёт лазеров
       for (let i = lasers.length - 1; i >= 0; i--) {
         const l = lasers[i];
         l.life -= dt;
@@ -2345,7 +2359,6 @@ export default function GameScreen({
               l.life = 0;
               hitAny = true;
 
-              // Буйство удваивает урон
               let dealt = shipConf.damage >= 45 ? 2 : 1;
               if (isRageActiveRef.current) dealt *= 2;
               e.hp -= dealt;
@@ -2359,16 +2372,15 @@ export default function GameScreen({
                 spawnRetroExplosion(e.pos, 1.25);
                 shakeIntensity = Math.max(shakeIntensity, 0.8);
 
-                // === ЛОГИКА СТРИКОВ И КОМБО (Х3 - Х11) ===
+                // Окно комбо 2.8 с
                 comboStreakRef.current += 1;
-                comboTimerRef.current = 1.65; // Короткое окно комбо
+                comboTimerRef.current = 2.8;
 
                 if (comboStreakRef.current > 11) {
-                  comboStreakRef.current = 0; // Сброс после 11
+                  comboStreakRef.current = 0;
                 }
                 setComboStreak(comboStreakRef.current);
 
-                // Дополнительные очки за комбо
                 if (comboStreakRef.current >= 3) {
                   currentScore += comboStreakRef.current * 150;
                   setScore(currentScore);
@@ -2458,7 +2470,7 @@ export default function GameScreen({
         }
       }
 
-      // Подбор датападов (красная подсветка и плюсики)
+      // Подбор датападов
       for (let i = datapads.length - 1; i >= 0; i--) {
         const dp = datapads[i];
         dp.mesh.rotation.x += dp.rotSpeed.x * dt;
@@ -2485,7 +2497,6 @@ export default function GameScreen({
           setHealBonus(dp.healPercent);
           setTimeout(() => setHealBonus(0), 450);
 
-          // КРАСНАЯ подсветка корабля при лечении датападом
           shipHolder.traverse((c) => {
             if ((c as THREE.Mesh).isMesh) {
               const m = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
@@ -2498,7 +2509,6 @@ export default function GameScreen({
             }
           });
 
-          // Красные плюсики лечения
           spawnHealPluses(8);
 
           scene.remove(dp.mesh);
@@ -2634,8 +2644,8 @@ export default function GameScreen({
         (rageIndicator.sprite.material as THREE.Material).dispose();
       }
       wingmanFlyers.forEach((w) => {
-        if (w.engineSource) {
-          try { w.engineSource.stop(); } catch {}
+        if (w.flybySource) {
+          try { w.flybySource.stop(); } catch {}
         }
         scene.remove(w.mesh);
       });
