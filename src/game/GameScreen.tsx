@@ -1,18 +1,24 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { PreloadedAssets } from '../App.tsx';
 import {
   Enemy, Laser, ShieldGenerator, BossZoneAttack, BossTractorBeam, BossState,
   PlanetItem, BiomeRunStep, generateBiomeRun, createProceduralPlanetTexture,
   availablePlanets, BiomeType, GeneratorScreenTarget, ShieldImpactEffect,
-  DatapadItem, PilotDebris, createExplosionGlowTexture, createExplosionRingTexture,
+  DatapadItem, createExplosionGlowTexture, createExplosionRingTexture,
   ExplosionSmokeParticle, RetroExplosionInstance
 } from './GameData.ts';
 import { HANGAR_SHIPS } from '../components/HangarScreen.tsx';
 import VictoryCutscene from '../cutscenes/VictoryCutscene.tsx';
 import GameUI from './GameUI.tsx';
+
+interface BombParticle {
+  sprite: THREE.Sprite;
+  life: number;
+  maxLife: number;
+  initialScale: number;
+}
 
 interface ProtonBomb {
   mesh: THREE.Mesh;
@@ -21,6 +27,7 @@ interface ProtonBomb {
   targetRef: Enemy | null;
   speed: number;
   life: number;
+  trailTimer: number;
 }
 
 interface WingmanFlyer {
@@ -218,26 +225,24 @@ export default function GameScreen({
     }
   };
 
-  const playClapSound = (volume = 0.38) => {
-    const clapKeys = ['clap1', 'clap2', 'clap3', 'clap4'];
-    const chosen = clapKeys[Math.floor(Math.random() * clapKeys.length)];
-    const buf = assets.audioBuffers[chosen];
-    if (buf) {
-      playBuffer(buf, volume);
-    } else {
-      playTone(180, 80, 0.15, volume * 0.7, 'square');
-    }
-  };
-
   const playThunderSound = (distToPlayer: number) => {
     const tKeys = ['thunder1', 'thunder2'];
     const chosen = tKeys[Math.floor(Math.random() * tKeys.length)];
     const buf = assets.audioBuffers[chosen];
-    const vol = THREE.MathUtils.clamp(Math.max(0, 1 - distToPlayer / 280) * 0.32, 0.05, 0.32);
+    // Мягкая динамическая громкость без перегруза
+    const vol = THREE.MathUtils.clamp((1 - distToPlayer / 320) * 0.28, 0.04, 0.24);
     if (buf) {
       playBuffer(buf, vol, true);
     } else {
-      playTone(90, 40, 2.5, vol, 'sine');
+      playTone(85, 35, 1.8, vol, 'sine');
+    }
+  };
+
+  const playNoSignalSound = () => {
+    if (assets.audioBuffers.nosignal) {
+      playBuffer(assets.audioBuffers.nosignal, 0.38);
+    } else {
+      playTone(160, 50, 0.4, 0.25, 'sawtooth');
     }
   };
 
@@ -508,11 +513,11 @@ export default function GameScreen({
 
     const lasers: Laser[] = [];
     const protonBombs: ProtonBomb[] = [];
+    const bombTrailParticles: BombParticle[] = [];
     const wingmanFlyers: WingmanFlyer[] = [];
     const enemies: Enemy[] = [];
     const shieldImpacts: ShieldImpactEffect[] = [];
     const datapads: DatapadItem[] = [];
-    const pilots: PilotDebris[] = [];
     const activeExplosions: RetroExplosionInstance[] = [];
 
     const zoneAttack: BossZoneAttack = { active: false, timer: 0, duration: 1.6, xMin: -4, xMax: 4, fired: false };
@@ -525,65 +530,6 @@ export default function GameScreen({
       sMesh.scale.setScalar(0.5);
       scene.add(sMesh);
       shieldImpacts.push({ mesh: sMesh, life: 0.24, maxLife: 0.24 });
-    };
-
-    const spawnPilotDebris = (origin: THREE.Vector3) => {
-      if (!assets.models.pilot) return;
-
-      const pilotClone = SkeletonUtils.clone(assets.models.pilot) as THREE.Group;
-      applyRetroShipMaterial(pilotClone);
-
-      pilotClone.traverse((child) => {
-        if ((child as THREE.Bone).isBone) {
-          const name = child.name.toLowerCase();
-          if (name.includes('leftarm') || name.includes('arm_l') || name.includes('shoulder_l')) {
-            child.rotation.z = -1.1;
-            child.rotation.x = 0.3;
-          }
-          if (name.includes('rightarm') || name.includes('arm_r') || name.includes('shoulder_r')) {
-            child.rotation.z = 1.1;
-            child.rotation.x = 0.3;
-          }
-          if (name.includes('leg') || name.includes('knee')) {
-            child.rotation.x = 0.25;
-          }
-        }
-      });
-
-      const bbox = new THREE.Box3().setFromObject(pilotClone);
-      const size = new THREE.Vector3();
-      bbox.getSize(size);
-      const maxDim = Math.max(size.x, size.y, size.z) || 1.0;
-
-      const targetHeight = 0.22;
-      const normalizedScale = targetHeight / maxDim;
-      pilotClone.scale.setScalar(normalizedScale);
-
-      const center = new THREE.Vector3();
-      bbox.getCenter(center);
-      pilotClone.position.sub(center.multiplyScalar(normalizedScale));
-
-      const root = new THREE.Group();
-      root.position.copy(origin);
-      root.add(pilotClone);
-      scene.add(root);
-
-      const flyX = (origin.x >= shipPos.x ? 1 : -1) * (14 + Math.random() * 12);
-      const flyY = (Math.random() - 0.5) * 8 + 2.0;
-      const flyZ = 35 + Math.random() * 20;
-
-      pilots.push({
-        mesh: root,
-        pos: origin.clone(),
-        vel: new THREE.Vector3(flyX, flyY, flyZ),
-        spin: new THREE.Vector3(
-          (Math.random() - 0.5) * 1.5,
-          (Math.random() - 0.5) * 2.0,
-          (Math.random() - 0.5) * 1.2
-        ),
-        radius: 0.25,
-        life: 7.0
-      });
     };
 
     const spawnRetroExplosion = (pos: THREE.Vector3, scale = 1.0, withLight = true, isGreenish = false) => {
@@ -732,7 +678,8 @@ export default function GameScreen({
         targetPos: chosenTargetPos,
         targetRef: chosenTargetRef,
         speed: 28,
-        life: 5.5
+        life: 5.5,
+        trailTimer: 0
       });
 
       if (audioBuffers.proton) {
@@ -1127,6 +1074,7 @@ export default function GameScreen({
         endL.copy(shipPos);
         playerStunDuration = 3.0;
         setPlayerStunned(true);
+        playNoSignalSound();
         shakeIntensity = 1.2;
         applyDamageToPlayer(8);
       } else {
@@ -1144,6 +1092,7 @@ export default function GameScreen({
           endL.copy(shipPos);
           playerStunDuration = 3.0;
           setPlayerStunned(true);
+          playNoSignalSound();
           shakeIntensity = 1.2;
           applyDamageToPlayer(8);
         }
@@ -1566,9 +1515,36 @@ export default function GameScreen({
         }
       }
 
+      // === ПРОТОННЫЕ БОМБЫ + РОЗОВЫЙ ШЛЕЙФ ===
       for (let bIdx = protonBombs.length - 1; bIdx >= 0; bIdx--) {
         const bomb = protonBombs[bIdx];
         bomb.life -= dt;
+        bomb.trailTimer += dt;
+
+        // Спавн розовых частиц шлейфа
+        if (bomb.trailTimer >= 0.035) {
+          bomb.trailTimer = 0;
+          const trailMat = new THREE.SpriteMaterial({
+            map: sharedGlowTexture,
+            color: 0xff3388,
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          });
+          const sprite = new THREE.Sprite(trailMat);
+          const trailScale = 0.5 + Math.random() * 0.3;
+          sprite.scale.set(trailScale, trailScale, 1);
+          sprite.position.copy(bomb.mesh.position);
+          scene.add(sprite);
+
+          bombTrailParticles.push({
+            sprite,
+            life: 0.45,
+            maxLife: 0.45,
+            initialScale: trailScale
+          });
+        }
 
         if (bomb.targetRef && bomb.targetRef.hp > 0 && bomb.targetRef.state === 'attacking') {
           bomb.targetPos.copy(bomb.targetRef.pos);
@@ -1599,9 +1575,6 @@ export default function GameScreen({
             currentKills += 1;
             setEnemiesKilled(currentKills);
             spawnRetroExplosion(bomb.mesh.position, 1.8, true, false);
-            if (Math.random() < 0.213) {
-              spawnPilotDebris(bomb.mesh.position);
-            }
           }
         }
 
@@ -1620,9 +1593,6 @@ export default function GameScreen({
               currentKills += 1;
               setEnemiesKilled(currentKills);
               spawnRetroExplosion(bomb.mesh.position, 1.8, true, false);
-              if (Math.random() < 0.213) {
-                spawnPilotDebris(bomb.mesh.position);
-              }
               break;
             }
           }
@@ -1679,6 +1649,22 @@ export default function GameScreen({
           }
           scene.remove(bomb.mesh);
           protonBombs.splice(bIdx, 1);
+        }
+      }
+
+      // Обновление частиц розового шлейфа
+      for (let tpIdx = bombTrailParticles.length - 1; tpIdx >= 0; tpIdx--) {
+        const tp = bombTrailParticles[tpIdx];
+        tp.life -= dt;
+        const progress = tp.life / tp.maxLife;
+        const s = tp.initialScale * (0.3 + progress * 0.7);
+        tp.sprite.scale.set(s, s, 1);
+        (tp.sprite.material as THREE.SpriteMaterial).opacity = progress * 0.75;
+
+        if (tp.life <= 0) {
+          scene.remove(tp.sprite);
+          (tp.sprite.material as THREE.Material).dispose();
+          bombTrailParticles.splice(tpIdx, 1);
         }
       }
 
@@ -1948,8 +1934,8 @@ export default function GameScreen({
                 } else {
                   playerStunDuration = 3.0;
                   setPlayerStunned(true);
+                  playNoSignalSound();
                   shakeIntensity = 1.0;
-                  playTone(180, 60, 0.4, 0.3, 'sawtooth');
                 }
               }
 
@@ -1996,9 +1982,6 @@ export default function GameScreen({
             e.disabledTimer -= dt;
             if (e.disabledTimer <= 0) {
               spawnRetroExplosion(e.pos, 1.8, true, false);
-              if (Math.random() < 0.213) {
-                spawnPilotDebris(e.pos);
-              }
               if (Math.random() < 0.25) {
                 spawnDatapad(e.pos);
               }
@@ -2135,10 +2118,6 @@ export default function GameScreen({
                 spawnRetroExplosion(e.pos, 1.25);
                 shakeIntensity = Math.max(shakeIntensity, 0.8);
 
-                if (Math.random() < 0.213) {
-                  spawnPilotDebris(e.pos);
-                }
-
                 currentKills += 1;
                 setEnemiesKilled(currentKills);
                 currentScore += e.isRaid ? 250 : e.isElite ? 180 : 100;
@@ -2267,36 +2246,6 @@ export default function GameScreen({
         }
       }
 
-      for (let pIdx = pilots.length - 1; pIdx >= 0; pIdx--) {
-        const p = pilots[pIdx];
-        p.life -= dt;
-        p.pos.addScaledVector(p.vel, dt);
-        p.mesh.position.copy(p.pos);
-
-        p.mesh.rotation.x += p.spin.x * dt;
-        p.mesh.rotation.y += p.spin.y * dt;
-        p.mesh.rotation.z += p.spin.z * dt;
-
-        const isNearPlayerZ = Math.abs(p.pos.z - shipPos.z) < 1.2;
-        if (!isDeadRef.current && p.life < 6.6 && isNearPlayerZ) {
-          const distToCockpit = Math.hypot(p.pos.x - shipPos.x, p.pos.y - shipPos.y);
-          if (distToCockpit < 1.1) {
-            playClapSound(0.6);
-            shakeIntensity = Math.max(shakeIntensity, 0.5);
-            const bounceX = (p.pos.x - shipPos.x) * 25;
-            const bounceY = (p.pos.y - shipPos.y) * 25;
-            p.vel.set(bounceX, bounceY, 45);
-            p.spin.multiplyScalar(3.5);
-            applyDamageToPlayer(3);
-          }
-        }
-
-        if (p.life <= 0 || p.pos.z > camera.position.z + 30) {
-          scene.remove(p.mesh);
-          pilots.splice(pIdx, 1);
-        }
-      }
-
       for (let i = shieldImpacts.length - 1; i >= 0; i--) {
         const si = shieldImpacts[i];
         si.life -= dt;
@@ -2409,6 +2358,10 @@ export default function GameScreen({
       window.removeEventListener('resize', handleResize);
       lasers.forEach((l) => scene.remove(l.mesh));
       protonBombs.forEach((b) => scene.remove(b.mesh));
+      bombTrailParticles.forEach((tp) => {
+        scene.remove(tp.sprite);
+        (tp.sprite.material as THREE.Material).dispose();
+      });
       wingmanFlyers.forEach((w) => {
         if (w.engineSource) {
           try { w.engineSource.stop(); } catch {}
@@ -2418,7 +2371,6 @@ export default function GameScreen({
       enemies.forEach((e) => scene.remove(e.mesh));
       planetMeshes.forEach((pl) => scene.remove(pl));
       datapads.forEach((dp) => scene.remove(dp.mesh));
-      pilots.forEach((p) => scene.remove(p.mesh));
       shieldImpacts.forEach((si) => {
         scene.remove(si.mesh);
         si.mesh.geometry.dispose();
