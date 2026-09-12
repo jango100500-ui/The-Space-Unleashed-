@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -526,41 +527,29 @@ export default function GameScreen({
       shieldImpacts.push({ mesh: sMesh, life: 0.24, maxLife: 0.24 });
     };
 
-    // Спавн пилота в невесомости с автодетектом костей
+    // Спавн пилота в точке взрыва (размер уменьшен в 4.5 раза, естественная поза без ломания суставов)
     const spawnPilotDebris = (origin: THREE.Vector3) => {
       if (!assets.models.pilot) return;
       const mesh = assets.models.pilot.clone();
-      mesh.scale.setScalar(0.35);
+      // Уменьшаем масштаб до честного человеческого размера относительно истребителя
+      mesh.scale.setScalar(0.075);
       mesh.position.copy(origin);
       applyRetroShipMaterial(mesh);
 
-      const foundBones: PilotDebris['bones'] = {};
-      mesh.traverse((child) => {
-        if ((child as THREE.SkinnedMesh).isSkinnedMesh && (child as THREE.SkinnedMesh).skeleton) {
-          const skel = (child as THREE.SkinnedMesh).skeleton;
-          for (const bone of skel.bones) {
-            const name = bone.name.toLowerCase();
-            if (name.includes('head') || name.includes('neck')) foundBones.head = bone;
-            else if (name.includes('leftarm') || name.includes('arm_l') || name.includes('shoulder_l')) foundBones.leftArm = bone;
-            else if (name.includes('rightarm') || name.includes('arm_r') || name.includes('shoulder_r')) foundBones.rightArm = bone;
-            else if (name.includes('leftup') || name.includes('leftleg') || name.includes('leg_l')) foundBones.leftLeg = bone;
-            else if (name.includes('rightup') || name.includes('rightleg') || name.includes('leg_r')) foundBones.rightLeg = bone;
-          }
-        }
-      });
-
       scene.add(mesh);
 
+      // Скорость разлёта от взрыва мимо игрока
       const vel = new THREE.Vector3(
-        (Math.random() - 0.5) * 14,
-        (Math.random() - 0.5) * 10,
-        38 + Math.random() * 26
+        (Math.random() - 0.5) * 12,
+        (Math.random() - 0.5) * 8,
+        28 + Math.random() * 22
       );
 
+      // Медленное вращение всего тела в вакууме
       const spin = new THREE.Vector3(
-        (Math.random() - 0.5) * 3.5,
-        (Math.random() - 0.5) * 3.5,
-        (Math.random() - 0.5) * 3.5
+        (Math.random() - 0.5) * 2.2,
+        (Math.random() - 0.5) * 2.2,
+        (Math.random() - 0.5) * 2.2
       );
 
       pilots.push({
@@ -568,13 +557,12 @@ export default function GameScreen({
         pos: origin.clone(),
         vel,
         spin,
-        radius: 0.8,
-        life: 8.0,
-        bones: Object.keys(foundBones).length > 0 ? foundBones : undefined
+        radius: 0.35, // Компактный радиус коллизии
+        life: 7.5
       });
     };
 
-    // Взрыв по формуле из референса: плотный огненный ком
+    // Взрыв по формуле из референса
     const spawnRetroExplosion = (pos: THREE.Vector3, scale = 1.0, withLight = true, isGreenish = false) => {
       const expGroup = new THREE.Group();
       expGroup.position.copy(pos);
@@ -1446,7 +1434,6 @@ export default function GameScreen({
       let bestScore = 9999;
 
       if (playerStunDuration <= 0 && !isDeadRef.current && !showVictoryCutsceneRef.current) {
-        // Сначала проверяем обычные истребители
         for (const e of enemies) {
           if (e.state === 'attacking' && e.pos.z < shipPos.z - 2) {
             const d = e.pos.distanceTo(shipPos);
@@ -1461,7 +1448,6 @@ export default function GameScreen({
           }
         }
 
-        // К генераторам босса переходим, только если вокруг нет активных исидов
         if (bossData && !bossData.destroyed && !bossData.raidActive) {
           bossData.group.updateMatrixWorld(true);
           const hasGenerators = bossData.generators.some((g) => !g.destroyed);
@@ -1873,7 +1859,7 @@ export default function GameScreen({
                 widthPct: Math.max(5, Math.min(100, widthNorm * 100))
               });
             } else if (bossData.squadCooldown <= 0 && enemies.length === 0) {
-              // Способность призыва: Разрушитель вызывает сразу 6-7 кораблей
+              // Способность призыва: Разрушитель вызывает сразу 6-7 истребителей
               bossData.squadCooldown = 16.0 + Math.random() * 4.0;
               isBossExecutingSpecial = true;
               const callCount = Math.floor(6 + Math.random() * 2);
@@ -2276,26 +2262,17 @@ export default function GameScreen({
         p.pos.addScaledVector(p.vel, dt);
         p.mesh.position.copy(p.pos);
 
+        // Плавное кувыркание тела по трем осям в вакууме
         p.mesh.rotation.x += p.spin.x * dt;
         p.mesh.rotation.y += p.spin.y * dt;
         p.mesh.rotation.z += p.spin.z * dt;
 
-        // Пружинный инерционный регдолл конечностей
-        if (p.bones) {
-          const t = timestamp * 0.005;
-          if (p.bones.head) p.bones.head.rotation.x = Math.sin(t * 1.5) * 0.35;
-          if (p.bones.leftArm) p.bones.leftArm.rotation.z = Math.sin(t * 2.2) * 0.55;
-          if (p.bones.rightArm) p.bones.rightArm.rotation.z = -Math.cos(t * 2.0) * 0.55;
-          if (p.bones.leftLeg) p.bones.leftLeg.rotation.x = Math.sin(t * 1.8) * 0.45;
-          if (p.bones.rightLeg) p.bones.rightLeg.rotation.x = -Math.cos(t * 1.9) * 0.45;
-        }
-
-        // Физика столкновения с кораблем игрока
-        if (!isDeadRef.current && p.pos.distanceTo(shipPos) < p.radius + 1.2) {
+        // Физика столкновения с кораблем игрока (аккуратный радиус)
+        if (!isDeadRef.current && p.pos.distanceTo(shipPos) < p.radius + 0.8) {
           playClapSound(0.55);
           shakeIntensity = Math.max(shakeIntensity, 0.45);
           const bounceDir = new THREE.Vector3().subVectors(p.pos, shipPos).normalize();
-          p.vel.copy(bounceDir.multiplyScalar(45));
+          p.vel.copy(bounceDir.multiplyScalar(38));
           p.spin.multiplyScalar(2.6);
           applyDamageToPlayer(4);
         }
@@ -2724,3 +2701,4 @@ export default function GameScreen({
     </>
   );
 }
+
