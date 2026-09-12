@@ -84,7 +84,22 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     shipClass: 'basic',
     classLabel: 'БАЗОВЫЙ',
     classBadge: 'B',
-    abilities: []
+    abilities: [
+      {
+        id: 'hull_repair',
+        name: 'ПОЧИНКА КОРПУСА',
+        typeText: 'БАЗОВАЯ СПОСОБНОСТЬ',
+        description: 'Восстанавливает 80% от текущего состояния корпуса за счёт работы аварийных ремонтных дронов. Перезарядка: 35 секунд',
+        symbol: 'triangle'
+      },
+      {
+        id: 'rage',
+        name: 'БУЙСТВО',
+        typeText: 'ОСОБАЯ СПОСОБНОСТЬ',
+        description: 'Перегрузка генератора на 8 секунд: наносимый урон удваивается, а весь входящий урон снижается на 50%. Перезарядка: 30 секунд',
+        symbol: 'circle'
+      }
+    ]
   },
   {
     id: 'beatle',
