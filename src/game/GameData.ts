@@ -48,23 +48,6 @@ export interface DatapadItem {
   healPercent: number;
 }
 
-// Данные обломка/тела пилота в невесомости
-export interface PilotDebris {
-  mesh: THREE.Group;
-  pos: THREE.Vector3;
-  vel: THREE.Vector3;
-  spin: THREE.Vector3;
-  radius: number;
-  life: number;
-  bones?: {
-    head?: THREE.Bone;
-    leftArm?: THREE.Bone;
-    rightArm?: THREE.Bone;
-    leftLeg?: THREE.Bone;
-    rightLeg?: THREE.Bone;
-  };
-}
-
 export interface BossZoneAttack {
   active: boolean;
   timer: number;
