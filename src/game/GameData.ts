@@ -30,7 +30,6 @@ export interface Enemy {
   isElite: boolean;
   isRaid: boolean;
   disabledTimer?: number;
-  hitFlashTimer?: number;
   squadRole?: 'leader' | 'left_wing' | 'right_wing';
   squadOffset?: THREE.Vector3;
 }
@@ -90,7 +89,6 @@ export interface ShieldImpactEffect {
   maxLife: number;
 }
 
-// Новый ретро-взрыв на спрайтах (адаптирован из референса)
 export interface ExplosionSmokeParticle {
   sprite: THREE.Sprite;
   velocity: THREE.Vector3;
@@ -232,20 +230,20 @@ export function createProceduralPlanetTexture(name: string): THREE.CanvasTexture
   return tex;
 }
 
-// Общие текстуры для нового ретро-взрыва (генерируются 1 раз)
+// Общие текстуры взрыва из референса
 export function createExplosionGlowTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
+  canvas.width = 256;
+  canvas.height = 256;
   const c = canvas.getContext('2d')!;
-  const g = c.createRadialGradient(64, 64, 0, 64, 64, 64);
+  const g = c.createRadialGradient(128, 128, 0, 128, 128, 128);
   g.addColorStop(0, 'rgba(255, 255, 250, 1)');
-  g.addColorStop(0.18, 'rgba(255, 180, 40, 0.9)');
-  g.addColorStop(0.42, 'rgba(255, 70, 0, 0.65)');
-  g.addColorStop(0.72, 'rgba(160, 20, 0, 0.25)');
+  g.addColorStop(0.15, 'rgba(255, 200, 50, 0.95)');
+  g.addColorStop(0.35, 'rgba(255, 80, 0, 0.85)');
+  g.addColorStop(0.65, 'rgba(180, 20, 0, 0.35)');
   g.addColorStop(1, 'rgba(0, 0, 0, 0)');
   c.fillStyle = g;
-  c.fillRect(0, 0, 128, 128);
+  c.fillRect(0, 0, 256, 256);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
@@ -258,9 +256,10 @@ export function createExplosionRingTexture(): THREE.CanvasTexture {
   const c = canvas.getContext('2d')!;
   const g = c.createRadialGradient(128, 128, 70, 128, 128, 122);
   g.addColorStop(0, 'rgba(255, 140, 0, 0)');
-  g.addColorStop(0.25, 'rgba(255, 140, 0, 0.35)');
-  g.addColorStop(0.5, 'rgba(255, 210, 110, 0.85)');
-  g.addColorStop(0.75, 'rgba(255, 80, 0, 0.35)');
+  g.addColorStop(0.2, 'rgba(255, 140, 0, 0.4)');
+  g.addColorStop(0.45, 'rgba(255, 220, 120, 1)');
+  g.addColorStop(0.55, 'rgba(255, 220, 120, 1)');
+  g.addColorStop(0.8, 'rgba(255, 80, 0, 0.4)');
   g.addColorStop(1, 'rgba(255, 30, 0, 0)');
   c.fillStyle = g;
   c.fillRect(0, 0, 256, 256);
