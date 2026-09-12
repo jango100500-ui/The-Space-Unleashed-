@@ -15,7 +15,13 @@ const SOUND_LIST = [
   { key: 'tieEngine', url: '/sounds/tieengine.mp3' },
   { key: 'click', url: '/sounds/click.mp3' },
   { key: 'destroyerSoundtrack', url: '/sounds/destroyer_soundtrack.mp3' },
-  { key: 'proton', url: '/sounds/proton.mp3' }
+  { key: 'proton', url: '/sounds/proton.mp3' },
+  { key: 'thunder1', url: '/sounds/thunder1.mp3' },
+  { key: 'thunder2', url: '/sounds/thunder2.mp3' },
+  { key: 'clap1', url: '/sounds/clap1.mp3' },
+  { key: 'clap2', url: '/sounds/clap2.mp3' },
+  { key: 'clap3', url: '/sounds/clap3.mp3' },
+  { key: 'clap4', url: '/sounds/clap4.mp3' }
 ];
 
 export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
