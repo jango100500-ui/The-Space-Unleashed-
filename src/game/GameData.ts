@@ -48,6 +48,20 @@ export interface DatapadItem {
   healPercent: number;
 }
 
+export interface HealEffectParticle {
+  sprite: THREE.Sprite;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  life: number;
+  maxLife: number;
+}
+
+export interface RageEffectIndicator {
+  sprite: THREE.Sprite;
+  life: number;
+  maxLife: number;
+}
+
 export interface BossZoneAttack {
   active: boolean;
   timer: number;
@@ -262,6 +276,50 @@ export function createExplosionRingTexture(): THREE.CanvasTexture {
   g.addColorStop(1, 'rgba(255, 30, 0, 0)');
   c.fillStyle = g;
   c.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Текстура плюса для эффекта починки и датападов
+export function createPlusSignTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, 128, 128);
+
+  ctx.fillStyle = '#ff3344';
+  ctx.shadowColor = '#ff2233';
+  ctx.shadowBlur = 12;
+
+  // Вертикальная палочка
+  ctx.fillRect(52, 20, 24, 88);
+  // Горизонтальная палочка
+  ctx.fillRect(20, 52, 88, 24);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Текстура желтого восклицательного знака «!» для «Буйства»
+export function createExclamationTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, 128, 128);
+
+  ctx.fillStyle = '#ffdd00';
+  ctx.shadowColor = '#ffaa00';
+  ctx.shadowBlur = 14;
+
+  ctx.font = '900 96px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('!', 64, 64);
+
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
