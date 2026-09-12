@@ -1,3 +1,5 @@
+
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -7,7 +9,8 @@ import {
   PlanetItem, BiomeRunStep, generateBiomeRun, createProceduralPlanetTexture,
   availablePlanets, BiomeType, GeneratorScreenTarget, ShieldImpactEffect,
   DatapadItem, HealEffectParticle, ShieldBuffParticle, RageEffectIndicator,
-  SlaveRocket, SlaveMine, createExplosionGlowTexture, createExplosionRingTexture,
+  SlaveRocket, SlaveIonCharge, RocketTrailParticle, createExplosionGlowTexture,
+  createExplosionRingTexture, createCyanGlowTexture, createCyanRingTexture,
   createPlusSignTexture, createExclamationTexture, createShieldIconTexture,
   ExplosionSmokeParticle, RetroExplosionInstance
 } from './GameData.ts';
@@ -91,23 +94,29 @@ export default function GameScreen({
   const ability2CooldownRef = useRef<number>(0);
   const ability3CooldownRef = useRef<number>(0);
 
+  // Флаги активных состояний способностей (кулдаун не тикает, пока не завершится действие)
+  const isBrotherHelpActiveRef = useRef<boolean>(false);
+  const isBombActiveRef = useRef<boolean>(false);
+  const isSlaveRocketsActiveRef = useRef<boolean>(false);
+  const isIonChargeActiveRef = useRef<boolean>(false);
+
   const triggerBombRef = useRef<boolean>(false);
   const triggerBrotherHelpRef = useRef<boolean>(false);
   const triggerRepairRef = useRef<boolean>(false);
   const triggerRageRef = useRef<boolean>(false);
   const triggerSlaveRocketsRef = useRef<boolean>(false);
   const triggerSlaveShieldRef = useRef<boolean>(false);
-  const triggerSlaveMineRef = useRef<boolean>(false);
+  const triggerSlaveIonRef = useRef<boolean>(false);
 
   // Буйство Y-Wing
   const isRageActiveRef = useRef<boolean>(false);
   const rageTimerRef = useRef<number>(0);
   const [isRageActive, setIsRageActive] = useState<boolean>(false);
 
-  // Бафф Раба-1
+  // Сопротивление Раба-1
   const isSlaveShieldActiveRef = useRef<boolean>(false);
   const slaveShieldTimerRef = useRef<number>(0);
-  const hasStunImmunityRef = useRef<boolean>(false);
+  const [isResistanceActive, setIsResistanceActive] = useState<boolean>(false);
 
   // Комбо
   const [comboStreak, setComboStreak] = useState<number>(0);
@@ -276,7 +285,6 @@ export default function GameScreen({
     }
   };
 
-  // Молния громкая и мощная, особенно при ударе по игроку
   const playThunderSound = (distToPlayer: number, isDirectHit = false) => {
     const tKeys = ['thunder1', 'thunder2'];
     const chosen = tKeys[Math.floor(Math.random() * tKeys.length)];
@@ -328,16 +336,16 @@ export default function GameScreen({
   const handleTriggerAbility1 = () => {
     if (isPausedRef.current || playerStunned || ability1CooldownRef.current > 0 || isDeadRef.current || showVictoryCutscene) return;
     if (selectedShipId === 'xwing') {
-      ability1CooldownRef.current = 25.0;
-      setAbility1Cooldown(25);
+      if (isBrotherHelpActiveRef.current) return;
+      isBrotherHelpActiveRef.current = true;
       triggerBrotherHelpRef.current = true;
     } else if (selectedShipId === 'ywing') {
       ability1CooldownRef.current = 125.0;
       setAbility1Cooldown(125);
       triggerRepairRef.current = true;
     } else if (selectedShipId === 'slave1') {
-      ability1CooldownRef.current = 24.0;
-      setAbility1Cooldown(24);
+      if (isSlaveRocketsActiveRef.current) return;
+      isSlaveRocketsActiveRef.current = true;
       triggerSlaveRocketsRef.current = true;
     }
   };
@@ -346,17 +354,14 @@ export default function GameScreen({
   const handleTriggerAbility2 = () => {
     if (isPausedRef.current || playerStunned || ability2CooldownRef.current > 0 || isDeadRef.current || showVictoryCutscene) return;
     if (selectedShipId === 'xwing') {
-      ability2CooldownRef.current = 26.0;
-      setAbility2Cooldown(26);
+      if (isBombActiveRef.current) return;
+      isBombActiveRef.current = true;
       triggerBombRef.current = true;
     } else if (selectedShipId === 'ywing') {
-      ability2CooldownRef.current = 30.0;
-      setAbility2Cooldown(30);
+      if (isRageActiveRef.current) return;
       triggerRageRef.current = true;
     } else if (selectedShipId === 'slave1') {
-      // 8 сек действия + 40 сек КД
-      ability2CooldownRef.current = 48.0;
-      setAbility2Cooldown(48);
+      if (isSlaveShieldActiveRef.current) return;
       triggerSlaveShieldRef.current = true;
     }
   };
@@ -365,9 +370,9 @@ export default function GameScreen({
   const handleTriggerAbility3 = () => {
     if (isPausedRef.current || playerStunned || ability3CooldownRef.current > 0 || isDeadRef.current || showVictoryCutscene) return;
     if (selectedShipId === 'slave1') {
-      ability3CooldownRef.current = 28.0;
-      setAbility3Cooldown(28);
-      triggerSlaveMineRef.current = true;
+      if (isIonChargeActiveRef.current) return;
+      isIonChargeActiveRef.current = true;
+      triggerSlaveIonRef.current = true;
     }
   };
 
@@ -614,19 +619,18 @@ export default function GameScreen({
     const slaveRocketGeo = new THREE.SphereGeometry(0.24, 12, 12);
     const slaveRocketMat = new THREE.MeshBasicMaterial({ color: 0xff2222 });
 
-    // Меш для синей мины Раба-1
-    const slaveMineGeo = new THREE.SphereGeometry(0.55, 16, 16);
-    const slaveMineMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff });
+    // Меш для Ионного заряда Раба-1
+    const slaveIonGeo = new THREE.SphereGeometry(0.65, 16, 16);
+    const slaveIonMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff });
 
     const shieldRippleGeo = new THREE.RingGeometry(0.4, 2.1, 24);
     const shieldRippleMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
 
-    // Горизонтальная воронка мины
-    const mineVortexGeo = new THREE.RingGeometry(0.5, 34.0, 32);
-    const mineVortexMat = new THREE.MeshBasicMaterial({ color: 0x00b4d8, side: THREE.DoubleSide, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
-
+    // Текстуры для эффектов
     const sharedGlowTexture = createExplosionGlowTexture();
     const sharedRingTexture = createExplosionRingTexture();
+    const sharedCyanGlowTexture = createCyanGlowTexture();
+    const sharedCyanRingTexture = createCyanRingTexture();
     const sharedPlusTexture = createPlusSignTexture();
     const sharedExclamationTexture = createExclamationTexture();
     const sharedShieldIconTexture = createShieldIconTexture();
@@ -635,8 +639,9 @@ export default function GameScreen({
     const lasers: Laser[] = [];
     const protonBombs: ProtonBomb[] = [];
     const slaveRockets: SlaveRocket[] = [];
-    const slaveMines: SlaveMine[] = [];
+    const slaveIonCharges: SlaveIonCharge[] = [];
     const bombTrailParticles: BombParticle[] = [];
+    const rocketTrailParticles: RocketTrailParticle[] = [];
     const healEffectParticles: HealEffectParticle[] = [];
     const shieldBuffParticles: ShieldBuffParticle[] = [];
     let rageIndicator: RageEffectIndicator | null = null;
@@ -691,7 +696,6 @@ export default function GameScreen({
       }
     };
 
-    // Спавн синих иконок щита для Раба-1
     const spawnShieldBuffIcons = (count = 12) => {
       for (let i = 0; i < count; i++) {
         const mat = new THREE.SpriteMaterial({
@@ -748,14 +752,21 @@ export default function GameScreen({
       };
     };
 
-    const spawnRetroExplosion = (pos: THREE.Vector3, scale = 1.0, withLight = true, isGreenish = false) => {
+    // Взрыв (стандартный или голубой ионный с увеличенной воронкой)
+    const spawnRetroExplosion = (pos: THREE.Vector3, scale = 1.0, withLight = true, isCyan = false) => {
       const expGroup = new THREE.Group();
       expGroup.position.copy(pos);
       scene.add(expGroup);
 
+      const glowTex = isCyan ? sharedCyanGlowTexture : sharedGlowTexture;
+      const ringTex = isCyan ? sharedCyanRingTexture : sharedRingTexture;
+
+      const outerColor = isCyan ? 0x00e5ff : 0xff3300;
+      const coreColor = isCyan ? 0x80f0ff : 0xffaa00;
+
       const outerMat = new THREE.SpriteMaterial({
-        map: sharedGlowTexture,
-        color: isGreenish ? 0x22ff44 : 0xff3300,
+        map: glowTex,
+        color: outerColor,
         transparent: true,
         opacity: 0.9,
         blending: THREE.AdditiveBlending,
@@ -766,8 +777,8 @@ export default function GameScreen({
       expGroup.add(outerCore);
 
       const coreMat = new THREE.SpriteMaterial({
-        map: sharedGlowTexture,
-        color: isGreenish ? 0x88ff66 : 0xffaa00,
+        map: glowTex,
+        color: coreColor,
         transparent: true,
         opacity: 0.95,
         blending: THREE.AdditiveBlending,
@@ -778,7 +789,7 @@ export default function GameScreen({
       expGroup.add(core);
 
       const innerMat = new THREE.SpriteMaterial({
-        map: sharedGlowTexture,
+        map: glowTex,
         color: 0xffffff,
         transparent: true,
         opacity: 1.0,
@@ -789,9 +800,11 @@ export default function GameScreen({
       innerCore.scale.set(0.4 * scale, 0.4 * scale, 1);
       expGroup.add(innerCore);
 
+      // Воронка: у ионного заряда Раба-1 она в 2 раза крупнее
+      const ringMaxScale = isCyan ? 48.0 * scale : 22.0 * scale;
+
       const ringMat = new THREE.MeshBasicMaterial({
-        map: sharedRingTexture,
-        color: isGreenish ? 0x44ff66 : 0xffddaa,
+        map: ringTex,
         transparent: true,
         opacity: 0.95,
         blending: THREE.AdditiveBlending,
@@ -799,7 +812,8 @@ export default function GameScreen({
         depthWrite: false
       });
       const ringMesh = new THREE.Mesh(ringPlaneGeo, ringMat);
-      ringMesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      // У ионного заряда воронка лежит более горизонтально
+      ringMesh.rotation.set(isCyan ? -Math.PI / 2.3 + (Math.random() - 0.5) * 0.2 : Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
       ringMesh.scale.set(0.8 * scale, 0.8 * scale, 1);
       expGroup.add(ringMesh);
 
@@ -807,8 +821,8 @@ export default function GameScreen({
       const particleCount = withLight ? 22 : 14;
       for (let i = 0; i < particleCount; i++) {
         const sMat = new THREE.SpriteMaterial({
-          map: sharedGlowTexture,
-          color: isGreenish ? 0x11cc33 : 0xff5500,
+          map: glowTex,
+          color: isCyan ? 0x00b4d8 : 0xff5500,
           transparent: true,
           opacity: 0.65,
           blending: THREE.AdditiveBlending,
@@ -832,7 +846,7 @@ export default function GameScreen({
 
       let expLight: THREE.PointLight | undefined;
       if (withLight) {
-        expLight = new THREE.PointLight(isGreenish ? 0x22ff44 : 0xff6622, 6.0 * scale, 55 * scale);
+        expLight = new THREE.PointLight(isCyan ? 0x00e5ff : 0xff6622, 6.0 * scale, 65 * scale);
         expLight.position.copy(pos);
         scene.add(expLight);
       }
@@ -842,21 +856,20 @@ export default function GameScreen({
         smoke,
         shockwaveMesh: ringMesh,
         shockwaveAge: 0,
-        shockwaveLife: 0.85,
-        shockwaveMaxScale: 22 * scale,
+        shockwaveLife: isCyan ? 1.0 : 0.85,
+        shockwaveMaxScale: ringMaxScale,
         outerCore,
         core,
         innerCore,
         light: expLight,
         age: 0,
-        duration: 1.4,
-        isGreenish
+        duration: isCyan ? 1.6 : 1.4,
+        isCyan
       });
 
       playBuffer(audioBuffers.explode, 0.42, true);
     };
 
-    // Запуск протонной бомбы X-Wing с динамическим звуком
     const spawnProtonBomb = (origin: THREE.Vector3) => {
       let chosenTargetPos: THREE.Vector3 | null = null;
       let chosenTargetRef: Enemy | null = null;
@@ -889,7 +902,6 @@ export default function GameScreen({
 
       const initDir = new THREE.Vector3().subVectors(chosenTargetPos, origin).normalize();
 
-      // Динамический звук proton3
       let pSrc: AudioBufferSourceNode | null = null;
       let pGain: GainNode | null = null;
       const pBuf = audioBuffers.proton3 || audioBuffers.proton;
@@ -919,7 +931,7 @@ export default function GameScreen({
       });
     };
 
-    // Запуск 6 маневренных ракет Раба-1 (способность 1)
+    // Запуск 6 ракет Раба-1
     const fireSlaveRockets = () => {
       const liveEnemies = enemies.filter((e) => e.state === 'attacking' && e.pos.z < shipPos.z - 4);
 
@@ -927,7 +939,6 @@ export default function GameScreen({
         setTimeout(() => {
           if (isDisposed) return;
 
-          // Распределение по целям: 2 ракеты на истребитель
           let targetRef: Enemy | null = null;
           let targetPos = shipPos.clone().add(new THREE.Vector3(0, 0, -200));
 
@@ -950,7 +961,6 @@ export default function GameScreen({
           rMesh.position.copy(start);
           scene.add(rMesh);
 
-          // Случайная дуга вылета
           const curveAxis = new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 0).normalize();
           const initialVel = new THREE.Vector3(launchSide * 18, (Math.random() - 0.5) * 12, -45);
 
@@ -963,32 +973,32 @@ export default function GameScreen({
             curveAxis,
             speed: 55,
             life: 4.5,
-            curveTimer: 0.65
+            curveTimer: 0.65,
+            trailTimer: 0
           });
 
-          // Индивидуальный звук на каждую ракету
           playBuffer(audioBuffers.slave12, 0.48);
         }, rIdx * 95);
       }
     };
 
-    // Сброс дистанционной синей мины Раба-1 (способность 3)
-    const dropSlaveMine = () => {
-      const mMesh = new THREE.Mesh(slaveMineGeo, slaveMineMat);
-      const start = shipPos.clone().add(new THREE.Vector3(0, -0.6, -2.0));
-      mMesh.position.copy(start);
-      scene.add(mMesh);
+    // Выпуск Ионного заряда Раба-1 (способность 3)
+    const launchSlaveIonCharge = () => {
+      const iMesh = new THREE.Mesh(slaveIonGeo, slaveIonMat);
+      const start = shipPos.clone().add(new THREE.Vector3(0, -0.4, -2.0));
+      iMesh.position.copy(start);
+      scene.add(iMesh);
 
-      slaveMines.push({
-        mesh: mMesh,
+      slaveIonCharges.push({
+        mesh: iMesh,
         pos: start,
-        vel: new THREE.Vector3(0, 0, -85), // Летит вперед и плавно тормозит
-        life: 2.6,
-        state: 'slowing',
-        timer: 0
+        vel: new THREE.Vector3(0, 0, -165), // Быстрый вылет вперед за 1 секунду
+        life: 1.6,
+        timer: 0,
+        state: 'flying'
       });
 
-      playBuffer(audioBuffers.slave1, 0.45);
+      playBuffer(audioBuffers.slave1, 0.5);
     };
 
     const triggerBrotherHelpAttack = () => {
@@ -1333,7 +1343,7 @@ export default function GameScreen({
       if (isRageActiveRef.current) {
         dmg = Math.max(1, Math.floor(dmg * 0.5));
       } else if (isSlaveShieldActiveRef.current) {
-        dmg = Math.max(1, Math.floor(dmg * 0.4)); // -60% входящего урона у Раба-1
+        dmg = Math.max(1, Math.floor(dmg * 0.4)); // -60% входящего урона при Сопротивлении
       }
 
       if (currentShield > 0) {
@@ -1372,8 +1382,9 @@ export default function GameScreen({
 
       if (forcePlayer) {
         endL.copy(shipPos);
-        playThunderSound(0, true); // Максимально громкий удар по игроку
-        if (!hasStunImmunityRef.current) {
+        playThunderSound(0, true);
+        // Иммунитет к стану только во время активного сопротивления
+        if (!isSlaveShieldActiveRef.current) {
           playerStunDuration = 3.0;
           setPlayerStunned(true);
           startNoSignalSound();
@@ -1395,7 +1406,7 @@ export default function GameScreen({
           playerHitByLightningOnce = true;
           endL.copy(shipPos);
           playThunderSound(0, true);
-          if (!hasStunImmunityRef.current) {
+          if (!isSlaveShieldActiveRef.current) {
             playerStunDuration = 3.0;
             setPlayerStunned(true);
             startNoSignalSound();
@@ -1452,7 +1463,7 @@ export default function GameScreen({
 
       const dt = realDt;
 
-      // Комбо
+      // Окно комбо
       if (comboTimerRef.current > 0) {
         comboTimerRef.current -= dt;
         if (comboTimerRef.current <= 0) {
@@ -1461,34 +1472,41 @@ export default function GameScreen({
         }
       }
 
-      // Кулдауны способностей
-      if (ability1CooldownRef.current > 0) {
+      // === ПРАВИЛЬНЫЙ ОТСЧЁТ КУЛДАУНОВ (ТОЛЬКО ПОСЛЕ ЗАВЕРШЕНИЯ ДЕЙСТВИЯ) ===
+      if (ability1CooldownRef.current > 0 && !isBrotherHelpActiveRef.current && !isSlaveRocketsActiveRef.current) {
         ability1CooldownRef.current = Math.max(0, ability1CooldownRef.current - dt);
         setAbility1Cooldown(Math.ceil(ability1CooldownRef.current));
       }
-      if (ability2CooldownRef.current > 0) {
+      if (ability2CooldownRef.current > 0 && !isRageActiveRef.current && !isSlaveShieldActiveRef.current && !isBombActiveRef.current) {
         ability2CooldownRef.current = Math.max(0, ability2CooldownRef.current - dt);
         setAbility2Cooldown(Math.ceil(ability2CooldownRef.current));
       }
-      if (ability3CooldownRef.current > 0) {
+      if (ability3CooldownRef.current > 0 && !isIonChargeActiveRef.current) {
         ability3CooldownRef.current = Math.max(0, ability3CooldownRef.current - dt);
         setAbility3Cooldown(Math.ceil(ability3CooldownRef.current));
       }
 
-      // Буйство Y-Wing
+      // Состояние «Буйства» Y-Wing (8 секунд)
       if (isRageActiveRef.current) {
         rageTimerRef.current -= dt;
         if (rageTimerRef.current <= 0) {
           isRageActiveRef.current = false;
           setIsRageActive(false);
+          // Кулдаун стартует строго после завершения
+          ability2CooldownRef.current = 30.0;
+          setAbility2Cooldown(30);
         }
       }
 
-      // Бафф Раба-1
+      // Состояние «Сопротивления» Раба-1 (8 секунд)
       if (isSlaveShieldActiveRef.current) {
         slaveShieldTimerRef.current -= dt;
         if (slaveShieldTimerRef.current <= 0) {
           isSlaveShieldActiveRef.current = false;
+          setIsResistanceActive(false);
+          // Кулдаун стартует строго после завершения
+          ability2CooldownRef.current = 40.0;
+          setAbility2Cooldown(40);
         }
       }
 
@@ -1544,11 +1562,11 @@ export default function GameScreen({
         fireSlaveRockets();
       }
 
-      // Активация щита Раба-1
+      // Активация «Перенаправления сигнала» Раба-1
       if (triggerSlaveShieldRef.current) {
         triggerSlaveShieldRef.current = false;
         isSlaveShieldActiveRef.current = true;
-        hasStunImmunityRef.current = true; // Перманентный иммунитет к стану
+        setIsResistanceActive(true);
         slaveShieldTimerRef.current = 8.0;
 
         shipHolder.traverse((c) => {
@@ -1566,10 +1584,10 @@ export default function GameScreen({
         playBuffer(audioBuffers.slave1, 0.5);
       }
 
-      // Сброс мины Раба-1
-      if (triggerSlaveMineRef.current) {
-        triggerSlaveMineRef.current = false;
-        dropSlaveMine();
+      // Активация «Ионного заряда» Раба-1
+      if (triggerSlaveIonRef.current) {
+        triggerSlaveIonRef.current = false;
+        launchSlaveIonCharge();
       }
 
       if (skipToStage4Ref.current) {
@@ -1626,6 +1644,7 @@ export default function GameScreen({
         }
       }
 
+      // Окончание стана
       if (playerStunDuration > 0) {
         playerStunDuration -= dt;
         shipPitch += dt * 1.2;
@@ -1941,16 +1960,22 @@ export default function GameScreen({
           }
           scene.remove(wf.mesh);
           wingmanFlyers.splice(wIdx, 1);
+
+          // По окончании полёта ведомых запускаем кулдаун братской помощи
+          if (wingmanFlyers.length === 0) {
+            isBrotherHelpActiveRef.current = false;
+            ability1CooldownRef.current = 25.0;
+            setAbility1Cooldown(25);
+          }
         }
       }
 
-      // === ПРОТОННЫЕ БОМБЫ С ДИНАМИЧЕСКИМ ЗВУКОМ И ШЛЕЙФОМ ===
+      // === ПРОТОННЫЕ БОМБЫ ===
       for (let bIdx = protonBombs.length - 1; bIdx >= 0; bIdx--) {
         const bomb = protonBombs[bIdx];
         bomb.life -= dt;
         bomb.trailTimer += dt;
 
-        // Динамический объём звука: чем дальше, тем слабее слышно
         if (bomb.soundGain) {
           const distToCam = bomb.mesh.position.distanceTo(camera.position);
           const dynamicVol = THREE.MathUtils.clamp((1 - distToCam / 220) * 0.55, 0.0, 0.55);
@@ -2087,14 +2112,45 @@ export default function GameScreen({
           }
           scene.remove(bomb.mesh);
           protonBombs.splice(bIdx, 1);
+
+          // Кулдаун бомбы стартует строго после детонации
+          isBombActiveRef.current = false;
+          ability2CooldownRef.current = 26.0;
+          setAbility2Cooldown(26);
         }
       }
 
-      // === ОБНОВЛЕНИЕ 6 РАКЕТ РАБА-1 ===
+      // === 6 РАКЕТ РАБА-1 С КРАСНЫМИ ХВОСТАМИ ===
       for (let srIdx = slaveRockets.length - 1; srIdx >= 0; srIdx--) {
         const sr = slaveRockets[srIdx];
         sr.life -= dt;
         sr.curveTimer -= dt;
+        sr.trailTimer += dt;
+
+        // Красный шлейф ракеты
+        if (sr.trailTimer >= 0.03) {
+          sr.trailTimer = 0;
+          const rTrailMat = new THREE.SpriteMaterial({
+            map: sharedGlowTexture,
+            color: 0xff1122,
+            transparent: true,
+            opacity: 0.85,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          });
+          const sprite = new THREE.Sprite(rTrailMat);
+          const rScale = 0.4 + Math.random() * 0.2;
+          sprite.scale.set(rScale, rScale, 1);
+          sprite.position.copy(sr.pos);
+          scene.add(sprite);
+
+          rocketTrailParticles.push({
+            sprite,
+            life: 0.35,
+            maxLife: 0.35,
+            initialScale: rScale
+          });
+        }
 
         if (sr.targetRef && sr.targetRef.hp > 0 && sr.targetRef.state === 'attacking') {
           sr.targetPos.copy(sr.targetRef.pos);
@@ -2103,7 +2159,6 @@ export default function GameScreen({
         const toTarget = new THREE.Vector3().subVectors(sr.targetPos, sr.pos);
         const dist = toTarget.length();
 
-        // Полёт по маневренной случайной дуге
         if (sr.curveTimer > 0) {
           sr.vel.addScaledVector(sr.curveAxis, 32 * dt);
         } else {
@@ -2118,7 +2173,7 @@ export default function GameScreen({
         let hit = false;
         if (sr.targetRef && sr.targetRef.hp > 0 && sr.pos.distanceTo(sr.targetRef.pos) < 3.2) {
           hit = true;
-          sr.targetRef.hp -= 2; // 1 ракета сносит 50% HP обычного истребителя
+          sr.targetRef.hp -= 2;
           currentDamage += 50;
           setDamageDealt(currentDamage);
           if (sr.targetRef.hp <= 0) {
@@ -2164,75 +2219,73 @@ export default function GameScreen({
           spawnRetroExplosion(sr.pos, 0.8, false);
           scene.remove(sr.mesh);
           slaveRockets.splice(srIdx, 1);
+
+          // Кулдаун ракет стартует только когда долетит последняя
+          if (slaveRockets.length === 0) {
+            isSlaveRocketsActiveRef.current = false;
+            ability1CooldownRef.current = 24.0;
+            setAbility1Cooldown(24);
+          }
         }
       }
 
-      // === ОБНОВЛЕНИЕ СИНЕЙ МИНЫ РАБА-1 ===
-      for (let smIdx = slaveMines.length - 1; smIdx >= 0; smIdx--) {
-        const sm = slaveMines[smIdx];
-        sm.life -= dt;
-        sm.timer += dt;
+      // === ИОННЫЙ ЗАРЯД РАБА-1 (СПОСОБНОСТЬ 3) ===
+      for (let icIdx = slaveIonCharges.length - 1; icIdx >= 0; icIdx--) {
+        const ic = slaveIonCharges[icIdx];
+        ic.life -= dt;
+        ic.timer += dt;
 
-        // Плавное торможение на протяжении 2 сек
-        if (sm.timer <= 2.0) {
-          sm.vel.multiplyScalar(0.92);
-        } else if (sm.state === 'slowing') {
-          sm.state = 'armed';
-          sm.vel.set(0, 0, 0);
-        }
+        // За 1 сек пролетает вперед и плавно начинает тормозить
+        if (ic.timer < 1.0) {
+          ic.state = 'flying';
+        } else if (ic.timer < 1.5) {
+          ic.state = 'slowing';
+          ic.vel.multiplyScalar(0.88);
+        } else if (ic.state !== 'detonated') {
+          // Через ~0.5 сек после начала торможения детонирует
+          ic.state = 'detonated';
+          playBuffer(assets.audioBuffers.mine, 0.8);
 
-        sm.pos.addScaledVector(sm.vel, dt);
-        sm.mesh.position.copy(sm.pos);
-        sm.mesh.rotation.y += dt * 3.5;
+          // Голубой взрыв с воронкой в 2 раза крупнее обычного
+          spawnRetroExplosion(ic.pos, 2.8, true, true);
+          shakeIntensity = Math.max(shakeIntensity, 0.95);
 
-        // Взрыв через 0.5 сек после остановки
-        if (sm.timer >= 2.5 && sm.state === 'armed') {
-          sm.state = 'detonated';
-          playBuffer(assets.audioBuffers.mine, 0.75);
-
-          // Горизонтальная широкая воронка взрыва
-          const vortexMesh = new THREE.Mesh(mineVortexGeo, mineVortexMat.clone());
-          vortexMesh.position.copy(sm.pos);
-          vortexMesh.rotation.x = -Math.PI / 2;
-          scene.add(vortexMesh);
-
-          setTimeout(() => {
-            scene.remove(vortexMesh);
-            vortexMesh.geometry.dispose();
-            (vortexMesh.material as THREE.Material).dispose();
-          }, 450);
-
-          spawnRetroExplosion(sm.pos, 1.6, true, false);
-          shakeIntensity = Math.max(shakeIntensity, 0.75);
-
-          // Урон и откидывание врагов воронкой (на игрока и босса не действует)
+          // Гарантированно уничтожает всех врагов в широком радиусе (включая тех, кто выше/ниже)
           for (let j = enemies.length - 1; j >= 0; j--) {
             const e = enemies[j];
-            const distToMine = e.pos.distanceTo(sm.pos);
-            if (distToMine < 28) {
-              const damage = Math.max(2, Math.floor((1 - distToMine / 28) * 6));
-              e.hp -= damage;
-              currentDamage += damage * 30;
-              setDamageDealt(currentDamage);
-
-              // Разлёт врагов от центра без управления
-              const pushDir = new THREE.Vector3().subVectors(e.pos, sm.pos).normalize();
-              e.pos.addScaledVector(pushDir, 18);
-              e.state = 'looping_out';
-              e.loopProgress = 0;
-
-              if (e.hp <= 0) {
-                spawnRetroExplosion(e.pos, 1.25);
-                currentKills += 1;
-                setEnemiesKilled(currentKills);
-                scene.remove(e.mesh);
-                enemies.splice(j, 1);
-              }
+            const distToCharge = e.pos.distanceTo(ic.pos);
+            if (distToCharge < 48.0) {
+              e.hp = 0;
+              spawnRetroExplosion(e.pos, 1.35, true, true);
+              currentKills += 1;
+              setEnemiesKilled(currentKills);
+              currentScore += 150;
+              setScore(currentScore);
+              scene.remove(e.mesh);
+              enemies.splice(j, 1);
             }
           }
 
-          scene.remove(sm.mesh);
-          slaveMines.splice(smIdx, 1);
+          scene.remove(ic.mesh);
+          slaveIonCharges.splice(icIdx, 1);
+
+          // Кулдаун 45 сек стартует строго после детонации
+          isIonChargeActiveRef.current = false;
+          ability3CooldownRef.current = 45.0;
+          setAbility3Cooldown(45);
+          continue;
+        }
+
+        ic.pos.addScaledVector(ic.vel, dt);
+        ic.mesh.position.copy(ic.pos);
+        ic.mesh.rotation.y += dt * 4.5;
+
+        if (ic.life <= 0) {
+          scene.remove(ic.mesh);
+          slaveIonCharges.splice(icIdx, 1);
+          isIonChargeActiveRef.current = false;
+          ability3CooldownRef.current = 45.0;
+          setAbility3Cooldown(45);
         }
       }
 
@@ -2249,6 +2302,22 @@ export default function GameScreen({
           scene.remove(tp.sprite);
           (tp.sprite.material as THREE.Material).dispose();
           bombTrailParticles.splice(tpIdx, 1);
+        }
+      }
+
+      // Частицы красных хвостов ракет Раба-1
+      for (let rtpIdx = rocketTrailParticles.length - 1; rtpIdx >= 0; rtpIdx--) {
+        const rtp = rocketTrailParticles[rtpIdx];
+        rtp.life -= dt;
+        const progress = rtp.life / rtp.maxLife;
+        const s = rtp.initialScale * (0.3 + progress * 0.7);
+        rtp.sprite.scale.set(s, s, 1);
+        (rtp.sprite.material as THREE.SpriteMaterial).opacity = progress * 0.8;
+
+        if (rtp.life <= 0) {
+          scene.remove(rtp.sprite);
+          (rtp.sprite.material as THREE.Material).dispose();
+          rocketTrailParticles.splice(rtpIdx, 1);
         }
       }
 
@@ -2286,7 +2355,7 @@ export default function GameScreen({
         }
       }
 
-      // Индикатор «!» над кораблем
+      // Индикатор «!»
       if (rageIndicator) {
         rageIndicator.life -= dt;
         rageIndicator.sprite.position.set(shipPos.x, shipPos.y + 1.8, shipPos.z);
@@ -2545,7 +2614,7 @@ export default function GameScreen({
               yPoints.forEach((yPos, idx) => {
                 setTimeout(() => {
                   if (!isDisposed) {
-                    spawnRetroExplosion(new THREE.Vector3(laneCenter, yPos, blastZ), 1.6, false, true);
+                    spawnRetroExplosion(new THREE.Vector3(laneCenter, yPos, blastZ), 1.6, false, false);
                   }
                 }, idx * 75);
               });
@@ -2569,7 +2638,7 @@ export default function GameScreen({
               if (shipPos.x >= tractorBeam.xMin && shipPos.x <= tractorBeam.xMax) {
                 if (godModeRef.current) {
                   spawnShieldImpact(shipPos);
-                } else if (!hasStunImmunityRef.current) {
+                } else if (!isSlaveShieldActiveRef.current) {
                   playerStunDuration = 3.0;
                   setPlayerStunned(true);
                   startNoSignalSound();
@@ -2920,6 +2989,7 @@ export default function GameScreen({
         }
       }
 
+      // Анимация взрывов
       for (let eIdx = activeExplosions.length - 1; eIdx >= 0; eIdx--) {
         const exp = activeExplosions[eIdx];
         exp.age += dt;
@@ -3024,10 +3094,14 @@ export default function GameScreen({
         scene.remove(b.mesh);
       });
       slaveRockets.forEach((sr) => scene.remove(sr.mesh));
-      slaveMines.forEach((sm) => scene.remove(sm.mesh));
+      slaveIonCharges.forEach((ic) => scene.remove(ic.mesh));
       bombTrailParticles.forEach((tp) => {
         scene.remove(tp.sprite);
         (tp.sprite.material as THREE.Material).dispose();
+      });
+      rocketTrailParticles.forEach((rtp) => {
+        scene.remove(rtp.sprite);
+        (rtp.sprite.material as THREE.Material).dispose();
       });
       healEffectParticles.forEach((hpP) => {
         scene.remove(hpP.sprite);
@@ -3065,12 +3139,12 @@ export default function GameScreen({
       ringPlaneGeo.dispose();
       slaveRocketGeo.dispose();
       slaveRocketMat.dispose();
-      slaveMineGeo.dispose();
-      slaveMineMat.dispose();
-      mineVortexGeo.dispose();
-      mineVortexMat.dispose();
+      slaveIonGeo.dispose();
+      slaveIonMat.dispose();
       sharedGlowTexture.dispose();
       sharedRingTexture.dispose();
+      sharedCyanGlowTexture.dispose();
+      sharedCyanRingTexture.dispose();
       sharedPlusTexture.dispose();
       sharedExclamationTexture.dispose();
       sharedShieldIconTexture.dispose();
@@ -3331,6 +3405,7 @@ export default function GameScreen({
         playerStunned={playerStunned}
         comboStreak={comboStreak}
         isRageActive={isRageActive}
+        isResistanceActive={isResistanceActive}
         crosshairScreenPos={crosshairScreenPos}
         zoneAttackUi={zoneAttackUi}
         tractorBeamUi={tractorBeamUi}
