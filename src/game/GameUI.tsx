@@ -81,13 +81,16 @@ export default function GameUI(props: GameUIProps) {
         .tfu-hp-fill { height: 100%; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.35) 0px, rgba(0,0,0,0.35) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #d31820 0%, #ff3b30 45%, #b50e17 55%, #66050b 100%); clip-path: polygon(6px 0%, calc(100% - 6px) 0%, 100% 100%, 0% 100%); transition: width 0.15s ease-out; }
         .tfu-shield-fill { height: 100%; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.3) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #0284c7 0%, #00e5ff 50%, #0369a1 100%); clip-path: polygon(4px 0%, calc(100% - 4px) 0%, 100% 100%, 0% 100%); transition: width 0.15s ease-out; }
         .tfu-hp-heal-sector { position: absolute; top: 1px; bottom: 1px; background: #ff2a3a; opacity: 0.9; transition: all 0.2s ease-out; }
+        
+        /* Стилизованный трекер этапов: серые неактивные, синие пройденные */
         .tfu-progress-tracker { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; }
-        .tracker-node { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #5a738e; background: #09131d; transition: all 0.2s; }
-        .tracker-node.active { border-color: #64b5f6; background: #2196f3; }
-        .tracker-line { width: 22px; height: 2px; background: #233446; position: relative; overflow: hidden; }
-        .tracker-line-fill { height: 100%; background: #64b5f6; transition: width 0.12s linear; }
-        .tracker-boss { width: 12px; height: 12px; transform: rotate(45deg); border: 1.5px solid #ff4757; background: #200508; transition: all 0.2s; }
-        .tracker-boss.active { border-color: #ff3838; background: #ff3838; }
+        .tracker-node { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #4a5a6e; background: #232c38; transition: all 0.25s ease; }
+        .tracker-node.active { border-color: #64b5f6; background: #64b5f6; box-shadow: 0 0 6px rgba(100, 181, 246, 0.7); }
+        .tracker-line { width: 22px; height: 3px; background: #232c38; border: 1px solid #4a5a6e; position: relative; overflow: hidden; }
+        .tracker-line-fill { height: 100%; background: #64b5f6; transition: width 0.15s linear; }
+        .tracker-boss { width: 12px; height: 12px; transform: rotate(45deg); border: 1.5px solid #4a5a6e; background: #232c38; transition: all 0.25s ease; }
+        .tracker-boss.active { border-color: #64b5f6; background: #64b5f6; box-shadow: 0 0 8px rgba(100, 181, 246, 0.8); }
+
         .tfu-boss-hp-container { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 3px; }
         .tfu-boss-hp-label { font-family: Arial, sans-serif; font-size: 10px; font-weight: 900; letter-spacing: 2px; text-shadow: 0 1px 3px #000; }
         .tfu-boss-hp-label.shield { color: #00d2d3; }
@@ -167,7 +170,7 @@ export default function GameUI(props: GameUIProps) {
         }
         .hud-wings-label {
           font-family: Arial, sans-serif;
-          font-size: 10px;
+          font-size: 11px;
           font-weight: 900;
           letter-spacing: 2.5px;
           color: #ff3838;
@@ -202,10 +205,11 @@ export default function GameUI(props: GameUIProps) {
         .pause-button { width: 100%; height: 38px; border-radius: 0px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-family: Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; }
         .pause-btn-primary { border: 2px solid #e2e8f0; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.3) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #d31820 0%, #ff3b30 45%, #b50e17 55%, #66050b 100%); color: #ffffff; }
         .pause-btn-secondary { border: 2px solid #b2c2d4; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 2px), linear-gradient(180deg, #e4edf7 0%, #bdcfdf 45%, #768a9f 50%, #44566b 52%, #8ba0b7 100%); color: #0b141e; }
-        .console-window { background: #0d151f; border: 2px solid #5a738e; border-top: 2px solid #8fa9c4; border-radius: 0px; padding: 20px 24px; display: flex; flex-direction: column; align-items: center; gap: 12px; width: min(380px, 80vw); }
+        
+        /* Окно читкода без дублирующейся надписи */
+        .console-window { background: #0d151f; border: 2px solid #5a738e; border-top: 2px solid #8fa9c4; border-radius: 0px; padding: 20px 24px; display: flex; flex-direction: column; align-items: center; gap: 14px; width: min(380px, 80vw); }
         .console-title { font-family: Arial, sans-serif; font-size: 18px; font-weight: 900; letter-spacing: 3px; color: #ffffff; text-transform: uppercase; text-align: center; }
-        .console-desc { font-family: Arial, sans-serif; font-size: 11px; letter-spacing: 1px; color: #8faec4; text-align: center; }
-        .console-input { width: 100%; background: #060b10; border: 1px solid #3d586e; border-radius: 0px; color: #ffffff; padding: 9px 12px; font-family: monospace; font-size: 13px; letter-spacing: 2px; text-align: center; outline: none; }
+        .console-input { width: 100%; background: #060b10; border: 1px solid #3d586e; border-radius: 0px; color: #ffffff; padding: 10px 12px; font-family: monospace; font-size: 13px; letter-spacing: 2px; text-align: center; outline: none; }
         .console-feedback { font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; letter-spacing: 1.5px; color: #ff4757; min-height: 14px; text-align: center; }
         .end-game-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; pointer-events: auto; background: rgba(0, 0, 0, 0.7); }
         .end-modal-box { background: #0b141e; border: 2px solid #5a738e; border-top: 2px solid #8fa9c4; border-radius: 0px; padding: 24px 30px; width: min(380px, 85vw); display: flex; flex-direction: column; gap: 16px; box-shadow: 0 15px 40px rgba(0, 0, 0, 0.95); }
@@ -239,7 +243,7 @@ export default function GameUI(props: GameUIProps) {
             <div className="hud-resistance-label">СОПРОТИВЛЕНИЕ</div>
           )}
           {props.isWingModeActive && (
-            <div className="hud-wings-label">КРЫЛЬЯ [ТЯЖЕЛЫЙ]</div>
+            <div className="hud-wings-label">УДАРНЫЙ РЕЖИМ</div>
           )}
           {props.comboStreak >= 3 && (
             <div className="hud-combo-label">
@@ -319,11 +323,11 @@ export default function GameUI(props: GameUIProps) {
         </div>
       )}
 
+      {/* Окно консоли: убрана лишняя строка над полем ввода */}
       {props.isPaused && props.isConsoleOpen && !props.endGameModal && (
         <div className="pause-overlay">
           <div className="console-window">
             <div className="console-title">КОНСОЛЬ</div>
-            <div className="console-desc">Введи читкод...</div>
             <input
               type="text"
               className="console-input"
