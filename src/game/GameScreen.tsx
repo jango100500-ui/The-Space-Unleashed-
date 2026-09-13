@@ -7,15 +7,23 @@ import {
   PlanetItem, BiomeRunStep, generateBiomeRun, createProceduralPlanetTexture,
   availablePlanets, BiomeType, GeneratorScreenTarget, ShieldImpactEffect,
   DatapadItem, HealEffectParticle, ShieldBuffParticle, RageEffectIndicator,
-  SlaveRocket, SlaveIonCharge, RocketTrailParticle, createExplosionGlowTexture,
-  createExplosionRingTexture, createPinkGlowTexture, createPinkRingTexture,
-  createCyanGlowTexture, createCyanRingTexture, createRedGlowTexture,
-  createRedRingTexture, createPlusSignTexture, createExclamationTexture,
+  SlaveRocket, SlaveIonCharge, RocketTrailParticle, BeatleHeavyBolt,
+  createExplosionGlowTexture, createExplosionRingTexture, createPinkGlowTexture,
+  createPinkRingTexture, createCyanGlowTexture, createCyanRingTexture,
+  createRedGlowTexture, createRedRingTexture, createGreenGlowTexture,
+  createGreenRingTexture, createPlusSignTexture, createExclamationTexture,
   createShieldIconTexture, ExplosionSmokeParticle, RetroExplosionInstance
 } from './GameData.ts';
 import { HANGAR_SHIPS } from '../components/HangarScreen.tsx';
 import VictoryCutscene from '../cutscenes/VictoryCutscene.tsx';
 import GameUI from './GameUI.tsx';
+
+interface BombParticle {
+  sprite: THREE.Sprite;
+  life: number;
+  maxLife: number;
+  initialScale: number;
+}
 
 interface ProtonBomb {
   group: THREE.Group;
@@ -28,7 +36,6 @@ interface ProtonBomb {
   targetRef: Enemy | null;
   speed: number;
   life: number;
-  trailTimer: number; // <--- ДОБАВИТЬ ЭТУ СТРОКУ
   soundSource: AudioBufferSourceNode | null;
   soundGain: GainNode | null;
 }
@@ -67,8 +74,8 @@ export default function GameScreen({
   const [hp, setHp] = useState<number>(100);
 
   const shipConf = HANGAR_SHIPS.find((s) => s.id === selectedShipId) || HANGAR_SHIPS[0];
-  const maxShield = shipConf.shield;
-  const [shieldHp, setShieldHp] = useState<number>(maxShield);
+  const [maxShield, setMaxShield] = useState<number>(shipConf.shield);
+  const [shieldHp, setShieldHp] = useState<number>(shipConf.shield);
 
   const [healBonus, setHealBonus] = useState<number>(0);
   const [isFiring, setIsFiring] = useState<boolean>(false);
@@ -95,6 +102,10 @@ export default function GameScreen({
   const isSlaveRocketsActiveRef = useRef<boolean>(false);
   const isIonChargeActiveRef = useRef<boolean>(false);
 
+  // Режим крыльевых тяжелых орудий Битла
+  const [isWingModeActive, setIsWingModeActive] = useState<boolean>(false);
+  const isWingModeActiveRef = useRef<boolean>(false);
+
   const triggerBombRef = useRef<boolean>(false);
   const triggerBrotherHelpRef = useRef<boolean>(false);
   const triggerRepairRef = useRef<boolean>(false);
@@ -102,15 +113,20 @@ export default function GameScreen({
   const triggerSlaveRocketsRef = useRef<boolean>(false);
   const triggerSlaveShieldRef = useRef<boolean>(false);
   const triggerSlaveIonRef = useRef<boolean>(false);
+  const triggerBeatleShieldRef = useRef<boolean>(false);
+  const triggerBeatleWeaponsRef = useRef<boolean>(false);
 
+  // Буйство Y-Wing
   const isRageActiveRef = useRef<boolean>(false);
   const rageTimerRef = useRef<number>(0);
   const [isRageActive, setIsRageActive] = useState<boolean>(false);
 
+  // Сопротивление Раба-1
   const isSlaveShieldActiveRef = useRef<boolean>(false);
   const slaveShieldTimerRef = useRef<number>(0);
   const [isResistanceActive, setIsResistanceActive] = useState<boolean>(false);
 
+  // Комбо
   const [comboStreak, setComboStreak] = useState<number>(0);
   const comboStreakRef = useRef<number>(0);
   const comboTimerRef = useRef<number>(0);
@@ -335,6 +351,8 @@ export default function GameScreen({
       ability1CooldownRef.current = 125.0;
       setAbility1Cooldown(125);
       triggerRepairRef.current = true;
+    } else if (selectedShipId === 'beatle') {
+      triggerBeatleShieldRef.current = true;
     } else if (selectedShipId === 'slave1') {
       if (isSlaveRocketsActiveRef.current) return;
       isSlaveRocketsActiveRef.current = true;
@@ -352,6 +370,8 @@ export default function GameScreen({
     } else if (selectedShipId === 'ywing') {
       if (isRageActiveRef.current) return;
       triggerRageRef.current = true;
+    } else if (selectedShipId === 'beatle') {
+      triggerBeatleWeaponsRef.current = true;
     } else if (selectedShipId === 'slave1') {
       if (isSlaveShieldActiveRef.current) return;
       triggerSlaveShieldRef.current = true;
@@ -537,10 +557,11 @@ export default function GameScreen({
     shipHolder.position.copy(shipPos);
     scene.add(shipHolder);
 
-    // === КУПОЛ ЭНЕРГЕТИЧЕСКОГО ЩИТА ВОКРУГ КОРАБЛЯ (из ShipShield.html) ===
+    // === ЩИТ ВОКРУГ КОРАБЛЯ (Увеличен в 1.5 раза: 2.3 * 1.5 = 3.45) ===
     const shieldGroup = new THREE.Group();
     scene.add(shieldGroup);
-    const shieldRadius = selectedShipId === 'slave1' ? 2.8 : 2.3;
+    const baseRadius = selectedShipId === 'slave1' ? 2.8 : 2.3;
+    const shieldRadius = baseRadius * 1.5;
     const shieldSphereGeo = new THREE.SphereGeometry(shieldRadius, 64, 48);
     const shieldOrigPos = new Float32Array(shieldSphereGeo.attributes.position.array);
 
@@ -559,12 +580,10 @@ export default function GameScreen({
     const playerShieldMesh = new THREE.Mesh(shieldSphereGeo, shieldMeshMat);
     shieldGroup.add(playerShieldMesh);
 
-    let shieldState = 0; // 0: выкл, 1: появление, 2: затухание
-    let shieldAnimTimer = 0;
-
+    // Логика щита: плавное появление и удержание на 2 секунды с продлением при уроне
+    let shieldVisibleTimer = 0;
     const triggerShipShieldVisual = () => {
-      shieldState = 1;
-      shieldAnimTimer = 0;
+      shieldVisibleTimer = 2.0; // Продлеваем на 2 секунды без сброса анимации
     };
 
     const gltfLoader = new GLTFLoader();
@@ -634,10 +653,11 @@ export default function GameScreen({
     greenLaserGeo.rotateX(Math.PI / 2);
     const greenLaserMat = new THREE.MeshBasicMaterial({ color: 0x22ff44 });
 
+    const slaveRocketGeo = new THREE.ConeGeometry(0.3, 1.2, 32, 16);
+
     const shieldRippleGeo = new THREE.RingGeometry(0.4, 2.1, 24);
     const shieldRippleMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
 
-    // Текстуры для эффектов
     const sharedGlowTexture = createExplosionGlowTexture();
     const sharedRingTexture = createExplosionRingTexture();
     const sharedPinkGlowTexture = createPinkGlowTexture();
@@ -646,6 +666,8 @@ export default function GameScreen({
     const sharedCyanRingTexture = createCyanRingTexture();
     const sharedRedGlowTexture = createRedGlowTexture();
     const sharedRedRingTexture = createRedRingTexture();
+    const sharedGreenGlowTexture = createGreenGlowTexture();
+    const sharedGreenRingTexture = createGreenRingTexture();
 
     const sharedPlusTexture = createPlusSignTexture();
     const sharedExclamationTexture = createExclamationTexture();
@@ -656,6 +678,7 @@ export default function GameScreen({
     const protonBombs: ProtonBomb[] = [];
     const slaveRockets: SlaveRocket[] = [];
     const slaveIonCharges: SlaveIonCharge[] = [];
+    const beatleHeavyBolts: BeatleHeavyBolt[] = [];
     const rocketTrailParticles: RocketTrailParticle[] = [];
     const healEffectParticles: HealEffectParticle[] = [];
     const shieldBuffParticles: ShieldBuffParticle[] = [];
@@ -768,8 +791,8 @@ export default function GameScreen({
       };
     };
 
-    // Взрывы: обычный, голубой ионный (воронка в 2 раза шире в XZ) и розовый протонный
-    const spawnRetroExplosion = (pos: THREE.Vector3, scale = 1.0, withLight = true, mode: 'normal' | 'cyan' | 'pink' = 'normal') => {
+    // Взрывы: обычный, голубой ионный, розовый и зеленоватый (для Разрушителя)
+    const spawnRetroExplosion = (pos: THREE.Vector3, scale = 1.0, withLight = true, mode: 'normal' | 'cyan' | 'pink' | 'greenish' = 'normal') => {
       const expGroup = new THREE.Group();
       expGroup.position.copy(pos);
       scene.add(expGroup);
@@ -789,6 +812,11 @@ export default function GameScreen({
         ringTex = sharedPinkRingTexture;
         outerColor = 0xff0095;
         coreColor = 0xff40c8;
+      } else if (mode === 'greenish') {
+        glowTex = sharedGreenGlowTexture;
+        ringTex = sharedGreenRingTexture;
+        outerColor = 0x22ff44;
+        coreColor = 0x88ff66;
       }
 
       const outerMat = new THREE.SpriteMaterial({
@@ -827,7 +855,6 @@ export default function GameScreen({
       innerCore.scale.set(0.4 * scale, 0.4 * scale, 1);
       expGroup.add(innerCore);
 
-      // Воронка: у ионного заряда Раба-1 она в 2 раза шире и лежит горизонтально
       const ringMaxScale = mode === 'cyan' ? 52.0 * scale : 24.0 * scale;
 
       const ringMat = new THREE.MeshBasicMaterial({
@@ -852,7 +879,7 @@ export default function GameScreen({
       for (let i = 0; i < particleCount; i++) {
         const sMat = new THREE.SpriteMaterial({
           map: glowTex,
-          color: mode === 'cyan' ? 0x00b4d8 : mode === 'pink' ? 0xff40c8 : 0xff5500,
+          color: mode === 'cyan' ? 0x00b4d8 : mode === 'pink' ? 0xff40c8 : mode === 'greenish' ? 0x11cc33 : 0xff5500,
           transparent: true,
           opacity: 0.65,
           blending: THREE.AdditiveBlending,
@@ -876,7 +903,7 @@ export default function GameScreen({
 
       let expLight: THREE.PointLight | undefined;
       if (withLight) {
-        const lightCol = mode === 'cyan' ? 0x00e5ff : mode === 'pink' ? 0xff0095 : 0xff6622;
+        const lightCol = mode === 'cyan' ? 0x00e5ff : mode === 'pink' ? 0xff0095 : mode === 'greenish' ? 0x22ff44 : 0xff6622;
         expLight = new THREE.PointLight(lightCol, 6.0 * scale, 65 * scale);
         expLight.position.copy(pos);
         scene.add(expLight);
@@ -895,13 +922,14 @@ export default function GameScreen({
         light: expLight,
         age: 0,
         duration: mode === 'cyan' ? 1.6 : 1.4,
-        isCyan: mode === 'cyan'
+        isCyan: mode === 'cyan',
+        isGreenish: mode === 'greenish'
       });
 
       playBuffer(audioBuffers.explode, 0.42, true);
     };
 
-    // Запуск протонной бомбы X-Wing (из XWingProtonRocket.html)
+    // Запуск протонной бомбы X-Wing
     const spawnProtonBomb = (origin: THREE.Vector3) => {
       let chosenTargetPos: THREE.Vector3 | null = null;
       let chosenTargetRef: Enemy | null = null;
@@ -928,7 +956,6 @@ export default function GameScreen({
         chosenTargetPos = origin.clone().add(new THREE.Vector3(0, 0, -220));
       }
 
-      // Создаём шейдерную деформирующуюся модель из референса
       const pGroup = new THREE.Group();
       pGroup.position.copy(origin);
       pGroup.scale.setScalar(0.38);
@@ -1002,7 +1029,6 @@ export default function GameScreen({
 
       const initDir = new THREE.Vector3().subVectors(chosenTargetPos, origin).normalize();
 
-      // Звук выстрела proton3 воспроизводится СРАЗУ при запуске с динамической громкостью
       let pSrc: AudioBufferSourceNode | null = null;
       let pGain: GainNode | null = null;
       const pBuf = audioBuffers.proton3 || audioBuffers.proton;
@@ -1030,13 +1056,12 @@ export default function GameScreen({
         targetRef: chosenTargetRef,
         speed: 28,
         life: 5.5,
-        trailTimer: 0,
         soundSource: pSrc,
         soundGain: pGain
       });
     };
 
-    // Запуск 6 конусных красных ракет Раба-1 (из SlaveRocket.html)
+    // Запуск 6 ракет Раба-1
     const fireSlaveRockets = () => {
       const liveEnemies = enemies.filter((e) => e.state === 'attacking' && e.pos.z < shipPos.z - 4);
 
@@ -1113,7 +1138,7 @@ export default function GameScreen({
       }
     };
 
-    // Выпуск Ионного заряда Раба-1 (из SlaveProtonBomb.html)
+    // Выпуск Ионного заряда Раба-1 со звуком сразу со старта
     const launchSlaveIonCharge = () => {
       const iGroup = new THREE.Group();
       const start = shipPos.clone().add(new THREE.Vector3(0, -0.4, -2.0));
@@ -1163,7 +1188,7 @@ export default function GameScreen({
           void main(){
             vec3 p=position;
             vec3 n=normalize(normal);
-            float w=sin(p.y*4.5+uTime*4.7)*0.055+sin(p.z*6.0-uTime*5.8)*0.045+sin((p.x-p.y)*8.0+uTime*7.0)*0.025;
+            float w = sin(p.x*12.0+uTime*8.0) * cos(p.y*14.0-uTime*7.0) * 0.12 + sin(p.z*18.0+uTime*10.0)*0.04;
             p+=n*w;
             gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
           }
@@ -1186,6 +1211,22 @@ export default function GameScreen({
 
       scene.add(iGroup);
 
+      // Звук вылета ионной бомбы Раба-1
+      let iSrc: AudioBufferSourceNode | null = null;
+      let iGain: GainNode | null = null;
+      if (assets.audioBuffers.slave1 && !isPausedRef.current) {
+        try {
+          iSrc = audioCtx.createBufferSource();
+          iSrc.buffer = assets.audioBuffers.slave1;
+          iSrc.loop = true;
+          iGain = audioCtx.createGain();
+          iGain.gain.value = 0.55;
+          iSrc.connect(iGain);
+          iGain.connect(audioCtx.destination);
+          iSrc.start(0);
+        } catch {}
+      }
+
       slaveIonCharges.push({
         group: iGroup,
         coreMat,
@@ -1193,13 +1234,56 @@ export default function GameScreen({
         waveMesh,
         halo,
         pos: start,
-        vel: new THREE.Vector3(0, 0, -170), // Быстрый полёт за 1 сек
+        vel: new THREE.Vector3(0, 0, -170),
         life: 1.65,
         timer: 0,
-        state: 'flying'
+        state: 'flying',
+        soundSource: iSrc,
+        soundGain: iGain
       });
+    };
 
-      playBuffer(audioBuffers.slave1, 0.5);
+    // Выстрел тяжёлыми конусами Битла с крыльев (ваншот)
+    const fireBeatleHeavyWingBolts = (aimTarget: THREE.Vector3) => {
+      const wingOffsets = [-1.4, 1.4]; // Широкое расстояние между орудиями крыльев
+      for (const ox of wingOffsets) {
+        const bGroup = new THREE.Group();
+        bGroup.scale.setScalar(0.42);
+
+        const coneGeo = new THREE.ConeGeometry(0.35, 1.4, 32, 16);
+        const posAttr = coneGeo.attributes.position as THREE.BufferAttribute;
+        const origPos = new Float32Array(posAttr.array);
+
+        const coreMesh = new THREE.Mesh(coneGeo, new THREE.MeshStandardMaterial({
+          color: 0xff2200, emissive: 0xff0000, emissiveIntensity: 1.4, roughness: 0.3, metalness: 0.1
+        }));
+        bGroup.add(coreMesh);
+
+        const auraMat = new THREE.MeshBasicMaterial({
+          color: 0xff3300, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false
+        });
+        const auraMesh = new THREE.Mesh(coneGeo, auraMat);
+        auraMesh.scale.set(1.18, 1.06, 1.18);
+        bGroup.add(auraMesh);
+
+        const start = shipPos.clone().add(new THREE.Vector3(ox, 0.15, -0.6));
+        bGroup.position.copy(start);
+
+        const dir = new THREE.Vector3().subVectors(aimTarget, start).normalize();
+        bGroup.lookAt(start.clone().add(dir));
+        scene.add(bGroup);
+
+        beatleHeavyBolts.push({
+          group: bGroup,
+          posAttr,
+          origPos,
+          pos: start,
+          vel: dir.multiplyScalar(420), // Более тяжёлые и медленные, чем обычный лазер
+          life: 1.2,
+          trailTimer: 0
+        });
+      }
+      playBuffer(assets.audioBuffers.slave12, 0.55);
     };
 
     const triggerBrotherHelpAttack = () => {
@@ -1567,8 +1651,8 @@ export default function GameScreen({
     const applyStageHeal = (amt: number) => {
       currentHp = Math.min(100, currentHp + amt);
       setHp(currentHp);
-      if (shipConf.shield > 0) {
-        currentShield = Math.min(shipConf.shield, currentShield + Math.floor(amt * 0.75));
+      if (maxShield > 0) {
+        currentShield = Math.min(maxShield, currentShield + Math.floor(amt * 0.75));
         setShieldHp(currentShield);
       }
       setHealBonus(amt);
@@ -1664,16 +1748,13 @@ export default function GameScreen({
       const dt = realDt;
       const st = timestamp * 0.001;
 
-      // Обновление физической сетки купола щита вокруг корабля
+      // Логика щита вокруг корабля: быстрое появление и удержание на 2 секунды без резких скачков
       shieldGroup.position.copy(shipPos);
-      if (shieldState === 1) {
-        shieldAnimTimer = Math.min(1, shieldAnimTimer + dt * 2.4);
-        shieldMeshMat.opacity = Math.min(0.22, shieldAnimTimer * 0.22);
-        if (shieldAnimTimer >= 1) shieldState = 2;
-      } else if (shieldState === 2) {
-        shieldAnimTimer += dt * 2.8;
-        shieldMeshMat.opacity = Math.max(0, 0.22 * (1 - (shieldAnimTimer - 1)));
-        if (shieldAnimTimer >= 2) shieldState = 0;
+      if (shieldVisibleTimer > 0) {
+        shieldVisibleTimer -= dt;
+        shieldMeshMat.opacity = THREE.MathUtils.lerp(shieldMeshMat.opacity, 0.24, dt * 8.0);
+      } else {
+        shieldMeshMat.opacity = THREE.MathUtils.lerp(shieldMeshMat.opacity, 0.0, dt * 4.0);
       }
 
       if (shieldMeshMat.opacity > 0.005) {
@@ -1699,7 +1780,7 @@ export default function GameScreen({
         }
       }
 
-      // Кулдауны способностей (начинают отсчёт строго после завершения)
+      // Кулдауны способностей
       if (ability1CooldownRef.current > 0 && !isBrotherHelpActiveRef.current && !isSlaveRocketsActiveRef.current) {
         ability1CooldownRef.current = Math.max(0, ability1CooldownRef.current - dt);
         setAbility1Cooldown(Math.ceil(ability1CooldownRef.current));
@@ -1733,6 +1814,30 @@ export default function GameScreen({
           ability2CooldownRef.current = 40.0;
           setAbility2Cooldown(40);
         }
+      }
+
+      // Способность Битла 1: «Генератор щита» (4–5 ударов, 25 HP)
+      if (triggerBeatleShieldRef.current) {
+        triggerBeatleShieldRef.current = false;
+        setMaxShield(25);
+        currentShield = 25;
+        setShieldHp(25);
+        triggerShipShieldVisual();
+        playBuffer(assets.audioBuffers.click, 0.6);
+        spawnShieldBuffIcons(12);
+        ability1CooldownRef.current = 25.0;
+        setAbility1Cooldown(25);
+      }
+
+      // Способность Битла 2: «Переключение орудий» (на крылья, 10 сек КД)
+      if (triggerBeatleWeaponsRef.current) {
+        triggerBeatleWeaponsRef.current = false;
+        const nextMode = !isWingModeActiveRef.current;
+        isWingModeActiveRef.current = nextMode;
+        setIsWingModeActive(nextMode);
+        ability2CooldownRef.current = 10.0;
+        setAbility2Cooldown(10);
+        playBuffer(assets.audioBuffers.click, 0.7);
       }
 
       // Активация «Починки корпуса» Y-Wing
@@ -2195,7 +2300,7 @@ export default function GameScreen({
         }
       }
 
-      // === ПРОТОННЫЕ БОМБЫ X-WING (из XWingProtonRocket.html) ===
+      // === ПРОТОННЫЕ БОМБЫ X-WING ===
       for (let bIdx = protonBombs.length - 1; bIdx >= 0; bIdx--) {
         const bomb = protonBombs[bIdx];
         bomb.life -= dt;
@@ -2206,7 +2311,6 @@ export default function GameScreen({
           bomb.soundGain.gain.value = dynamicVol;
         }
 
-        // Анимация шейдера волн протонной бомбы
         bomb.coreMat.uniforms.uTime.value = st;
         bomb.waveMat.uniforms.uTime.value = st;
         bomb.waveMesh.rotation.x = Math.sin(st * 1.4) * 0.08;
@@ -2326,14 +2430,13 @@ export default function GameScreen({
         }
       }
 
-      // === 6 КОНУСНЫХ РАКЕТ РАБА-1 (из SlaveRocket.html) ===
+      // === 6 КОНУСНЫХ РАКЕТ РАБА-1 ===
       for (let srIdx = slaveRockets.length - 1; srIdx >= 0; srIdx--) {
         const sr = slaveRockets[srIdx];
         sr.life -= dt;
         sr.curveTimer -= dt;
         sr.trailTimer += dt;
 
-        // Волновое колебание вершин сетки конуса из референса
         const posAttr = sr.posAttr;
         for (let i = 0; i < posAttr.count; i++) {
           const ox = sr.origPos[i * 3], oy = sr.origPos[i * 3 + 1], oz = sr.origPos[i * 3 + 2];
@@ -2343,7 +2446,6 @@ export default function GameScreen({
         }
         posAttr.needsUpdate = true;
 
-        // Красный шлейф ракеты
         if (sr.trailTimer >= 0.03) {
           sr.trailTimer = 0;
           const rTrailMat = new THREE.SpriteMaterial({
@@ -2438,13 +2540,51 @@ export default function GameScreen({
         }
       }
 
-      // === ИОННЫЙ ЗАРЯД РАБА-1 (из SlaveProtonBomb.html) ===
+      // === ТЯЖЁЛЫЕ КРЫЛЬЕВЫЕ СНАРЯДЫ БИТЛА ===
+      for (let bbIdx = beatleHeavyBolts.length - 1; bbIdx >= 0; bbIdx--) {
+        const bb = beatleHeavyBolts[bbIdx];
+        bb.life -= dt;
+        bb.pos.addScaledVector(bb.vel, dt);
+        bb.group.position.copy(bb.pos);
+
+        let boltHit = false;
+        for (let j = enemies.length - 1; j >= 0; j--) {
+          const e = enemies[j];
+          if (bb.pos.distanceTo(e.pos) < 3.2) {
+            boltHit = true;
+            // Ваншот обычных врагов
+            e.hp = 0;
+            currentDamage += 150;
+            setDamageDealt(currentDamage);
+            currentKills += 1;
+            setEnemiesKilled(currentKills);
+            currentScore += 180;
+            setScore(currentScore);
+            spawnRetroExplosion(e.pos, 1.35, true, 'normal');
+            scene.remove(e.mesh);
+            enemies.splice(j, 1);
+            break;
+          }
+        }
+
+        if (boltHit || bb.life <= 0) {
+          scene.remove(bb.group);
+          beatleHeavyBolts.splice(bbIdx, 1);
+        }
+      }
+
+      // === ИОННЫЙ ЗАРЯД РАБА-1 ===
       for (let icIdx = slaveIonCharges.length - 1; icIdx >= 0; icIdx--) {
         const ic = slaveIonCharges[icIdx];
         ic.life -= dt;
         ic.timer += dt;
 
-        // Анимация шейдеров ионного заряда
+        if (ic.soundGain) {
+          const distToCam = ic.group.position.distanceTo(camera.position);
+          const dynamicVol = THREE.MathUtils.clamp((1 - distToCam / 250) * 0.55, 0.0, 0.55);
+          ic.soundGain.gain.value = dynamicVol;
+        }
+
         ic.coreMat.uniforms.uTime.value = st;
         ic.waveMat.uniforms.uTime.value = st;
         ic.waveMesh.rotation.x = Math.sin(st * 1.4) * 0.08;
@@ -2458,13 +2598,14 @@ export default function GameScreen({
           ic.vel.multiplyScalar(0.88);
         } else if (ic.state !== 'detonated') {
           ic.state = 'detonated';
+          if (ic.soundSource) {
+            try { ic.soundSource.stop(); } catch {}
+          }
           playBuffer(assets.audioBuffers.mine, 0.85);
 
-          // Голубой взрыв с широкой воронкой в 2 раза крупнее
           spawnRetroExplosion(ic.pos, 3.2, true, 'cyan');
           shakeIntensity = Math.max(shakeIntensity, 1.1);
 
-          // Гарантированно уничтожает всех врагов в широком радиусе 70 единиц
           for (let j = enemies.length - 1; j >= 0; j--) {
             const e = enemies[j];
             const distToCharge = e.pos.distanceTo(ic.pos);
@@ -2493,6 +2634,9 @@ export default function GameScreen({
         ic.group.position.copy(ic.pos);
 
         if (ic.life <= 0) {
+          if (ic.soundSource) {
+            try { ic.soundSource.stop(); } catch {}
+          }
           scene.remove(ic.group);
           slaveIonCharges.splice(icIdx, 1);
           isIonChargeActiveRef.current = false;
@@ -2572,32 +2716,37 @@ export default function GameScreen({
       if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0 && !isDeadRef.current) {
         fireCooldown = calcFireCooldown;
 
-        const isSlave = selectedShipId === 'slave1';
-        const leftOffset = new THREE.Vector3(isSlave ? -0.7 : -0.46, isSlave ? -0.2 : 0, -0.3).applyQuaternion(shipHolder.quaternion);
-        const rightOffset = new THREE.Vector3(isSlave ? 0.7 : 0.46, isSlave ? -0.2 : 0, -0.3).applyQuaternion(shipHolder.quaternion);
-
-        const leftPos = shipPos.clone().add(leftOffset);
-        const rightPos = shipPos.clone().add(rightOffset);
-
-        const leftDir = new THREE.Vector3().subVectors(bulletAimTarget, leftPos).normalize();
-        const rightDir = new THREE.Vector3().subVectors(bulletAimTarget, rightPos).normalize();
-
-        const lMesh1 = new THREE.Mesh(redLaserGeo, redLaserMat);
-        lMesh1.position.copy(leftPos);
-        lMesh1.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), leftDir);
-        scene.add(lMesh1);
-        lasers.push({ mesh: lMesh1, vel: leftDir.multiplyScalar(640), life: 1.0, isEnemy: false });
-
-        const lMesh2 = new THREE.Mesh(redLaserGeo, redLaserMat);
-        lMesh2.position.copy(rightPos);
-        lMesh2.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), rightDir);
-        scene.add(lMesh2);
-        lasers.push({ mesh: lMesh2, vel: rightDir.multiplyScalar(640), life: 1.0, isEnemy: false });
-
-        if (isSlave) {
-          playBuffer(audioBuffers.slave1, 0.38);
+        // Если активен режим крыльевых тяжелых орудий Битла
+        if (selectedShipId === 'beatle' && isWingModeActiveRef.current) {
+          fireBeatleHeavyWingBolts(bulletAimTarget);
         } else {
-          playBuffer(audioBuffers.xwingShot, 0.28);
+          const isSlave = selectedShipId === 'slave1';
+          const leftOffset = new THREE.Vector3(isSlave ? -0.7 : -0.46, isSlave ? -0.2 : 0, -0.3).applyQuaternion(shipHolder.quaternion);
+          const rightOffset = new THREE.Vector3(isSlave ? 0.7 : 0.46, isSlave ? -0.2 : 0, -0.3).applyQuaternion(shipHolder.quaternion);
+
+          const leftPos = shipPos.clone().add(leftOffset);
+          const rightPos = shipPos.clone().add(rightOffset);
+
+          const leftDir = new THREE.Vector3().subVectors(bulletAimTarget, leftPos).normalize();
+          const rightDir = new THREE.Vector3().subVectors(bulletAimTarget, rightPos).normalize();
+
+          const lMesh1 = new THREE.Mesh(redLaserGeo, redLaserMat);
+          lMesh1.position.copy(leftPos);
+          lMesh1.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), leftDir);
+          scene.add(lMesh1);
+          lasers.push({ mesh: lMesh1, vel: leftDir.multiplyScalar(640), life: 1.0, isEnemy: false });
+
+          const lMesh2 = new THREE.Mesh(redLaserGeo, redLaserMat);
+          lMesh2.position.copy(rightPos);
+          lMesh2.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), rightDir);
+          scene.add(lMesh2);
+          lasers.push({ mesh: lMesh2, vel: rightDir.multiplyScalar(640), life: 1.0, isEnemy: false });
+
+          if (isSlave) {
+            playBuffer(audioBuffers.slave1, 0.38);
+          } else {
+            playBuffer(audioBuffers.xwingShot, 0.28);
+          }
         }
       }
 
@@ -2810,7 +2959,8 @@ export default function GameScreen({
               yPoints.forEach((yPos, idx) => {
                 setTimeout(() => {
                   if (!isDisposed) {
-                    spawnRetroExplosion(new THREE.Vector3(laneCenter, yPos, blastZ), 1.6, false, 'normal');
+                    // Зеленоватые взрывы зонной атаки Разрушителя
+                    spawnRetroExplosion(new THREE.Vector3(laneCenter, yPos, blastZ), 1.8, false, 'greenish');
                   }
                 }, idx * 75);
               });
@@ -3142,8 +3292,8 @@ export default function GameScreen({
         if (isCloseEnough) {
           currentHp = Math.min(100, currentHp + dp.healPercent);
           setHp(currentHp);
-          if (shipConf.shield > 0) {
-            currentShield = Math.min(shipConf.shield, currentShield + Math.floor(dp.healPercent * 0.5));
+          if (maxShield > 0) {
+            currentShield = Math.min(maxShield, currentShield + Math.floor(dp.healPercent * 0.5));
             setShieldHp(currentShield);
           }
           setHealBonus(dp.healPercent);
@@ -3290,7 +3440,13 @@ export default function GameScreen({
         scene.remove(b.group);
       });
       slaveRockets.forEach((sr) => scene.remove(sr.group));
-      slaveIonCharges.forEach((ic) => scene.remove(ic.group));
+      slaveIonCharges.forEach((ic) => {
+        if (ic.soundSource) {
+          try { ic.soundSource.stop(); } catch {}
+        }
+        scene.remove(ic.group);
+      });
+      beatleHeavyBolts.forEach((bb) => scene.remove(bb.group));
       rocketTrailParticles.forEach((rtp) => {
         scene.remove(rtp.sprite);
         (rtp.sprite.material as THREE.Material).dispose();
@@ -3329,6 +3485,7 @@ export default function GameScreen({
       crosshairGeo.dispose();
       crosshairMat.dispose();
       ringPlaneGeo.dispose();
+      slaveRocketGeo.dispose();
       shieldSphereGeo.dispose();
       shieldMeshMat.dispose();
 
@@ -3340,6 +3497,8 @@ export default function GameScreen({
       sharedCyanRingTexture.dispose();
       sharedRedGlowTexture.dispose();
       sharedRedRingTexture.dispose();
+      sharedGreenGlowTexture.dispose();
+      sharedGreenRingTexture.dispose();
       sharedPlusTexture.dispose();
       sharedExclamationTexture.dispose();
       sharedShieldIconTexture.dispose();
@@ -3584,6 +3743,7 @@ export default function GameScreen({
         ability2Cooldown={ability2Cooldown}
         ability3Cooldown={ability3Cooldown}
         hasAbility3={selectedShipId === 'slave1'}
+        isWingModeActive={isWingModeActive}
         inBiomeTransition={inBiomeTransition}
         biomeTitle={biomeTitle}
         biomeSubtext={biomeSubtext}
@@ -3635,3 +3795,4 @@ export default function GameScreen({
     </>
   );
 }
+
