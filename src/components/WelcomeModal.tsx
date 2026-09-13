@@ -97,24 +97,24 @@ export default function WelcomeModal({ onClose }: WelcomeModalProps) {
         <div className="tfu-welcome-title">ДОБРО ПОЖАЛОВАТЬ!</div>
         <div className="tfu-welcome-content">
           <p>
-            Проект <strong>The Space Unleashed</strong> в настоящее время находится на этапе активной разработки и закрытого альфа-тестирования.
+            Проект <strong>The Space Unleashed</strong> сейчас находится в активной разработке и закрытом тесте.
           </p>
           <p>
-            Все игровые механики, визуальные эффекты, физика космических перехватов и баланс финальных поединков непрерывно дорабатываются.
+            Все механики кораблей, баланс лазеров и битвы с боссами непрерывно дорабатываются прямо по ходу вылетов.
           </p>
           <p>
-            Если в процессе вылета вы обнаружили графическую ошибку, сбой управления или проблемы с производительностью, пожалуйста, сообщите об этом разработчикам напрямую: <span className="tfu-welcome-contacts">@temkazavr</span> или <span className="tfu-welcome-contacts">@ribapibaa</span>.
+            Если заметишь графический баг, странное поведение прицела или просадку кадров — сразу пиши разработчикам: <span className="tfu-welcome-contacts">@temkazavr</span> или <span className="tfu-welcome-contacts">@ribapibaa</span>.
           </p>
           <p>
-            Выражаем отдельную искреннюю признательность гильдии <span className="tfu-welcome-guild">Those Who Are In The Shadows</span> и каждому её участнику за активную помощь, содействие в проверке игровых систем и конструктивные отзывы.
+            Огромное спасибо гильдии <span className="tfu-welcome-guild">Those Who Are In The Shadows</span> и каждому её бойцу за поддержку, тесты и дельные отзывы!
           </p>
           <p>
-            Готовьтесь к вылету, пилот. Да пребудет с вами Сила.
+            Готовься к бою, пилот. Да пребудет с тобой Сила!
           </p>
         </div>
         <div className="tfu-welcome-actions">
           <button type="button" className="tfu-welcome-btn" onClick={onClose}>
-            ПРОДОЛЖИТЬ
+            В АНГАР
           </button>
         </div>
       </div>
