@@ -36,6 +36,7 @@ interface ProtonBomb {
   targetRef: Enemy | null;
   speed: number;
   life: number;
+  trailTimer: number;
   soundSource: AudioBufferSourceNode | null;
   soundGain: GainNode | null;
 }
@@ -102,7 +103,7 @@ export default function GameScreen({
   const isSlaveRocketsActiveRef = useRef<boolean>(false);
   const isIonChargeActiveRef = useRef<boolean>(false);
 
-  // Режим крыльевых тяжелых орудий Битла
+  // Ударный режим Битла (стрельба с крыльев)
   const [isWingModeActive, setIsWingModeActive] = useState<boolean>(false);
   const isWingModeActiveRef = useRef<boolean>(false);
 
@@ -557,7 +558,7 @@ export default function GameScreen({
     shipHolder.position.copy(shipPos);
     scene.add(shipHolder);
 
-    // === ЩИТ ВОКРУГ КОРАБЛЯ (Увеличен в 1.5 раза: 2.3 * 1.5 = 3.45) ===
+    // === ЩИТ ВОКРУГ КОРАБЛЯ (Увеличен в 1.5 раза) ===
     const shieldGroup = new THREE.Group();
     scene.add(shieldGroup);
     const baseRadius = selectedShipId === 'slave1' ? 2.8 : 2.3;
@@ -658,6 +659,7 @@ export default function GameScreen({
     const shieldRippleGeo = new THREE.RingGeometry(0.4, 2.1, 24);
     const shieldRippleMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
 
+    // Текстуры для эффектов
     const sharedGlowTexture = createExplosionGlowTexture();
     const sharedRingTexture = createExplosionRingTexture();
     const sharedPinkGlowTexture = createPinkGlowTexture();
@@ -1056,12 +1058,13 @@ export default function GameScreen({
         targetRef: chosenTargetRef,
         speed: 28,
         life: 5.5,
+        trailTimer: 0,
         soundSource: pSrc,
         soundGain: pGain
       });
     };
 
-    // Запуск 6 ракет Раба-1
+    // Запуск 6 конусных ракет Раба-1
     const fireSlaveRockets = () => {
       const liveEnemies = enemies.filter((e) => e.state === 'attacking' && e.pos.z < shipPos.z - 4);
 
@@ -1138,7 +1141,7 @@ export default function GameScreen({
       }
     };
 
-    // Выпуск Ионного заряда Раба-1 со звуком сразу со старта
+    // Выпуск Ионного заряда Раба-1
     const launchSlaveIonCharge = () => {
       const iGroup = new THREE.Group();
       const start = shipPos.clone().add(new THREE.Vector3(0, -0.4, -2.0));
@@ -1193,7 +1196,7 @@ export default function GameScreen({
             gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
           }
         `,
-        fragmentShader: `void main(){gl_FragColor=vec4(0.1,0.6,1.0,0.14);}`,
+        fragmentShader: `void main(){gl_FragColor=vec4(1.0,0.1,0.7,0.14);}`,
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
@@ -1211,7 +1214,7 @@ export default function GameScreen({
 
       scene.add(iGroup);
 
-      // Звук вылета ионной бомбы Раба-1
+      // Звук вылета ионной бомбы со старта
       let iSrc: AudioBufferSourceNode | null = null;
       let iGain: GainNode | null = null;
       if (assets.audioBuffers.slave1 && !isPausedRef.current) {
@@ -1245,7 +1248,7 @@ export default function GameScreen({
 
     // Выстрел тяжёлыми конусами Битла с крыльев (ваншот)
     const fireBeatleHeavyWingBolts = (aimTarget: THREE.Vector3) => {
-      const wingOffsets = [-1.4, 1.4]; // Широкое расстояние между орудиями крыльев
+      const wingOffsets = [-1.4, 1.4];
       for (const ox of wingOffsets) {
         const bGroup = new THREE.Group();
         bGroup.scale.setScalar(0.42);
@@ -1269,7 +1272,9 @@ export default function GameScreen({
         const start = shipPos.clone().add(new THREE.Vector3(ox, 0.15, -0.6));
         bGroup.position.copy(start);
 
-        const dir = new THREE.Vector3().subVectors(aimTarget, start).normalize();
+        // Лёгкий разброс при стрельбе с крыльев
+        const spreadTarget = aimTarget.clone().add(new THREE.Vector3((Math.random() - 0.5) * 3.5, (Math.random() - 0.5) * 2.5, 0));
+        const dir = new THREE.Vector3().subVectors(spreadTarget, start).normalize();
         bGroup.lookAt(start.clone().add(dir));
         scene.add(bGroup);
 
@@ -1278,7 +1283,7 @@ export default function GameScreen({
           posAttr,
           origPos,
           pos: start,
-          vel: dir.multiplyScalar(420), // Более тяжёлые и медленные, чем обычный лазер
+          vel: dir.multiplyScalar(420),
           life: 1.2,
           trailTimer: 0
         });
@@ -1748,7 +1753,7 @@ export default function GameScreen({
       const dt = realDt;
       const st = timestamp * 0.001;
 
-      // Логика щита вокруг корабля: быстрое появление и удержание на 2 секунды без резких скачков
+      // Щит вокруг корабля: быстро проявляется и удерживается 2 секунды
       shieldGroup.position.copy(shipPos);
       if (shieldVisibleTimer > 0) {
         shieldVisibleTimer -= dt;
@@ -1771,7 +1776,7 @@ export default function GameScreen({
         posAttr.needsUpdate = true;
       }
 
-      // Окно комбо
+      // Комбо таймер
       if (comboTimerRef.current > 0) {
         comboTimerRef.current -= dt;
         if (comboTimerRef.current <= 0) {
@@ -1794,7 +1799,7 @@ export default function GameScreen({
         setAbility3Cooldown(Math.ceil(ability3CooldownRef.current));
       }
 
-      // Состояние «Буйства» Y-Wing (8 сек)
+      // Буйство Y-Wing
       if (isRageActiveRef.current) {
         rageTimerRef.current -= dt;
         if (rageTimerRef.current <= 0) {
@@ -1805,7 +1810,7 @@ export default function GameScreen({
         }
       }
 
-      // Состояние «Сопротивления» Раба-1 (8 сек)
+      // Сопротивление Раба-1
       if (isSlaveShieldActiveRef.current) {
         slaveShieldTimerRef.current -= dt;
         if (slaveShieldTimerRef.current <= 0) {
@@ -1816,7 +1821,7 @@ export default function GameScreen({
         }
       }
 
-      // Способность Битла 1: «Генератор щита» (4–5 ударов, 25 HP)
+      // Активация «Генератора щита» Битла
       if (triggerBeatleShieldRef.current) {
         triggerBeatleShieldRef.current = false;
         setMaxShield(25);
@@ -1829,7 +1834,7 @@ export default function GameScreen({
         setAbility1Cooldown(25);
       }
 
-      // Способность Битла 2: «Переключение орудий» (на крылья, 10 сек КД)
+      // Активация «Ударного режима» Битла (КД 10 сек)
       if (triggerBeatleWeaponsRef.current) {
         triggerBeatleWeaponsRef.current = false;
         const nextMode = !isWingModeActiveRef.current;
@@ -2304,6 +2309,7 @@ export default function GameScreen({
       for (let bIdx = protonBombs.length - 1; bIdx >= 0; bIdx--) {
         const bomb = protonBombs[bIdx];
         bomb.life -= dt;
+        bomb.trailTimer += dt;
 
         if (bomb.soundGain) {
           const distToCam = bomb.group.position.distanceTo(camera.position);
@@ -2552,8 +2558,7 @@ export default function GameScreen({
           const e = enemies[j];
           if (bb.pos.distanceTo(e.pos) < 3.2) {
             boltHit = true;
-            // Ваншот обычных врагов
-            e.hp = 0;
+            e.hp = 0; // Ваншот обычных врагов
             currentDamage += 150;
             setDamageDealt(currentDamage);
             currentKills += 1;
@@ -2606,6 +2611,7 @@ export default function GameScreen({
           spawnRetroExplosion(ic.pos, 3.2, true, 'cyan');
           shakeIntensity = Math.max(shakeIntensity, 1.1);
 
+          // Гарантированно уничтожает всех врагов в широком радиусе 70 единиц
           for (let j = enemies.length - 1; j >= 0; j--) {
             const e = enemies[j];
             const distToCharge = e.pos.distanceTo(ic.pos);
@@ -2645,7 +2651,7 @@ export default function GameScreen({
         }
       }
 
-      // Частицы шлейфов
+      // Частицы шлейфов ракет
       for (let rtpIdx = rocketTrailParticles.length - 1; rtpIdx >= 0; rtpIdx--) {
         const rtp = rocketTrailParticles[rtpIdx];
         rtp.life -= dt;
@@ -2711,12 +2717,15 @@ export default function GameScreen({
       }
 
       fireCooldown -= dt;
-      const calcFireCooldown = THREE.MathUtils.clamp(0.35 - (shipConf.fireRate / 60) * 0.18, 0.14, 0.32);
+
+      // В «Ударном режиме» Битла задержка выстрела ровно 0.75 секунды
+      const calcFireCooldown = (selectedShipId === 'beatle' && isWingModeActiveRef.current)
+        ? 0.75
+        : THREE.MathUtils.clamp(0.35 - (shipConf.fireRate / 60) * 0.18, 0.14, 0.32);
 
       if (input.fire && fireCooldown <= 0 && playerStunDuration <= 0 && !isDeadRef.current) {
         fireCooldown = calcFireCooldown;
 
-        // Если активен режим крыльевых тяжелых орудий Битла
         if (selectedShipId === 'beatle' && isWingModeActiveRef.current) {
           fireBeatleHeavyWingBolts(bulletAimTarget);
         } else {
@@ -3795,4 +3804,3 @@ export default function GameScreen({
     </>
   );
 }
-
