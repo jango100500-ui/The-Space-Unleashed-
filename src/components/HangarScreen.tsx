@@ -115,7 +115,22 @@ export const HANGAR_SHIPS: HangarShipData[] = [
     shipClass: 'basic',
     classLabel: 'БАЗОВЫЙ',
     classBadge: 'B',
-    abilities: []
+    abilities: [
+      {
+        id: 'shield_generator',
+        name: 'ГЕНЕРАТОР ЩИТА',
+        typeText: 'БАЗОВАЯ СПОСОБНОСТЬ',
+        description: 'Создает энергощит, поглощающий 4–5 вражеских выстрелов. Перезарядка: 25 секунд после сбития или завершения',
+        symbol: 'triangle'
+      },
+      {
+        id: 'weapon_switch',
+        name: 'ПЕРЕКЛЮЧЕНИЕ ОРУДИЙ',
+        typeText: 'РЕЖИМ ОГНЯ',
+        description: 'Переводит огонь на крылья: выпускает пару тяжелых снарядов с низкой скоростью, ваншотающих вражеские истребители. Перезарядка переключения: 10 секунд',
+        symbol: 'circle'
+      }
+    ]
   },
   {
     id: 'slave1',
