@@ -77,7 +77,18 @@ export interface RocketTrailParticle {
   initialScale: number;
 }
 
-// Новая модель красной ракеты-конуса из SlaveRocket.html
+// Тяжёлые снаряды Битла (режим крыльев)
+export interface BeatleHeavyBolt {
+  group: THREE.Group;
+  posAttr: THREE.BufferAttribute;
+  origPos: Float32Array;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  life: number;
+  trailTimer: number;
+}
+
+// Красные конусы-ракеты Раба-1
 export interface SlaveRocket {
   group: THREE.Group;
   posAttr: THREE.BufferAttribute;
@@ -96,7 +107,7 @@ export interface SlaveRocket {
   trailTimer: number;
 }
 
-// Новая модель Ионного заряда из SlaveProtonBomb.html
+// Ионный заряд Раба-1
 export interface SlaveIonCharge {
   group: THREE.Group;
   coreMat: THREE.ShaderMaterial;
@@ -108,6 +119,8 @@ export interface SlaveIonCharge {
   life: number;
   timer: number;
   state: 'flying' | 'slowing' | 'detonated';
+  soundSource: AudioBufferSourceNode | null;
+  soundGain: GainNode | null;
 }
 
 export interface BossZoneAttack {
@@ -323,6 +336,45 @@ export function createExplosionRingTexture(): THREE.CanvasTexture {
   g.addColorStop(0.55, 'rgba(255, 220, 120, 1)');
   g.addColorStop(0.8, 'rgba(255, 80, 0, 0.4)');
   g.addColorStop(1, 'rgba(255, 30, 0, 0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Зеленоватый Glow для способности Звездного Разрушителя
+export function createGreenGlowTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const c = canvas.getContext('2d')!;
+  const g = c.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, 'rgba(230, 255, 230, 1)');
+  g.addColorStop(0.15, 'rgba(100, 255, 120, 0.95)');
+  g.addColorStop(0.4, 'rgba(30, 220, 50, 0.75)');
+  g.addColorStop(0.7, 'rgba(10, 120, 30, 0.3)');
+  g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Зеленоватый Ring для способности Звездного Разрушителя
+export function createGreenRingTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const c = canvas.getContext('2d')!;
+  const g = c.createRadialGradient(128, 128, 70, 128, 128, 122);
+  g.addColorStop(0, 'rgba(50, 255, 80, 0)');
+  g.addColorStop(0.2, 'rgba(50, 255, 80, 0.35)');
+  g.addColorStop(0.45, 'rgba(180, 255, 190, 1)');
+  g.addColorStop(0.55, 'rgba(180, 255, 190, 1)');
+  g.addColorStop(0.8, 'rgba(30, 200, 50, 0.45)');
+  g.addColorStop(1, 'rgba(0, 80, 20, 0)');
   c.fillStyle = g;
   c.fillRect(0, 0, 256, 256);
   const tex = new THREE.CanvasTexture(canvas);
