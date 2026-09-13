@@ -22,6 +22,7 @@ interface GameUIProps {
   ability2Cooldown: number;
   ability3Cooldown?: number;
   hasAbility3?: boolean;
+  isWingModeActive?: boolean;
   inBiomeTransition: boolean;
   biomeTitle: string;
   biomeSubtext: string;
@@ -124,7 +125,6 @@ export default function GameUI(props: GameUIProps) {
         .tfu-pad-bottom:active { transform: translateX(-50%) scale(0.94); }
         .tfu-pad-timer-text { font-family: monospace; font-size: 16px; font-weight: 900; color: #ffffff; }
         
-        /* Плашки индикаторов над прицелом */
         .hud-target-overlay {
           position: absolute;
           transform: translate(-50%, -100%);
@@ -150,7 +150,7 @@ export default function GameUI(props: GameUIProps) {
           font-size: 11px;
           font-weight: 900;
           letter-spacing: 3px;
-          color: #f1c40f; /* Теплый жёлтый */
+          color: #f1c40f;
           text-transform: uppercase;
           text-shadow: 0 1px 3px #000000;
           animation: fadeBlinkAnim 0.35s infinite alternate ease-in-out;
@@ -160,10 +160,20 @@ export default function GameUI(props: GameUIProps) {
           font-size: 11px;
           font-weight: 900;
           letter-spacing: 3px;
-          color: #00e5ff; /* Синий цвет щита */
+          color: #00e5ff;
           text-transform: uppercase;
           text-shadow: 0 1px 3px #000000;
           animation: fadeBlinkAnim 0.35s infinite alternate ease-in-out;
+        }
+        .hud-wings-label {
+          font-family: Arial, sans-serif;
+          font-size: 10px;
+          font-weight: 900;
+          letter-spacing: 2.5px;
+          color: #ff3838;
+          text-transform: uppercase;
+          text-shadow: 0 1px 3px #000000;
+          animation: fadeBlinkAnim 0.3s infinite alternate ease-in-out;
         }
         @keyframes fadeBlinkAnim {
           from { opacity: 0.35; }
@@ -227,6 +237,9 @@ export default function GameUI(props: GameUIProps) {
           )}
           {props.isResistanceActive && (
             <div className="hud-resistance-label">СОПРОТИВЛЕНИЕ</div>
+          )}
+          {props.isWingModeActive && (
+            <div className="hud-wings-label">КРЫЛЬЯ [ТЯЖЕЛЫЙ]</div>
           )}
           {props.comboStreak >= 3 && (
             <div className="hud-combo-label">
@@ -336,11 +349,11 @@ export default function GameUI(props: GameUIProps) {
               <div className="tfu-hp-heal-sector" style={{ left: `${Math.max(0, props.hp - props.healBonus)}%`, width: `${props.healBonus}%` }} />
             )}
           </div>
-          {props.maxShield > 0 && (
+          {(props.maxShield > 0 || props.shieldHp > 0) && (
             <>
               <div className="tfu-shield-label">ЭНЕРГОЩИТЫ</div>
               <div className="tfu-shield-frame">
-                <div className="tfu-shield-fill" style={{ width: `${(props.shieldHp / props.maxShield) * 100}%` }} />
+                <div className="tfu-shield-fill" style={{ width: `${(props.shieldHp / Math.max(1, props.maxShield || 25)) * 100}%` }} />
               </div>
             </>
           )}
